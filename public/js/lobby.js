@@ -6,7 +6,7 @@
 
   function name() { return ($('nameInput').value || '').trim() || 'Player ' + Math.floor(Math.random() * 90 + 10); }
 
-  $('createBtn').onclick = () => Net.createRoom(name(), $('devToggle') ? true : true);
+  $('createBtn').onclick = () => Net.createRoom(name(), $('devToggle') ? $('devToggle').checked : true);
   $('joinBtn').onclick = () => { const code = ($('codeInput').value || '').trim().toUpperCase(); if (code.length === 4) Net.joinRoom(code, name()); };
   $('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('joinBtn').click(); });
   $('startBtn').onclick = () => Net.start($('devToggle').checked);
@@ -41,6 +41,9 @@
 
   Net.on(C.EV.LOBBY_UPDATE, (d) => {
     State.lobby = d; State.resolveIdentity();
+    // The server can promote a new host (e.g. the original host left the lobby); keep isHost in sync so
+    // the promoted player actually gets the start/difficulty controls instead of a permanently stuck lobby.
+    if (d.hostId !== undefined && State.you !== undefined) State.isHost = (d.hostId === State.you);
     $('roomCode').textContent = d.code;
     if (d.status === 'lobby') renderSlots(d);
     $('startBtn').disabled = !State.isHost;
