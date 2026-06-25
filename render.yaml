@@ -1,0 +1,19 @@
+# One-click deploy of the WHOLE app (client + authoritative Socket.IO server) to Render.
+# This single Web Service serves the client AND runs real-time multiplayer — share its URL and play.
+# Render sets $PORT automatically; server.js already honours process.env.PORT.
+#
+# Deploy: push to GitHub, then on https://dashboard.render.com → New → Blueprint → pick this repo.
+# WebSockets work out of the box on Render Web Services. The free plan sleeps after ~15 min idle
+# (first request then takes ~30–60s to wake).
+services:
+  - type: web
+    name: four-pillars
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

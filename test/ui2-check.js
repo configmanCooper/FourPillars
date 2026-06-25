@@ -18,10 +18,10 @@ const { chromium } = require(path.join('C:', 'Users', 'rocma', 'CLI', 'node_modu
   await p.waitForTimeout(300);
   await p.click('#startBtn');
   await p.waitForSelector('#game:not(.hidden)');
-  // first-run help modal should appear (~600ms)
-  await p.waitForTimeout(1200);
+  // first-run help modal should appear shortly after the game opens — wait for it rather than guess.
+  await p.waitForSelector('#modal .modal-card', { timeout: 5000 }).catch(() => {});
   const helpShown = await p.isVisible('#modal .modal-card');
-  const helpHasLocation = (await p.textContent('#modalBody')).toLowerCase().includes('per-location');
+  const helpHasLocation = helpShown ? (await p.textContent('#modalBody')).toLowerCase().includes('per-location') : false;
   if (helpShown) await p.click('#modalClose');
 
   await p.waitForTimeout(2500);
@@ -32,7 +32,9 @@ const { chromium } = require(path.join('C:', 'Users', 'rocma', 'CLI', 'node_modu
   await p.evaluate(() => { window.FP.State.selectedArea = 'blue_base'; window.FP.UI.update(window.FP.State.snapshot); });
   await p.waitForTimeout(200);
   const sel = await p.textContent('#selDetails');
-  // Open build modal via bottom action bar (Lord first button = Build)
+  // Open build modal via bottom action bar (Lord first button = Build). Make sure no modal overlays it.
+  if (await p.isVisible('#modal .modal-card')) { await p.click('#modalClose'); await p.waitForTimeout(200); }
+  await p.waitForSelector('#actionButtons .btn', { timeout: 5000 });
   await p.click('#actionButtons .btn');
   await p.waitForTimeout(400);
   const buildBody = await p.textContent('#modalBody');

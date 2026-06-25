@@ -24,8 +24,15 @@ development milestone, newest first.
   surplus, or to keep the forge running.
 - **Steward logistics depth.** Steward AI auto‑balances the mine split between stone and iron by
   scarcity and responds to teammates' iron/stone requests by shifting focus.
+- **GitHub Pages‑friendly client.** Asset paths are relative and Socket.IO falls back to a CDN when
+  the page isn't served by the Node server, so the static client also runs on GitHub Pages. A
+  lobby **⚙ Server connection** panel (plus a `?server=<url>` link and saved setting) lets the
+  Pages client connect to a separately‑hosted server; on `*.github.io` it auto‑prompts for the URL.
+- **Deploy configs.** `.github/workflows/pages.yml` publishes the static client (`public/` +
+  `shared/`) to GitHub Pages on push; `render.yaml` one‑click‑deploys the whole app (client +
+  realtime server) to Render.
 - Headless/regression tests: `lord-reservations-check`, `commander-interdict-check`,
-  `steward-logistics-check`, and `ui16`–`ui20`.
+  `claim-hold-check`, `steward-logistics-check`, and `ui16`–`ui20`.
 
 ### Changed
 - **Combat model reworked** to a per‑second resolution: each side rolls discrete casualties
@@ -39,6 +46,11 @@ development milestone, newest first.
   mini‑game strikes to match), tool lifetime set to ~300s.
 
 ### Fixed
+- **Reserved wood leaked to the Steward's outposts.** When the Lord reserved wood away from the
+  Steward (e.g. for the Blacksmith), the AI Steward could still pay for outposts in instalments
+  because it calls `sites.claim()` directly, bypassing the rationing gate in `applyAction`.
+  `claim()` now enforces the hold itself (like forging and site upgrades), so a reservation truly
+  blocks outpost funding unless the Steward has an access grant or the resource is reserved for it.
 - **Commander "turtling" bug:** a single enemy host merely *adjacent* to the Keep used to
   force‑recall the **entire** army indefinitely, freezing all offence and letting enemy caravans run
   free. A full recall now requires a genuine assault (enemy on the Keep, walls falling, or a force

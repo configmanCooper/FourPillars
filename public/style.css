@@ -66,6 +66,14 @@ input:focus { outline: none; border-color: var(--gold); }
 .or { color: var(--muted); }
 .code-input { width: 110px !important; text-transform: uppercase; letter-spacing: 4px; text-align: center; font-weight: 700; }
 .hint { color: var(--muted); font-size: 12px; margin-top: 14px; line-height: 1.5; }
+.server-config { margin-top: 16px; border: 1px solid var(--panel-edge); border-radius: 6px;
+  padding: 8px 12px; background: rgba(0,0,0,0.18); }
+.server-config > summary { cursor: pointer; color: var(--muted); font-size: 12px; list-style: none; user-select: none; }
+.server-config > summary::-webkit-details-marker { display: none; }
+.server-config > summary:hover { color: var(--text); }
+.server-config[open] > summary { color: var(--gold); margin-bottom: 6px; }
+.server-config .field { margin-bottom: 8px; }
+.server-config .hint { margin-top: 4px; }
 .room-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .code-badge { font-family: 'MedievalSharp'; color: var(--gold-bright); font-size: 22px; letter-spacing: 3px; }
 .dev-toggle { font-size: 12px; color: var(--muted); }

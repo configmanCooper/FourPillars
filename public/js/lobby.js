@@ -11,6 +11,28 @@
   $('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('joinBtn').click(); });
   $('startBtn').onclick = () => Net.start($('devToggle').checked);
 
+  // ---- Server connection control (lets a static / GitHub Pages client point at a hosted server) ----
+  (function serverConfig() {
+    const input = $('serverInput'), status = $('serverStatus'), det = $('serverConfig');
+    if (!input) return;
+    input.value = Net.serverUrl || '';
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') Net.setServer(input.value); });
+    if ($('serverSaveBtn')) $('serverSaveBtn').onclick = () => Net.setServer(input.value);
+    if ($('serverClearBtn')) $('serverClearBtn').onclick = () => Net.setServer('');
+    const here = Net.serverUrl ? Net.serverUrl : 'this site';
+    Net.onStatus((s) => {
+      if (!status) return;
+      if (s === 'connected') status.textContent = '🟢 Connected to ' + here + '.';
+      else if (s === 'error') { status.textContent = '🔴 Can’t reach ' + here + '. Enter your Four Pillars server URL below, then Connect.'; if (det) det.open = true; }
+      else if (s === 'disconnected') status.textContent = '🟡 Lost connection to ' + here + ' — reconnecting…';
+    });
+    // Static host (e.g. github.io) with no server configured: prompt up front.
+    if (/\.github\.io$/i.test(location.hostname) && !Net.serverUrl) {
+      if (det) det.open = true;
+      if (status) status.textContent = 'This is a static (GitHub Pages) site — enter the URL of your Four Pillars server to play.';
+    }
+  })();
+
   Net.on(C.EV.ROOM_UPDATE, (d) => {
     State.you = d.you; State.isHost = d.isHost;
     $('lobby-entry').classList.add('hidden'); $('lobby-room').classList.remove('hidden');

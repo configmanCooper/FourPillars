@@ -27,6 +27,17 @@
           <button id="joinBtn" class="btn">Join Realm</button>
         </div>
         <p class="hint">Solo? Create a realm, claim one seat, leave the rest as AI, and press Begin. Every one of the 8 seats can be a human or an AI.</p>
+        <details id="serverConfig" class="server-config">
+          <summary>⚙ Server connection</summary>
+          <p class="hint" id="serverStatus">Connecting…</p>
+          <label class="field">Server URL <span class="muted">(needed on GitHub Pages; leave blank to use this site)</span>
+            <input id="serverInput" type="text" placeholder="https://your-server.onrender.com" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="entry-buttons">
+            <button id="serverSaveBtn" class="btn btn-sm btn-gold" type="button">Connect</button>
+            <button id="serverClearBtn" class="btn btn-sm" type="button">Use this site</button>
+          </div>
+        </details>
       </div>
 
       <div id="lobby-room" class="hidden">
@@ -152,10 +163,13 @@
     <div class="pause-card" id="pauseCard"></div>
   </div>
 
+  <!-- Socket.IO client: use the server's own (version-matched) copy when this page is served by the
+       Node server; fall back to the CDN when hosted statically (e.g. GitHub Pages). -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/shared/constants.js"></script>
-  <script src="/shared/balance.js"></script>
-  <script src="/shared/schema.js"></script>
+  <script>if (typeof io === 'undefined') { document.write('<scr' + 'ipt src="https://cdn.socket.io/4.7.5/socket.io.min.js"><\/scr' + 'ipt>'); }</script>
+  <script src="shared/constants.js"></script>
+  <script src="shared/balance.js"></script>
+  <script src="shared/schema.js"></script>
   <script src="js/net.js"></script>
   <script src="js/state.js"></script>
   <script src="js/tips.js"></script>

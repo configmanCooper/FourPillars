@@ -13,16 +13,20 @@ const { chromium } = require(path.join('C:', 'Users', 'rocma', 'CLI', 'node_modu
   await page.fill('#nameInput', 'Browserer');
   await page.click('#createBtn');
   await page.waitForSelector('#lobby-room:not(.hidden)', { timeout: 5000 });
-  // Claim the Blue Lord seat.
+  // Claim the Blue Lord seat (target the Claim button specifically; the host also sees AI-difficulty buttons).
   await page.waitForSelector('.slots[data-team="BLUE"] .slot');
-  const claimBtn = await page.locator('.slots[data-team="BLUE"] .slot').first().locator('button');
+  const claimBtn = page.locator('.slots[data-team="BLUE"] .slot').first().locator('button', { hasText: /Claim/i });
   await claimBtn.click();
   await page.waitForTimeout(400);
   await page.click('#startBtn');
   await page.waitForSelector('#game:not(.hidden)', { timeout: 5000 });
   await page.waitForTimeout(3500);
 
+  // Dismiss the first-run "How to Play" help modal if present (it overlays the action bar).
+  if (await page.isVisible('#modal .modal-card')) { await page.click('#modalClose'); await page.waitForTimeout(300); }
+
   // Interact: open the Build modal.
+  await page.waitForSelector('#actionButtons .btn', { timeout: 5000 });
   await page.click('#actionButtons .btn'); // first action button (Build for Lord)
   await page.waitForTimeout(500);
   const modalVisible = await page.isVisible('#modal .modal-card');

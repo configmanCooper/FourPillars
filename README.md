@@ -56,18 +56,34 @@ Then open **http://localhost:3100** in your browser.
 
 ### Hosting
 
-Because the simulation is server‑authoritative, **a live game needs the Node server running** — the
-browser client (whether served locally or from GitHub Pages) connects back to it over Socket.IO.
+Because the simulation is server‑authoritative, **a live match needs the Node server running** — the
+browser client (served locally or from GitHub Pages) connects to it over Socket.IO. **GitHub Pages
+cannot run the server**; it only hosts the static client.
 
-- **GitHub Pages** (this repo): Pages publishes the **static client** at
-  **https://configmancooper.github.io/FourPillars/**. To make it playable you must run the Node
-  server somewhere reachable (any Node host — e.g. Render, Railway, Fly.io, Glitch — or your own
-  machine) and point the client's socket at it: in `public/js/net.js`, change `io()` to
-  `io('https://your-server-host')`. (The page also loads `/socket.io/socket.io.js` and
-  `/shared/*.js`, which that server provides.) Without a reachable server the Pages site loads but
-  can't start a match.
-- **Single‑host (simplest):** run `npm start` on any Node host and share its URL — that one process
-  serves both the client and the realtime server, so no extra configuration is needed.
+**Option A — one host, simplest (recommended): deploy the whole app to a Node host.**
+One process serves both the client and the realtime server, so there's nothing to configure.
+
+- **Render:** New → **Web Service** → pick this repo → Runtime `Node`, Build `npm install`,
+  Start `npm start`, Plan `Free` (or use the included **`render.yaml`** via New → **Blueprint**).
+  Render injects `$PORT`, which `server.js` already honours. Share the resulting
+  `https://…onrender.com` URL and play. *(Free instances sleep after ~15 min idle → first hit wakes
+  in ~30–60s.)* WebSockets work out of the box.
+- Equivalent on **Railway / Fly.io / Glitch / Cyclic** — any host that runs a long‑lived Node
+  process with WebSockets. (Static‑only hosts — Pages, Netlify, Vercel‑static — won't work.)
+
+**Option B — GitHub Pages client + a separately‑hosted server.**
+The included workflow `.github/workflows/pages.yml` publishes the static client (`public/` +
+`shared/`) to **https://configmancooper.github.io/FourPillars/** on every push to `main` — just set
+**Settings → Pages → Source = "GitHub Actions"** once. Then point the Pages client at your server
+(from Option A) either way:
+
+- In the lobby's **⚙ Server connection** panel, paste the server URL and press **Connect** (saved in
+  your browser), **or**
+- Share a pre‑pointed link: `…github.io/FourPillars/?server=https://your-server.onrender.com`.
+
+The client auto‑detects a static host: on `*.github.io` with no server set it opens the connection
+panel and prompts for the URL. Socket.IO is loaded from the server when present and from a CDN
+otherwise, and asset paths are relative, so the same files work locally and on Pages.
 
 ### Tests / verification
 
