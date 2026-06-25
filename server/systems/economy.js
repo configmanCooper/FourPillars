@@ -137,7 +137,7 @@ function clampGather(team) {
 function gatherRates(team) {
   clampGather(team);
   const g = team.gather, p = team.pop;
-  const tp = (team.blacksmithSpec && B.BLACKSMITH_SPECS[team.blacksmithSpec] && B.BLACKSMITH_SPECS[team.blacksmithSpec].toolPower) || 1; // Economic Forge makes tools stronger
+  const tp = (team.blacksmithSpec && B.BLACKSMITH_SPECS[team.blacksmithSpec] && B.BLACKSMITH_SPECS[team.blacksmithSpec].toolPower) || 1; // (reserved: per-item specs give a forge-speed bonus, not tool power)
   // Each tooled worker carries an INDIVIDUAL tool; assign the best tools first across the pools.
   const tools = (team.gearInv && team.gearInv.tools ? team.gearInv.tools.slice() : []).sort((a, b) => b - a);
   let ti = 0, boostSumAll = 0, tooledAll = 0;

@@ -493,10 +493,10 @@ function sitePrio(team, persona, a) {
 }
 
 // ---------------- BLACKSMITH ----------------
-const SMITH_SPEC = { quartermaster: 'military', armorer: 'military', siege: 'siege', toolsmith: 'economic' };
+const SMITH_SPEC = { quartermaster: 'swords', armorer: 'armor', siege: 'siegeParts', toolsmith: 'tools' };
 function aiBlacksmith(state, team, sys, rng, persona, st) {
   const prod = sys.production;
-  if (!team.blacksmithSpec) team.blacksmithSpec = SMITH_SPEC[persona] || 'military';
+  if (!team.blacksmithSpec) team.blacksmithSpec = SMITH_SPEC[persona] || 'swords';
   askIfHeld(state, team, sys, st, C.ROLES.BLACKSMITH, 'iron', 'to forge weapons & armour');
   askIfHeld(state, team, sys, st, C.ROLES.BLACKSMITH, 'wood', 'to forge spears, tools & siege');
   // AI can't play the forging minigame — roll a quality tier from its difficulty distribution.

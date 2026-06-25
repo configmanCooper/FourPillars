@@ -150,10 +150,17 @@
     armor:      { cost: { iron: 12 },          time: 14, batch: 3 },
     siegeParts: { cost: { wood: 30, iron: 20 },time: 24, batch: 1, needs: 'siege' },
   };
+  // The Blacksmith specialises in ONE forgeable item — that item forges SPEC_TIME_REDUCTION (10%)
+  // faster. (Keyed by the item so blacksmithSpec stores the item name directly.)
+  const SPEC_TIME_REDUCTION = 0.10;
   const BLACKSMITH_SPECS = {
-    military: { name: 'Military Forge', mult: { spears: 1.4, swords: 1.4, bows: 1.4, armor: 1.4 }, desc: 'Weapons & armour forged faster.' },
-    economic: { name: 'Economic Forge', mult: { tools: 1.6 }, toolPower: 1.4, desc: 'Tools faster & stronger.' },
-    siege:    { name: 'Siege Forge',    mult: { siegeParts: 1.6, arrows: 1.5 }, desc: 'Siege parts & arrows faster.' },
+    tools:      { name: 'Toolsmith',   item: 'tools',      glyph: '🛠️', desc: '🛠️ Tools forged 10% faster.' },
+    spears:     { name: 'Spearwright', item: 'spears',     glyph: '🔱', desc: '🔱 Spears forged 10% faster.' },
+    swords:     { name: 'Swordsmith',  item: 'swords',     glyph: '⚔️', desc: '⚔️ Swords forged 10% faster.' },
+    bows:       { name: 'Bowyer',      item: 'bows',       glyph: '🏹', desc: '🏹 Bows forged 10% faster.' },
+    arrows:     { name: 'Fletcher',    item: 'arrows',     glyph: '➷',  desc: '➷ Arrows forged 10% faster.' },
+    armor:      { name: 'Armourer',    item: 'armor',      glyph: '🛡️', desc: '🛡️ Armour forged 10% faster.' },
+    siegeParts: { name: 'Siegewright', item: 'siegeParts', glyph: '🏰', desc: '🏰 Siege parts forged 10% faster.' },
   };
   // Forge contracts: timed bonus objectives that keep the Blacksmith active (times allow for slow forging).
   const CONTRACTS = [
@@ -280,7 +287,7 @@
     CARAVAN_DISPATCH_CARGO, CARAVAN_DISPATCH_BY_RESOURCE, CARAVAN_WARN_SECONDS, CARAVAN_MIN_INTERVAL, CARAVAN_SPEED, ESCORT_PROTECT,
     GUARD_LEND_DEFAULT, GUARD_KILL_PER, GUARD_LOSS_PER, GUARD_PIN_SECONDS,
     HOST_SPEED_MULT, CAVALRY_SPEED_MULT, PURSUIT_CATCH_RADIUS, PURSUIT_TIMEOUT,
-    RECIPES, BLACKSMITH_SPECS, CONTRACTS, WEAPON_DEGRADE_CHANCE, QUALITY_LADDER,
+    RECIPES, BLACKSMITH_SPECS, SPEC_TIME_REDUCTION, CONTRACTS, WEAPON_DEGRADE_CHANCE, QUALITY_LADDER,
     UNIT_STATS, EQUIP_TIER_MULT, ARMOR_DEF_BONUS, FORMATIONS, STANCES, DOCTRINES, MILITARY_POLICIES, MILITARY_POLICY_DEFAULT, WALL_TROOP_BONUS, WALL_ARCHER_BONUS,
     BUILDING_RAZE_HP, RAZE_STAT, WALL_RAZE_MULT, KEEP_RAZE_MULT, KEEP_DEFENDER_BONUS, MAX_UNITS_PER_AREA, RAZE_POINTS, KEEP_RAZE_POINTS, CAPTURE_AFTER_RAZE,
     QUALITY_TIERS, FORGE_ZONES, AI_QUALITY_DIST, UNIT_WEAPON, qualityTier, qualityById, rollQuality,

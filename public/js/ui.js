@@ -965,20 +965,28 @@
 
   // ---- Blacksmith forging minigame ----
   let mg = null;
+  // A random horizontal centre for the yellow/green target band, kept fully on the bar (and off the
+  // extreme edges where the ball starts) — the band is repositioned after every strike.
+  function randomForgeCenter() {
+    const half = B.FORGE_ZONES.yellowFrac / 2;
+    const lo = Math.max(half, 0.15), hi = Math.min(1 - half, 0.85);
+    return lo + Math.random() * (hi - lo);
+  }
   function forgeMinigame(item, qty) {
     const recipe = B.RECIPES[item]; if (!recipe) return;
     const clicks = Math.max(1, Math.round(recipe.time));
     if (mg && mg.raf) cancelAnimationFrame(mg.raf);
-    mg = { item, qty, clicks, left: clicks, score: 0, pos: 0, dir: 1, last: 0, speed: 92, raf: null, done: false };
+    mg = { item, qty, clicks, left: clicks, score: 0, pos: 0, dir: 1, last: 0, speed: 92, raf: null, done: false, center: randomForgeCenter() };
     renderMinigame();
   }
   function renderMinigame() {
     const Z = B.FORGE_ZONES; const meta = C.EQUIP_META[mg.item] || { glyph: '🏹', name: 'Arrows' };
-    const yL = (0.5 - Z.yellowFrac / 2) * 100, yW = Z.yellowFrac * 100;
-    const gL = (0.5 - Z.greenFrac / 2) * 100, gW = Z.greenFrac * 100;
+    const c = mg.center;
+    const yL = (c - Z.yellowFrac / 2) * 100, yW = Z.yellowFrac * 100;
+    const gL = (c - Z.greenFrac / 2) * 100, gW = Z.greenFrac * 100;
     const maxScore = mg.clicks * Z.scoreGreen;
-    const html = '<div class="muted">Strike when the ⚪ ball is in the <b style="color:#6fae5f">green</b> (+' + Z.scoreGreen + '), <b style="color:#d9a441">yellow</b> (+' + Z.scoreYellow + '), or red (+' + Z.scoreRed + '). ' + mg.clicks + ' strikes. Click fast and quality suffers!</div>' +
-      '<div class="forge-bar" id="forgeBar"><div class="fz-yellow" style="left:' + yL + '%;width:' + yW + '%"></div><div class="fz-green" style="left:' + gL + '%;width:' + gW + '%"></div><div class="fz-hit" id="forgeHit"></div><div class="fz-ball" id="forgeBall"></div></div>' +
+    const html = '<div class="muted">Strike when the ⚪ ball is in the <b style="color:#6fae5f">green</b> (+' + Z.scoreGreen + '), <b style="color:#d9a441">yellow</b> (+' + Z.scoreYellow + '), or red (+' + Z.scoreRed + '). The target <b>moves after each strike</b>. ' + mg.clicks + ' strikes. Click fast and quality suffers!</div>' +
+      '<div class="forge-bar" id="forgeBar"><div class="fz-yellow" id="forgeYellow" style="left:' + yL + '%;width:' + yW + '%"></div><div class="fz-green" id="forgeGreen" style="left:' + gL + '%;width:' + gW + '%"></div><div class="fz-hit" id="forgeHit"></div><div class="fz-ball" id="forgeBall"></div></div>' +
       '<div class="forge-flash" id="forgeFlash">&nbsp;</div>' +
       '<div class="forge-stat">Strikes left: <b id="fgLeft">' + mg.left + '</b> · Score: <b id="fgScore">' + mg.score + '</b> / ' + maxScore + '</div>' +
       '<button class="btn btn-gold" id="forgeStrike" style="width:100%;font-size:16px;padding:10px">⚒️ Strike ' + meta.glyph + '</button>' +
@@ -999,8 +1007,9 @@
   function forgeStrike() {
     if (!mg || mg.done) return;
     const Z = B.FORGE_ZONES;
-    const gL = (0.5 - Z.greenFrac / 2) * 100, gR = (0.5 + Z.greenFrac / 2) * 100;
-    const yL = (0.5 - Z.yellowFrac / 2) * 100, yR = (0.5 + Z.yellowFrac / 2) * 100;
+    const c = mg.center;
+    const gL = (c - Z.greenFrac / 2) * 100, gR = (c + Z.greenFrac / 2) * 100;
+    const yL = (c - Z.yellowFrac / 2) * 100, yR = (c + Z.yellowFrac / 2) * 100;
     const p = mg.pos;
     const inGreen = p >= gL && p <= gR, inYellow = p >= yL && p <= yR;
     const pts = inGreen ? Z.scoreGreen : inYellow ? Z.scoreYellow : Z.scoreRed;
@@ -1010,6 +1019,11 @@
     const flash = $('forgeFlash');
     if (flash) { flash.textContent = (inGreen ? '+' + pts + ' GREEN!' : inYellow ? '+' + pts + ' yellow' : '+' + pts + ' red'); flash.style.color = inGreen ? '#6fae5f' : inYellow ? '#d9a441' : '#c8553d'; flash.classList.remove('pop'); void flash.offsetWidth; flash.classList.add('pop'); }
     mg.left -= 1; mg.pos = 0; mg.dir = 1; // reset ball to the left
+    // Relocate the target band for the next strike (same sizes, green stays centred in yellow).
+    mg.center = randomForgeCenter();
+    const yEl = $('forgeYellow'), gEl = $('forgeGreen');
+    if (yEl) yEl.style.left = ((mg.center - Z.yellowFrac / 2) * 100) + '%';
+    if (gEl) gEl.style.left = ((mg.center - Z.greenFrac / 2) * 100) + '%';
     if ($('fgLeft')) $('fgLeft').textContent = mg.left;
     if ($('fgScore')) $('fgScore').textContent = mg.score;
     if (mg.left <= 0) finishMinigame();
@@ -1035,9 +1049,9 @@
     const snap = State.snapshot, team = State.teamState();
     const cd = Math.max(0, Math.ceil((team.blacksmithSpecCooldownUntil || 0) - snap.elapsed));
     const onCd = team.blacksmithSpec && cd > 0;
-    let html = '<div class="muted">Set your forge focus. Current: <b>' + (team.blacksmithSpec ? B.BLACKSMITH_SPECS[team.blacksmithSpec].name : 'none') + '</b>.' +
-      (onCd ? ' <span style="color:#d9a441">Change available in ' + Math.floor(cd / 60) + ':' + String(cd % 60).padStart(2, '0') + '.</span>' : ' Changing locks the forge focus for 3 minutes.') + '</div>';
-    for (const k in B.BLACKSMITH_SPECS) { const s = B.BLACKSMITH_SPECS[k]; html += optRow(s.name, s.desc, '', team.blacksmithSpec === k ? 'Active' : 'Focus', () => Net.action('setSpec', { spec: k }), team.blacksmithSpec === k || onCd, onCd ? 'On cooldown' : ''); }
+    let html = '<div class="muted">Pick <b>one item</b> to specialise in — your forge makes it <b>10% faster</b>. Current: <b>' + (team.blacksmithSpec ? B.BLACKSMITH_SPECS[team.blacksmithSpec].name : 'none') + '</b>.' +
+      (onCd ? ' <span style="color:#d9a441">Change available in ' + Math.floor(cd / 60) + ':' + String(cd % 60).padStart(2, '0') + '.</span>' : ' Changing locks the focus for 3 minutes.') + '</div>';
+    for (const k in B.BLACKSMITH_SPECS) { const s = B.BLACKSMITH_SPECS[k]; html += optRow((s.glyph ? s.glyph + ' ' : '') + s.name, s.desc, '', team.blacksmithSpec === k ? 'Active' : 'Focus', () => Net.action('setSpec', { spec: k }), team.blacksmithSpec === k || onCd, onCd ? 'On cooldown' : ''); }
     openModal('Forge Specialization', html, modalSpec);
   }
 

@@ -9,7 +9,7 @@ function forgeSpeedMult(team, item) {
   const pol = eco.policy(team);
   if (pol && pol.forgeMult) m *= pol.forgeMult;
   const spec = team.blacksmithSpec ? B.BLACKSMITH_SPECS[team.blacksmithSpec] : null;
-  if (spec && spec.mult && spec.mult[item]) m *= spec.mult[item];
+  if (spec && spec.item === item) m *= 1 / (1 - B.SPEC_TIME_REDUCTION);  // chosen specialty forges 10% faster
   return m;
 }
 

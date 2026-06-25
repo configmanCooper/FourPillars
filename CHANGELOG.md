@@ -32,9 +32,16 @@ development milestone, newest first.
   `shared/`) to GitHub Pages on push; `render.yaml` one‑click‑deploys the whole app (client +
   realtime server) to Render.
 - Headless/regression tests: `lord-reservations-check`, `commander-interdict-check`,
-  `claim-hold-check`, `outpost-rules-check`, `steward-logistics-check`, and `ui16`–`ui20`.
+  `claim-hold-check`, `outpost-rules-check`, `forge-spec-check`, `forge-minigame-check`,
+  `steward-logistics-check`, and `ui16`–`ui20`.
 
 ### Changed
+- **Blacksmith specialisation is now per‑item.** Pick exactly one forgeable item (tools, spears,
+  swords, bows, arrows, armour, or siege parts) to specialise in; it forges **10% faster**. (Replaces
+  the three broad "Military / Economic / Siege Forge" focuses.)
+- **Forging minigame target moves.** The yellow/green band now jumps to a new random position after
+  every strike (both zones keep their size and green stays centred in yellow), so timing can't be
+  memorised.
 - **Outpost claiming requires a minimum 10‑wood instalment.** The Steward can still pay for an
   outpost in instalments, but must commit at least 10 🪵 at a time (or the remainder) — no dribbling
   one wood at a time.
