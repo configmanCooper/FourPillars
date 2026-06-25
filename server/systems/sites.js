@@ -48,8 +48,12 @@ function claim(state, team, areaId) {
   const held = eco.heldCostForRole(team, 'STEWARD', B.CLAIM_COST);
   if (held) return { ok: false, reason: (C.RESOURCE_META[held] ? C.RESOURCE_META[held].name : held) + ' is reserved by the Lord — ask to access it.' };
   const have = team.resources.wood || 0;
-  if (have < 1) return { ok: false, reason: 'No 🪵 wood to put toward the outpost — gather some or ask the council.' };
-  const pay = Math.min(have, need - paid);
+  // Minimum commitment: the Steward must put at least CLAIM_MIN_INSTALMENT wood toward an outpost at a
+  // time (or the remainder, if less than that is left to pay) — no dribbling 1 wood at a time.
+  const remaining = need - paid;
+  const minPay = Math.min(B.CLAIM_MIN_INSTALMENT, remaining);
+  if (have < minPay) return { ok: false, reason: 'You must commit at least ' + minPay + ' 🪵 wood toward the outpost — gather more first.' };
+  const pay = Math.min(have, remaining);
   eco.spendFor(team, { wood: pay }, 'STEWARD', 'funding outpost at ' + area.name);
   paid += pay;
   if (paid >= need) {

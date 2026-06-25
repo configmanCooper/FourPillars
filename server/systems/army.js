@@ -733,10 +733,13 @@ function tickRaze(state, dt, rng, log) {
       // Non-base: all buildings razed → seize the site after a short hold.
       area.captureProgress = (area.captureProgress || 0) + dt;
       if (area.captureProgress >= B.CAPTURE_AFTER_RAZE) {
-        area.owner = foe; area.claimedBy = foe; area.captureProgress = 0; area._razeHp = null; area._razeTarget = null;
-        if (area.site) { area.site.cargo = 0; area.site.worked = true; }
+        // Taking the ground DESTROYS the outpost: the captor owns the territory but must build a brand
+        // new outpost (re-claim, pay wood again) to work the site — upgrades and stored cargo are lost.
+        area.owner = foe; area.claimedBy = null; area.captureProgress = 0; area._razeHp = null; area._razeTarget = null;
+        area.claimFund = null; area.revealed[foe] = true;
+        if (area.site) { area.site.cargo = 0; area.site.worked = false; area.site.level = 1; }
         S.recomputeBuildings(state, state.teams[owner]); S.recomputeBuildings(state, state.teams[foe]);
-        log(foe, C.TEAM_META[foe].name + ' seized ' + area.name + '!', 'capture');
+        log(foe, C.TEAM_META[foe].name + ' razed the outpost at ' + area.name + ' and seized the ground!', 'capture');
       }
       continue;
     }

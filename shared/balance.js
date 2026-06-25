@@ -95,6 +95,7 @@
   const EXPLORE_TIME = 6;               // seconds to reveal an area
   const CLAIM_TIME = 8;                 // seconds to claim a revealed neutral site
   const CLAIM_COST = { wood: 40 };
+  const CLAIM_MIN_INSTALMENT = 10;      // the Steward must commit at least this much wood per instalment
 
   // Outpost work modes (Steward): trade safety for output. Worker loss only ever happens on PUSH at a
   // genuinely enemy-contested site, and is rare + capped + floored (see sites.js).
@@ -274,7 +275,7 @@
     TRAINERS_PER_BARRACKS, TRAIN_SECONDS_PER_UNIT, EDU_SECONDS, COOLDOWN_ORDINARY, COOLDOWN_EDUCATED,
     BUILDINGS, MAX_PER_BUILDING, POLICIES,
     BUILD_SLOTS_BASE, BUILD_SLOTS_SITE, SITE_WALL_RESIST, CAPTURE_TIME_BASE, CAPTURE_DECAY,
-    SITE_YIELD, SITE_UPGRADE_COST, SITE_UPGRADE_MULT, EXPLORE_TIME, CLAIM_TIME, CLAIM_COST,
+    SITE_YIELD, SITE_UPGRADE_COST, SITE_UPGRADE_MULT, EXPLORE_TIME, CLAIM_TIME, CLAIM_COST, CLAIM_MIN_INSTALMENT,
     WORK_MODES, POP_FLOOR, EXPEDITIONS, EXPEDITION_COOLDOWN,
     CARAVAN_DISPATCH_CARGO, CARAVAN_DISPATCH_BY_RESOURCE, CARAVAN_WARN_SECONDS, CARAVAN_MIN_INTERVAL, CARAVAN_SPEED, ESCORT_PROTECT,
     GUARD_LEND_DEFAULT, GUARD_KILL_PER, GUARD_LOSS_PER, GUARD_PIN_SECONDS,

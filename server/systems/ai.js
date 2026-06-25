@@ -401,7 +401,9 @@ function aiSteward(state, team, sys, rng, persona, st) {
   // Claim — priority by persona + current shortage.
   if (!st.acted && !team._busyJob) {
     const cand = [];
-    for (const id in state.areas) { const a = state.areas[id]; if (a.revealed[team.team] && a.site && a.terrain !== 'base' && !a.owner) cand.push(a); }
+    // Claimable: revealed neutral sites, AND our own ground whose outpost was destroyed when we took
+    // it (owner is us but no working outpost yet) — so the Steward rebuilds outposts on captured land.
+    for (const id in state.areas) { const a = state.areas[id]; if (a.revealed[team.team] && a.site && a.terrain !== 'base' && (!a.owner || (a.owner === team.team && a.claimedBy !== team.team))) cand.push(a); }
     cand.sort((x, y) => sitePrio(team, persona, y) - sitePrio(team, persona, x));
     for (const a of cand) {
       // Cautious steward won't claim next to an enemy host.

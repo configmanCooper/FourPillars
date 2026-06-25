@@ -32,9 +32,15 @@ development milestone, newest first.
   `shared/`) to GitHub Pages on push; `render.yaml` one‑click‑deploys the whole app (client +
   realtime server) to Render.
 - Headless/regression tests: `lord-reservations-check`, `commander-interdict-check`,
-  `claim-hold-check`, `steward-logistics-check`, and `ui16`–`ui20`.
+  `claim-hold-check`, `outpost-rules-check`, `steward-logistics-check`, and `ui16`–`ui20`.
 
 ### Changed
+- **Outpost claiming requires a minimum 10‑wood instalment.** The Steward can still pay for an
+  outpost in instalments, but must commit at least 10 🪵 at a time (or the remainder) — no dribbling
+  one wood at a time.
+- **Capturing a location now destroys its outpost.** The captor takes the ground but the working
+  outpost (and its upgrades/stored cargo) is razed — they must build a brand‑new outpost (re‑claim,
+  pay wood again) to work the site. The AI rebuilds outposts on captured land automatically.
 - **Combat model reworked** to a per‑second resolution: each side rolls discrete casualties
   (0/1/2/3 kills, higher counts rarer) weighted by a host **strength comparison**, followed by an
   independent **armour save** per fallen soldier (≈10% standard → 30% legendary). Weapon and arrow

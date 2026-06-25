@@ -368,7 +368,7 @@
       const adj = a.connections.some((n) => snap.areas[n].revealed && snap.areas[n].revealed[State.myTeam]);
       if (!revealed) btns += btn('Scout', "FP.UI.act('explore',{areaId:'" + a.id + "'})", !adj);
       else {
-        if (a.site && !a.owner) btns += btn(claimLabel(a), "FP.UI.act('claim',{areaId:'" + a.id + "'})");
+        if (a.site && (!a.owner || (a.owner === State.myTeam && a.claimedBy !== State.myTeam))) btns += btn(claimLabel(a), "FP.UI.act('claim',{areaId:'" + a.id + "'})");
         if (a.site && a.claimedBy === State.myTeam) { btns += btn('Upgrade', "FP.UI.act('upgradeSite',{areaId:'" + a.id + "'})"); btns += btn('Abandon', "FP.UI.act('abandon',{areaId:'" + a.id + "'})"); }
       }
     }
@@ -865,7 +865,7 @@
       const rev = a.revealed[State.myTeam];
       let act = '', fn = '', keepOpen = false, desc = '';
       if (!rev && a.connections.some((n) => snap.areas[n].revealed[State.myTeam])) { act = 'Scout'; fn = "FP.UI.act('explore',{areaId:'" + id + "'})"; desc = 'unexplored — scout to reveal'; }
-      else if (rev && a.site && !a.owner) { act = claimLabel(a); fn = "FP.UI.act('claim',{areaId:'" + id + "'})"; keepOpen = true; const m = C.RESOURCE_META[a.resource]; const yld = (B.SITE_YIELD[a.terrain] || {})[a.resource] || 0; desc = 'neutral · ' + (m ? m.glyph + ' ' + a.resource : a.resource) + ' (~' + yld.toFixed(2) + '/s at Lv1)'; }
+      else if (rev && a.site && (!a.owner || (a.owner === State.myTeam && a.claimedBy !== State.myTeam))) { act = claimLabel(a); fn = "FP.UI.act('claim',{areaId:'" + id + "'})"; keepOpen = true; const m = C.RESOURCE_META[a.resource]; const yld = (B.SITE_YIELD[a.terrain] || {})[a.resource] || 0; desc = (a.owner === State.myTeam ? 'your ground · outpost destroyed — rebuild · ' : 'neutral · ') + (m ? m.glyph + ' ' + a.resource : a.resource) + ' (~' + yld.toFixed(2) + '/s at Lv1)'; }
       else if (rev && a.owner && a.owner !== State.myTeam) { desc = 'enemy-held'; }
       else continue;
       if (act) any = true;

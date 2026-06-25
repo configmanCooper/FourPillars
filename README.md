@@ -159,9 +159,11 @@ threat pulses visualise it.
 Lobby with 8 human/AI seats & reconnect • authoritative tick sim • full economy (workers,
 food, growth, storage) • **per-location buildings** (each owned location has limited build
 slots; effects are kingdom-wide but razed if the location is **captured**) • 9 buildings +
-queue + policies • resource sites, exploration, claiming, upgrading, **caravans with ambush +
+queue + policies • resource sites, exploration, claiming (min 10‑wood instalments), upgrading,
+**caravans with ambush +
 escort** • Blacksmith queue, equipment, **arrows**, contracts, specialization • army
-muster/rally, missions, formations, stances, doctrine, **escorts**, **site capture** •
+muster/rally, missions, formations, stances, doctrine, **escorts**, **site capture** (taking a
+location **destroys its outpost** — the captor must build a new one) •
 abstracted combat, sieges, Keep HP • world events • full AI for every role on both teams that
 also uses the comms/request system • Kingdom Score + dual victory conditions • heraldic Canvas
 rendering (terrain blobs, pennants, fog, units, caravans, particles, **per-node build-slot pips
