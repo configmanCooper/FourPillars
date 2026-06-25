@@ -25,7 +25,7 @@ army.garrison(st, R).units = units({ militia: 4 });
 let ordered = false;
 for (let i = 0; i < 40 && !ordered; i++) {
   sim.step(st);
-  ordered = B.armies.some((h) => !h.isGarrison && army.unitCount(h) >= 2 && h.mission && (h.mission.type === 'raid') && (h.mission.targetArea === 'west_quarry' || army.currentArea(h) === 'west_quarry'));
+  ordered = B.armies.some((h) => !h.isGarrison && army.unitCount(h) >= 2 && h.mission && (h.mission.type === 'raid' || h.mission.type === 'garrison') && (h.mission.targetArea === 'west_quarry' || army.currentArea(h) === 'west_quarry'));
 }
 assert(ordered, 'Commander committed a strong host to retake West Quarry');
 

@@ -32,7 +32,12 @@ function step(state) {
   state.elapsed = Math.min(state.matchLength, state.elapsed + dt);
   economy.updatePhase(state);
 
-  for (const team of [state.teams.BLUE, state.teams.RED]) {
+  // Alternate which team is processed first each tick — otherwise the same team always acts first
+  // every tick (claiming, attacking, reacting before the other), a systematic edge the aggressive AI
+  // amplifies into a lopsided win rate. Alternating keeps the simulation fair between equal AIs.
+  const order = (state.tick % 2 === 0) ? [state.teams.BLUE, state.teams.RED] : [state.teams.RED, state.teams.BLUE];
+
+  for (const team of order) {
     S.recomputeBuildings(state, team);
     economy.pruneHolds(state, team);
     economy.tickEconomy(state, team, dt);
@@ -47,7 +52,7 @@ function step(state) {
   army.tickRaze(state, dt, rng, log);
   events.tickEvents(state, rng, log);
 
-  for (const team of [state.teams.BLUE, state.teams.RED]) {
+  for (const team of order) {
     try { ai.aiTick(state, team, dt, SYSTEMS, rng); } catch (e) {}
   }
   for (const team of [state.teams.BLUE, state.teams.RED]) {

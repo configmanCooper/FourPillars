@@ -9,6 +9,20 @@ development milestone, newest first.
 ## [Unreleased]
 
 ### Added
+- **Much smarter, opportunistic Commander AI.** The Commander now plays to win on **strength
+  comparisons**, not fixed scripts:
+  - **Seizes undefended enemy posts.** It scans for enemy‑held posts it can win at and grabs them —
+    **taking and holding** them with a garrison when it can defend the ground, or **hit‑and‑run**
+    raiding (raze/deny and stay mobile) when it can't.
+  - **Stays/chases when winning, retreats when losing.** Each host weighs the local win‑chance
+    (its strength + nearby friends vs enemy on/adjacent to the target); it commits to fights it can
+    win and **falls back to consolidate** with a stronger host (or the Keep) when outmatched, instead
+    of feeding a losing battle.
+  - **Garrisons the frontier.** It keeps a right‑sized standing guard on owned frontier posts
+    (including ground just captured) so they aren't snatched the moment the field army moves on.
+  - **Knows when it can't afford to harass.** The home guard now scales with the enemy strength on
+    the Keep's doorstep, so it holds troops back to defend when pressured and commits them when the
+    rear is safe.
 - **Expandable soldier roster in the Military Overview.** Each equipped unit type (swordsman,
   spearman, archer, cavalry, catapult) in *Army composition* now has an expand/collapse toggle that
   lists **every individual soldier** of that type — across all hosts — with their own weapon and
@@ -36,7 +50,8 @@ development milestone, newest first.
   `shared/`) to GitHub Pages on push; `render.yaml` one‑click‑deploys the whole app (client +
   realtime server) to Render.
 - Headless/regression tests: `lord-reservations-check`, `commander-interdict-check`,
-  `commander-counterattack-check`, `claim-hold-check`, `outpost-rules-check`, `forge-spec-check`,
+  `commander-counterattack-check`, `commander-strength-check`, `commander-opportunism-check`,
+  `claim-hold-check`, `outpost-rules-check`, `forge-spec-check`,
   `forge-minigame-check`, `steward-logistics-check`, and `ui16`–`ui21`.
 
 ### Changed
@@ -67,6 +82,9 @@ development milestone, newest first.
   mini‑game strikes to match), tool lifetime set to ~300s.
 
 ### Fixed
+- **Fair per‑tick team order.** The simulation always processed BLUE before RED every tick (economy,
+  movement, AI), a small but systematic first‑mover edge the smarter aggressive AI amplified into a
+  lopsided win rate. The order now alternates each tick so two equal AIs compete fairly.
 - **Commander parked a strong host at the Keep instead of retaking lost posts.** When an enemy held
   a post bordering the Keep (e.g. a captured West Quarry), the biggest host was assigned to passively
   "defend" the Keep against a tiny adjacent force while the post went untaken. Now the Commander only

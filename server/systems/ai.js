@@ -611,7 +611,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
   // actually home and stationary (otherwise folding would teleport troops across the map).
   if (army.currentArea(g) === home && !g.moving) {
     for (const h of team.armies) {
-      if (h.isGarrison || h.moving || h.harasser) continue;
+      if (h.isGarrison || h.moving || h.harasser || h.postGuard) continue;
       const m = h.mission && h.mission.type;
       if (army.currentArea(h) === home && army.unitCount(h) >= 0.5 && (!m || m === 'idle' || m === 'defend')) {
         let room = B.MAX_UNITS_PER_AREA - army.unitCount(g);
@@ -628,6 +628,11 @@ function aiCommander(state, team, sys, rng, persona, st) {
   const vulnerable = team.keep.hp < team.keep.maxHp * 0.55 || edge < 0.7;
   if (vulnerable) aggr -= 1;                              // pull in our horns when weak/threatened
   else if (edge > 1.4) aggr += 1;                         // press a clear advantage
+  // Strength-aware engagement: commit to a fight only with a winning matchup, and pull back when
+  // outmatched. Aggressive personas/advantage accept worse odds; cautious ones want a clear edge.
+  const winBar = Math.max(0.40, Math.min(0.62, 0.52 - aggr * 0.04));   // engage if local win-chance ≥ this
+  const retreatBar = Math.max(0.26, winBar - 0.16);                    // fall back / consolidate if below this
+  const holdBar = Math.max(0.58, winBar + 0.10);                       // only KEEP a captured post if we can clearly hold it
 
   // Defence priorities: the Keep is paramount, then owned sites by building count (most-built first).
   const threats = enemyThreats(state, team);
@@ -644,7 +649,9 @@ function aiCommander(state, team, sys, rng, persona, st) {
 
   let war = team.armies.find((h) => !h.isGarrison && army.unitCount(h) >= 0.5);
   const garStr = army.unitCount(g);
-  const reserve = clampI(3 - aggr, 2, 4);                            // small home guard — commit the rest
+  // Home guard scales with the threat on our doorstep: hold more back when the enemy masses near the
+  // Keep (so we don't strip defenders to go harassing), commit nearly everything when the rear is safe.
+  const reserve = clampI(3 - aggr + Math.min(7, kt.adj * 0.7), 2, 10);
   const campaignSize = clampI(7 - aggr, 6, 9);                       // raise only substantial hosts (can break a Keep)
   const maxHosts = clampI(2 + (state.phase === 'LATE' ? 1 : 0), 2, 3); // a strong main host + a raiding party
 
@@ -663,6 +670,16 @@ function aiCommander(state, team, sys, rng, persona, st) {
       say(state, team, sys, st, C.ROLES.COMMANDER, ekBuildings <= 1 ? 'Their Keep is all but ours — END THIS!' : 'Press the assault on the enemy Keep!', 16);
       return;
     }
+    // Outmatched in the open field (not at home, no near-won siege)? Fall back and CONSOLIDATE with a
+    // stronger friendly host (or the Keep) rather than feeding a losing fight piecemeal.
+    const myArea = army.currentArea(w);
+    if (myArea !== home && winChanceAt(state, army, team, w, myArea) < retreatBar) {
+      const dest = consolidateTarget(state, army, team, w);
+      if (dest === home) { army.command(state, team, w.id, 'defend'); }
+      else { army.command(state, team, w.id, 'garrison', dest); }
+      say(state, team, sys, st, C.ROLES.COMMANDER, 'Outmatched — pulling back to regroup.', 16);
+      return;
+    }
     // Contest an owned site the enemy is physically ON (raiding it) — march in and fight them off.
     // One host per site (claimed). Mere adjacency is answered by counter-attacking below, NOT by
     // parking a host at home (that was the bug: a 20-strong host sat idle vs a 2-unit probe).
@@ -671,12 +688,20 @@ function aiCommander(state, team, sys, rng, persona, st) {
       const t = threats.find((x) => x.here && !claim[x.area]);
       if (t) { claim[t.area] = true; army.command(state, team, w.id, 'garrison', t.area); say(state, team, sys, st, C.ROLES.COMMANDER, 'Driving the enemy off ' + state.areas[t.area].name + '!', 14); return; }
     }
-    // Counter-attack: an enemy host or enemy-held post sitting next to OUR land — march out and take it,
-    // retaking lost ground and clearing the threat instead of cowering at the Keep.
+    // Counter-attack: an enemy host or enemy-held post sitting next to OUR land — march out and take it
+    // if we can win there. Hold it (garrison) when we can also defend it; otherwise hit-and-run.
     if (!vulnerable && army.unitCount(w) >= 2) {
       const claimed = (decide._claimed = decide._claimed || {});
       const ct = counterTarget(state, team, claimed);
-      if (ct) { claimed[ct] = true; army.command(state, team, w.id, 'raid', ct); say(state, team, sys, st, C.ROLES.COMMANDER, 'Retaking ' + state.areas[ct].name + '!', 16); return; }
+      if (ct && winChanceAt(state, army, team, w, ct) >= winBar) {
+        claimed[ct] = true;
+        if (holdChanceAt(state, army, team, w, ct) >= holdBar && army.unitCount(w) >= 3) {
+          w.postGuard = ct; army.command(state, team, w.id, 'garrison', ct); say(state, team, sys, st, C.ROLES.COMMANDER, 'Retaking &amp; holding ' + state.areas[ct].name + '!', 16);
+        } else {
+          w.postGuard = null; army.command(state, team, w.id, 'raid', ct); say(state, team, sys, st, C.ROLES.COMMANDER, 'Retaking ' + state.areas[ct].name + '!', 16);
+        }
+        return;
+      }
     }
     if (!vulnerable) {
       const cv = team.caravans.find((c) => { const n = c.route[c.legIndex + 1]; return !c.escort && n && sys.sites.areaIsDangerous(state, team, n); });
@@ -687,8 +712,8 @@ function aiCommander(state, team, sys, rng, persona, st) {
       const ic = caravanIntercept(state, team, w);
       if (ic) { army.command(state, team, w.id, 'garrison', ic); say(state, team, sys, st, C.ROLES.COMMANDER, 'Hunting an enemy caravan near ' + state.areas[ic].name + '!', 16); return; }
     }
-    // Offence — be opportunistic. SIEGE the enemy Keep when it's weak/exposed (their army is away) or
-    // late; otherwise RAID enemy land readily (even near parity — raids deny economy and score points).
+    // Offence — be opportunistic but pick fights we can WIN (local strength comparison). SIEGE the enemy
+    // Keep when it's weak/exposed and we out-muscle its defenders; otherwise RAID winnable enemy land.
     const wn = army.unitCount(w);
     const keepWeak = enemyTeam.keep.hp < enemyTeam.keep.maxHp * 0.6;
     const ekDefenders = enemyTeam.armies.reduce((s, h) => s + (army.currentArea(h) === ekArea.id ? army.unitCount(h) : 0), 0);
@@ -696,14 +721,28 @@ function aiCommander(state, team, sys, rng, persona, st) {
     const canRaid = !vulnerable && edge >= (0.85 - aggr * 0.1);
     const canSiege = !vulnerable && edge >= (1.0 - aggr * 0.12);
     const siegeSize = clampI(5 - aggr, 3, 8);
-    if (canSiege && wn >= siegeSize && (state.phase === 'LATE' || keepWeak || keepExposed || edge > 1.25)) {
+    if (canSiege && wn >= siegeSize && winChanceAt(state, army, team, w, ekArea.id) >= winBar && (state.phase === 'LATE' || keepWeak || keepExposed || edge > 1.25)) {
       army.command(state, team, w.id, 'siege'); say(state, team, sys, st, C.ROLES.COMMANDER, keepExposed ? 'Their Keep lies open — march on it!' : 'The host marches on the enemy Keep!', 18); req(state, team, sys, st, C.ROLES.COMMANDER, C.ROLES.BLACKSMITH, 'EQUIPMENT', {}, 30); return;
     }
-    if (canRaid) {
-      const tgt = bestAttackTarget(state, team, decide._claimed);
-      if (tgt) { (decide._claimed = decide._claimed || {})[tgt] = true; army.command(state, team, w.id, 'raid', tgt); say(state, team, sys, st, C.ROLES.COMMANDER, 'Striking enemy land at ' + state.areas[tgt].name + '!', 22); return; }
+    if (canRaid && army.unitCount(w) >= 2) {
+      // Opportunistic capture: snap up an enemy/undefended post we can WIN at. If we can also HOLD it,
+      // take it and leave this host to garrison (take-and-hold when dominant); otherwise hit-and-run —
+      // raze/deny the post and stay mobile (take it, then move on / pull back).
+      const claimed2 = (decide._claimed = decide._claimed || {});
+      const opp = captureOpportunity(state, army, team, w, winBar, holdBar, claimed2);
+      if (opp) {
+        claimed2[opp.area] = true;
+        if (opp.hold && army.unitCount(w) >= 3) {
+          w.postGuard = opp.area; army.command(state, team, w.id, 'garrison', opp.area);
+          say(state, team, sys, st, C.ROLES.COMMANDER, 'Taking and holding ' + state.areas[opp.area].name + '!', 16);
+        } else {
+          w.postGuard = null; army.command(state, team, w.id, 'raid', opp.area);
+          say(state, team, sys, st, C.ROLES.COMMANDER, 'Raiding ' + state.areas[opp.area].name + ' — hit and run!', 16);
+        }
+        return;
+      }
     }
-    // Nothing to assault right now: hold FORWARD ground near the enemy (project power), never idle at home.
+    // Nothing winnable to assault right now: hold FORWARD ground near the enemy (project power), never idle at home.
     army.command(state, team, w.id, 'garrison', forwardSite(state, team) || bestSiteToHold(state, team) || home);
   };
 
@@ -718,6 +757,20 @@ function aiCommander(state, team, sys, rng, persona, st) {
     if (ic) { tgt = ic; say(state, team, sys, st, C.ROLES.COMMANDER, 'Outriders fall on an enemy caravan at ' + state.areas[ic].name + '!', 22); }
     if (!tgt) tgt = forwardSite(state, team) || home;
     if (army.currentArea(w) !== tgt || w.moving) army.command(state, team, w.id, 'garrison', tgt);
+  };
+
+  // A post-guard holds ONE owned frontier outpost. It stays put while it can hold the post; if the post
+  // is lost or it becomes badly outmatched there, it stops guarding and falls back to consolidate.
+  const guardPost = (w) => {
+    const post = w.postGuard;
+    if (keepThreat) { w.postGuard = null; army.command(state, team, w.id, 'defend'); return; }
+    if (!post || !state.areas[post] || state.areas[post].owner !== team.team) { w.postGuard = null; decide(w); return; }
+    if (winChanceAt(state, army, team, w, post) < retreatBar) {
+      w.postGuard = null; const dest = consolidateTarget(state, army, team, w);
+      if (dest === home) army.command(state, team, w.id, 'defend'); else army.command(state, team, w.id, 'garrison', dest);
+      say(state, team, sys, st, C.ROLES.COMMANDER, 'Falling back from ' + state.areas[post].name + ' — outmatched.', 18); return;
+    }
+    if (army.currentArea(w) !== post || w.moving) army.command(state, team, w.id, 'garrison', post);
   };
 
   // ---- Orchestrate ALL hosts: keep every field host busy, and raise extra raiding parties from the
@@ -754,15 +807,26 @@ function aiCommander(state, team, sys, rng, persona, st) {
         const m = h.mission && h.mission.type;
         if (!m || m === 'idle' || m === 'engage' || m === 'defend' || m === 'garrison') {
           if (h.harasser) harass(h);
+          else if (h.postGuard) guardPost(h);
           else { reinforceHost(h); decide(h); }
         }
       }
-      // Raise more main raiding parties from the garrison surplus (the harasser doesn't count toward the cap).
+      // Keep a small standing garrison on each FRONTIER outpost (owned post bordering the enemy) so it
+      // isn't snatched the moment the field army is elsewhere — drawn from spare home strength.
+      let gpGuard = 0;
+      for (const pid of ownedFrontierPosts(state, team)) {
+        if (team.armies.some((h) => (h.postGuard === pid || (!h.isGarrison && army.currentArea(h) === pid && !h.moving)) && army.unitCount(h) >= 1.5)) continue; // already held
+        if (army.currentArea(g) !== home || g.moving || (army.unitCount(g) - reserve) < 3) break;     // no spare troops
+        if (gpGuard++ >= 2) break;                                                                     // a couple per think
+        const det = army.rally(state, team, smallGarrisonUnits(g, clampI(3 + aggr, 2, 4)), 'Garrison');
+        if (det.ok && army.unitCount(det.group) >= 0.5) { det.group.postGuard = pid; army.command(state, team, det.group.id, 'garrison', pid); say(state, team, sys, st, C.ROLES.COMMANDER, 'Garrisoning ' + state.areas[pid].name + '.', 20); }
+      }
+      // Raise more main raiding parties from the garrison surplus (harasser & post-guards don't count toward the cap).
       let guard = 0;
-      while (fhs().filter((h) => !h.harasser).length < maxHosts && (army.unitCount(g) - reserve) >= campaignSize && guard++ < 4) {
+      while (fhs().filter((h) => !h.harasser && !h.postGuard).length < maxHosts && (army.unitCount(g) - reserve) >= campaignSize && guard++ < 4) {
         const gs = army.unitCount(g);
         const take = Math.min(gs - reserve, B.MAX_UNITS_PER_AREA);
-        const r = army.rally(state, team, allUnits(g, Math.min(0.95, take / gs)), fhs().filter((h) => !h.harasser).length === 0 ? (state.phase === 'LATE' ? 'Grand Host' : 'War Host') : 'Raiders');
+        const r = army.rally(state, team, allUnits(g, Math.min(0.95, take / gs)), fhs().filter((h) => !h.harasser && !h.postGuard).length === 0 ? (state.phase === 'LATE' ? 'Grand Host' : 'War Host') : 'Raiders');
         if (!r.ok || army.unitCount(r.group) < 0.5) break;
         decide(r.group);
       }
@@ -869,6 +933,83 @@ function counterTarget(state, team, claimed) {
     if (score > bestScore) { bestScore = score; best = id; }
   }
   return best;
+}
+// ---- Strength-aware engagement helpers (compare host vs enemy strength to decide stay/chase/retreat) ----
+function hostStr(army, team, g) { const p = army.hostPower(team, g); return p.atk + p.def; }
+function areaOf(h) { return h.moving ? h.moving.route[h.moving.legIndex] : h.area; }
+// Enemy strength a host would face at an area: hosts ON it count fully, ADJACENT ones half (they can
+// reinforce). Lets the AI judge whether a fight there is winnable.
+function enemyStrAt(state, army, team, areaId) {
+  const foe = state.teams[S.enemyOf(team.team)]; const ar = state.areas[areaId]; let s = 0;
+  for (const h of foe.armies) { if (unitCountG(h) < 0.5) continue; const at = areaOf(h);
+    if (at === areaId) s += hostStr(army, foe, h);
+    else if (ar && ar.connections.indexOf(at) >= 0) s += hostStr(army, foe, h) * 0.5; }
+  return s;
+}
+function friendStrAt(state, army, team, areaId, exceptId) {
+  let s = 0; for (const h of team.armies) { if (h.id === exceptId || unitCountG(h) < 0.5) continue; if (areaOf(h) === areaId) s += hostStr(army, team, h); } return s;
+}
+// Win probability (share of combined strength) for host w to take/hold areaId. 1 = uncontested.
+function winChanceAt(state, army, team, w, areaId) {
+  const ours = hostStr(army, team, w) + friendStrAt(state, army, team, areaId, w.id);
+  const theirs = enemyStrAt(state, army, team, areaId);
+  if (theirs <= 0.01) return 1;
+  return ours / (ours + theirs);
+}
+// Stricter "can we HOLD this once taken?" — counts ALL enemy strength on it or one tile away at FULL
+// weight (they can converge), so we only commit to keeping posts we can actually defend.
+function holdChanceAt(state, army, team, w, areaId) {
+  const foe = state.teams[S.enemyOf(team.team)]; const ar = state.areas[areaId];
+  const ours = hostStr(army, team, w) + friendStrAt(state, army, team, areaId, w.id);
+  let theirs = 0;
+  for (const h of foe.armies) { if (unitCountG(h) < 0.5) continue; const at = areaOf(h);
+    if (at === areaId || (ar && ar.connections.indexOf(at) >= 0)) theirs += hostStr(army, foe, h); }
+  if (theirs <= 0.01) return 1;
+  return ours / (ours + theirs);
+}
+// The juiciest enemy-held (or grabbable neutral) post host w can TAKE right now — and whether we could
+// also HOLD it. Lets the AI snap up UNDEFENDED posts: keep the rich/defensible ones (garrison) and
+// hit-and-run the rest. Prefers high value, an easy fight, and ground we can hold; skips claimed posts.
+function captureOpportunity(state, army, team, w, winBar, holdBar, claimed) {
+  const foe = S.enemyOf(team.team); const ekId = S.homeBase(foe);
+  let best = null;
+  for (const id in state.areas) { const a = state.areas[id];
+    if (a.terrain === 'base' || id === ekId) continue;                  // the enemy Keep is a siege, handled apart
+    if (a.owner !== foe) continue;                                      // ENEMY-held posts only (neutrals are the Steward's job)
+    if (claimed && claimed[id]) continue;
+    const take = winChanceAt(state, army, team, w, id);
+    if (take < winBar) continue;                                        // can't win the fight there → not an opportunity
+    const hold = holdChanceAt(state, army, team, w, id) >= holdBar;
+    const value = S.buildingsAt(a) * 3 + 4 + (a.site ? a.site.level + 1 : 0);
+    const score = value + take * 5 + (hold ? 4 : 0);
+    if (!best || score > best.score) best = { area: id, hold, enemyOwned: true, score, take };
+  }
+  return best;
+}
+// Where a losing host should fall back to: a STRONGER friendly host at/adjacent to it (to combine
+// strength), else the Keep. Returns an areaId.
+function consolidateTarget(state, army, team, w) {
+  const myArea = areaOf(w); const ar = state.areas[myArea]; const home = S.homeBase(team.team);
+  let bestArea = home, bestStr = hostStr(army, team, w);
+  for (const h of team.armies) { if (h.id === w.id || unitCountG(h) < 0.5) continue; const at = areaOf(h);
+    if (at === myArea || (ar && ar.connections.indexOf(at) >= 0)) { const s = hostStr(army, team, h); if (s > bestStr) { bestStr = s; bestArea = at; } } }
+  return bestArea;
+}
+// Owned posts on the FRONTIER (ground we hold — built outpost OR captured — bordering enemy land):
+// the posts worth keeping a standing garrison on.
+function ownedFrontierPosts(state, team) {
+  const foe = S.enemyOf(team.team); const out = [];
+  for (const id in state.areas) { const a = state.areas[id];
+    if (a.owner !== team.team || a.terrain === 'base') continue;
+    if (a.connections.some((n) => state.areas[n] && state.areas[n].owner === foe)) out.push(id);
+  }
+  return out;
+}
+// A small standing garrison drawn from the home reserve — favour spearmen (cheap, hold ground, anti-cav).
+function smallGarrisonUnits(g, n) {
+  const o = {}; for (const u of C.UNITS) o[u] = 0; let need = n;
+  for (const u of ['spearman', 'militia', 'archer', 'swordsman', 'cavalry', 'catapult']) { if (need <= 0) break; const take = Math.min(Math.floor(g.units[u] || 0), need); if (take > 0) { o[u] = take; need -= take; } }
+  return o;
 }
 function bestAttackTarget(state, team, exclude) {
   const foe = S.enemyOf(team.team);
