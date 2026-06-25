@@ -663,12 +663,20 @@ function aiCommander(state, team, sys, rng, persona, st) {
       say(state, team, sys, st, C.ROLES.COMMANDER, ekBuildings <= 1 ? 'Their Keep is all but ours — END THIS!' : 'Press the assault on the enemy Keep!', 16);
       return;
     }
-    // Defend a genuinely threatened owned site — but only commit ONE host per threat (claimed), so a
-    // single enemy probe doesn't suck the whole army back; the rest stay free to interdict and raid.
+    // Contest an owned site the enemy is physically ON (raiding it) — march in and fight them off.
+    // One host per site (claimed). Mere adjacency is answered by counter-attacking below, NOT by
+    // parking a host at home (that was the bug: a 20-strong host sat idle vs a 2-unit probe).
     if (threats.length) {
       const claim = (decide._threatClaim = decide._threatClaim || {});
-      const t = threats.find((x) => !claim[x.area]);
-      if (t) { claim[t.area] = true; army.command(state, team, w.id, 'garrison', t.area); say(state, team, sys, st, C.ROLES.COMMANDER, 'Defending ' + state.areas[t.area].name + '!', 14); return; }
+      const t = threats.find((x) => x.here && !claim[x.area]);
+      if (t) { claim[t.area] = true; army.command(state, team, w.id, 'garrison', t.area); say(state, team, sys, st, C.ROLES.COMMANDER, 'Driving the enemy off ' + state.areas[t.area].name + '!', 14); return; }
+    }
+    // Counter-attack: an enemy host or enemy-held post sitting next to OUR land — march out and take it,
+    // retaking lost ground and clearing the threat instead of cowering at the Keep.
+    if (!vulnerable && army.unitCount(w) >= 2) {
+      const claimed = (decide._claimed = decide._claimed || {});
+      const ct = counterTarget(state, team, claimed);
+      if (ct) { claimed[ct] = true; army.command(state, team, w.id, 'raid', ct); say(state, team, sys, st, C.ROLES.COMMANDER, 'Retaking ' + state.areas[ct].name + '!', 16); return; }
     }
     if (!vulnerable) {
       const cv = team.caravans.find((c) => { const n = c.route[c.legIndex + 1]; return !c.escort && n && sys.sites.areaIsDangerous(state, team, n); });
@@ -841,7 +849,27 @@ function enemyThreats(state, team) {
   out.sort((x, y) => ((y.isKeep ? 1e6 : 0) + y.buildings + (y.here ? 0.5 : 0)) - ((x.isKeep ? 1e6 : 0) + x.buildings + (x.here ? 0.5 : 0)));
   return out;
 }
-// Best place to attack: enemy-claimed land (juiciest by buildings) first, then a worthwhile neutral site.
+// An enemy host — or enemy-held post — sitting NEXT TO our territory: the prime counter-attack target,
+// so a strong host marches out to clear the threat and retake the ground rather than parking at home.
+// Prefers posts with an enemy host on them, bordering our Keep, and richer ground. Skips claimed targets.
+function counterTarget(state, team, claimed) {
+  const foe = S.enemyOf(team.team);
+  const home = S.homeBase(team.team);
+  const enemyAt = {};
+  for (const g of state.teams[foe].armies) { const n = unitCountG(g); if (n < 0.5) continue; const a = g.moving ? g.moving.route[g.moving.legIndex] : g.area; enemyAt[a] = (enemyAt[a] || 0) + n; }
+  let best = null, bestScore = -1;
+  for (const id in state.areas) { const a = state.areas[id];
+    if (a.terrain === 'base') continue;
+    if (claimed && claimed[id]) continue;
+    const here = enemyAt[id] || 0;
+    const held = a.owner === foe;
+    if (here < 0.5 && !held) continue;                                          // only enemy hosts / enemy land
+    if (!a.connections.some((n) => state.areas[n] && state.areas[n].owner === team.team)) continue; // must border us
+    const score = here * 2 + (held ? 4 : 0) + S.buildingsAt(a) + (a.site ? a.site.level : 0) + (a.connections.indexOf(home) >= 0 ? 5 : 0);
+    if (score > bestScore) { bestScore = score; best = id; }
+  }
+  return best;
+}
 function bestAttackTarget(state, team, exclude) {
   const foe = S.enemyOf(team.team);
   let best = null, score = -1;
