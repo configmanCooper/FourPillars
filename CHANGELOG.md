@@ -36,10 +36,14 @@ development milestone, newest first.
   `shared/`) to GitHub Pages on push; `render.yaml` one‑click‑deploys the whole app (client +
   realtime server) to Render.
 - Headless/regression tests: `lord-reservations-check`, `commander-interdict-check`,
-  `claim-hold-check`, `outpost-rules-check`, `forge-spec-check`, `forge-minigame-check`,
-  `steward-logistics-check`, and `ui16`–`ui20`.
+  `commander-counterattack-check`, `claim-hold-check`, `outpost-rules-check`, `forge-spec-check`,
+  `forge-minigame-check`, `steward-logistics-check`, and `ui16`–`ui21`.
 
 ### Changed
+- **Map ownership ring marks an actual outpost.** A team's coloured ring (and pennant) now appears
+  around a non‑base location only when that team has a built **outpost** there (`claimedBy`); the
+  Keep always shows its ring. Owned‑but‑unbuilt ground (e.g. just captured) shows no ring until an
+  outpost is rebuilt.
 - **Blacksmith specialisation is now per‑item.** Pick exactly one forgeable item (tools, spears,
   swords, bows, arrows, armour, or siege parts) to specialise in; it forges **10% faster**. (Replaces
   the three broad "Military / Economic / Siege Forge" focuses.)
@@ -63,6 +67,12 @@ development milestone, newest first.
   mini‑game strikes to match), tool lifetime set to ~300s.
 
 ### Fixed
+- **Commander parked a strong host at the Keep instead of retaking lost posts.** When an enemy held
+  a post bordering the Keep (e.g. a captured West Quarry), the biggest host was assigned to passively
+  "defend" the Keep against a tiny adjacent force while the post went untaken. Now the Commander only
+  passively contests a site the enemy is physically *on*, and otherwise **counter‑attacks**: a strong
+  host marches out to retake an enemy‑held/occupied post that borders our land (clearing the threat
+  and recovering ground) before falling through to general raids/sieges.
 - **Reserved wood leaked to the Steward's outposts.** When the Lord reserved wood away from the
   Steward (e.g. for the Blacksmith), the AI Steward could still pay for outposts in instalments
   because it calls `sites.claim()` directly, bypassing the rationing gate in `applyAction`.

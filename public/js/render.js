@@ -156,11 +156,15 @@
       const a = areas[id];
       const [cx, cy] = w2s(a.x, a.y);
       const owner = a.owner;
-      if (owner) {
+      // A coloured ring marks a CONTROLLED location: the Keep (home base) always, or a built OUTPOST
+      // (claimedBy). Ground that is merely owned but has no outpost — e.g. just captured — shows no
+      // ring until an outpost is actually built there.
+      const ringOwner = a.terrain === 'base' ? owner : (a.claimedBy || null);
+      if (ringOwner) {
         ctx.beginPath(); ctx.arc(cx, cy, 70 * scale, 0, Math.PI * 2);
-        ctx.strokeStyle = teamCol(owner, true); ctx.lineWidth = 4; ctx.globalAlpha = 0.85; ctx.stroke(); ctx.globalAlpha = 1;
+        ctx.strokeStyle = teamCol(ringOwner, true); ctx.lineWidth = 4; ctx.globalAlpha = 0.85; ctx.stroke(); ctx.globalAlpha = 1;
         // pennant
-        ctx.fillStyle = teamCol(owner, false);
+        ctx.fillStyle = teamCol(ringOwner, false);
         const px = cx + 46 * scale, py = cy - 50 * scale;
         ctx.fillRect(px, py, 3, 22); ctx.beginPath(); ctx.moveTo(px + 3, py); ctx.lineTo(px + 20, py + 6); ctx.lineTo(px + 3, py + 12); ctx.closePath(); ctx.fill();
       }
