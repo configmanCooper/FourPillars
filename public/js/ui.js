@@ -56,7 +56,9 @@
     const left = until < 0 ? null : Math.ceil(until - snap.elapsed);
     const myRole = State.myRole;
     const lockedForMe = !!(myRole && myRole !== 'LORD' && !allow[myRole]);
-    return { left, allow, lockedForMe };
+    const owner = (typeof h === 'object' && h.owner) ? h.owner : 'LORD';
+    const iOwn = !!(myRole && myRole !== 'LORD' && owner === myRole);
+    return { left, allow, lockedForMe, owner, iOwn };
   }
   function grantLeft(snap, team, key, role) {
     const u = team.holdGrants && team.holdGrants[key] && team.holdGrants[key][role];
@@ -608,8 +610,13 @@
     } else {
       const myGrant = grantLeft(snap, team, key, role);
       if (myGrant > 0) html += '<div class="muted" style="margin-top:6px">✅ You have access for ' + myGrant + 's.</div>';
+      if (hold && hold.iOwn) html += '<div class="muted" style="margin-top:6px;color:#bfe6a8">🔒 You reserved this. Release it below when you no longer need it held.</div>';
       html += '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">';
-      if (hold && hold.lockedForMe) {
+      if (hold && hold.iOwn) {
+        // The player who reserved it can free it themselves, and can still pull more in.
+        html += '<button class="btn btn-gold btn-sm" onclick="FP.UI.act(\'releaseOwnHold\',{resource:\'' + key + '\'});FP.UI.modalResource(\'' + key + '\')">🔓 Release my reservation</button>';
+        html += '<button class="btn btn-sm" onclick="FP.UI.needResource(\'' + key + '\')">Ask for more</button>';
+      } else if (hold && hold.lockedForMe) {
         html += '<button class="btn btn-gold btn-sm" onclick="FP.UI.requestUse(\'' + key + '\')">🙏 Ask for access</button>';
         html += '<button class="btn btn-sm" onclick="FP.UI.requestReserve(\'' + key + '\')">🔒 Ask to reserve for me</button>';
       } else {
@@ -944,7 +951,7 @@
       html += optRow((C.EQUIP_META[item] ? C.EQUIP_META[item].glyph : '🏹') + ' ' + cap(item) + ' <span class="muted">×' + r.batch + '</span>', (C.EQUIP_META[item] || {}).desc || 'Ammunition for archers.', costStr(totalCost) + ' for ×' + r.batch + ' · ' + strikes + ' strikes', 'Forge', () => forgeMinigame(item, r.batch), dis, dis ? 'Needs a Workshop' : '');
     }
     if (team.qualityLog && team.qualityLog.length) html += '<div class="rp-h">Recently forged</div>' + team.qualityLog.map((q) => '<div class="sel-row"><span>' + (C.EQUIP_META[q.item] ? C.EQUIP_META[q.item].glyph : '🏹') + ' ' + cap(q.item) + '</span><span>' + q.glyph + ' ' + q.name + '</span></div>').join('');
-    if (team.production.length) html += '<div class="rp-h">Forging</div>' + team.production.map((q) => '<div class="opt"><div class="opt-info"><div class="opt-name">' + cap(q.item) + ' ×' + Math.ceil(q.qtyLeft) + '</div></div><button class="btn btn-sm" onclick="FP.UI.act(\'cancelProduce\',{id:\'' + q.id + '\'})">Cancel</button></div>').join('');
+    if (team.production.length) html += '<div class="rp-h">Forging</div>' + team.production.map((q, i) => { const wait = q.waitingOn ? ' <span style="color:#d9a441">⏸ paused — ' + (C.RESOURCE_META[q.waitingOn] ? C.RESOURCE_META[q.waitingOn].glyph + ' ' : '') + q.waitingOn + ' reserved</span>' : (i === 0 && q.short ? ' <span style="color:#c8553d">⏸ short on resources</span>' : (i === 0 ? '' : ' <span class="muted">· queued</span>')); return '<div class="opt"><div class="opt-info"><div class="opt-name">' + cap(q.item) + ' ×' + Math.ceil(q.qtyLeft) + wait + '</div>' + (q.waitingOn ? '<div class="opt-desc">Kept ready — it will forge as soon as ' + q.waitingOn + ' is released.</div>' : '') + '</div><button class="btn btn-sm" onclick="FP.UI.act(\'cancelProduce\',{id:\'' + q.id + '\'})">Cancel</button></div>'; }).join('');
     openModal('The Forge', html, modalForge);
   }
   function qualColor(q) { return q >= 2.5 ? '#ffd54a' : q >= 1.6 ? '#a99bff' : q >= 1.1 ? '#6fae5f' : q >= 0.9 ? '#cfc3a6' : q >= 0.7 ? '#d9a441' : '#c8553d'; }

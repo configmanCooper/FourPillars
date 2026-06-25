@@ -229,7 +229,7 @@ function fulfill(state, team, req, systems) {
       const res = req.payload && req.payload.resource;
       if (!res) return false;
       const dur = Math.max(30, Math.min(180, Math.round((req.payload && req.payload.duration) || 90)));
-      economy.setHold(state, team, res, dur, [req.fromRole]);  // reserve it for the requester (and the Lord)
+      economy.setHold(state, team, res, dur, [req.fromRole], req.fromRole);  // reserve it for the requester (who may later release it)
       return true;
     }
     case 'DEFEND': {

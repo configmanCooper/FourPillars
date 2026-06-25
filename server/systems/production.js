@@ -17,10 +17,12 @@ function queueProduction(team, item, qty, qMult, qId) {
   const recipe = B.RECIPES[item];
   if (!recipe) return { ok: false, reason: 'Unknown item.' };
   if (recipe.needs === 'siege' && team.buildings.workshop <= 0) return { ok: false, reason: 'Build a Workshop first.' };
-  const held = eco.heldCostForRole(team, 'BLACKSMITH', recipe.cost);
-  if (held) return { ok: false, reason: held.charAt(0).toUpperCase() + held.slice(1) + ' is reserved by the Lord. Ask to access it.' };
   qty = Math.max(1, Math.min(99, Math.floor(qty || recipe.batch)));
-  team.production.push({ id: S.uid('pq'), item, qtyLeft: qty, remaining: recipe.time, qMult: qMult || 1, qId: qId || 'standard' });
+  // A reserved input no longer CANCELS the forge (which would waste the Blacksmith's minigame result):
+  // the job is queued and simply PAUSES until the resource is released. waitingOn drives the UI badge.
+  const heldKey = eco.heldCostForRole(team, 'BLACKSMITH', recipe.cost);
+  team.production.push({ id: S.uid('pq'), item, qtyLeft: qty, remaining: recipe.time, qMult: qMult || 1, qId: qId || 'standard', waitingOn: heldKey || null });
+  if (heldKey) return { ok: true, msg: 'Queued ' + qty + ' ' + item + ' — forging PAUSES until ' + heldKey + ' is released.' };
   return { ok: true, msg: 'Forging ' + qty + ' ' + item + '.' };
 }
 
@@ -73,22 +75,30 @@ function tickProduction(team, dt, log) {
   // Forge queue: advance the first item, pay per unit on completion.
   if (team.production.length) {
     const job = team.production[0];
-    const speed = forgeSpeedMult(team, job.item);
-    job.remaining -= speed * dt;
-    let guard = 0;
-    while (job.remaining <= 0 && job.qtyLeft > 0 && guard < 20) {
-      guard++;
-      if (!produceOne(team, job.item, log, job.qMult, job.qId)) { job.remaining = 0.5; break; } // stalled: cannot afford
-      job.qtyLeft -= 1;
-      job.remaining += B.RECIPES[job.item].time;
-    }
-    if (job.qtyLeft <= 0) {
-      team.production.shift();
-      // Record the finished batch's quality for the Forge UI.
-      team.qualityLog = team.qualityLog || [];
-      const tier = B.qualityById(job.qId || 'standard');
-      team.qualityLog.unshift({ item: job.item, qId: tier.id, name: tier.name, glyph: tier.glyph });
-      if (team.qualityLog.length > 6) team.qualityLog.length = 6;
+    // If a required input is reserved away from the Blacksmith, the job PAUSES (timer frozen) and shows
+    // why, instead of being cancelled — it resumes automatically the moment the resource is released.
+    const recipe = B.RECIPES[job.item];
+    const heldKey = recipe ? eco.heldCostForRole(team, 'BLACKSMITH', recipe.cost) : null;
+    job.waitingOn = heldKey || null;
+    if (!heldKey) {
+      const speed = forgeSpeedMult(team, job.item);
+      job.remaining -= speed * dt;
+      let guard = 0;
+      while (job.remaining <= 0 && job.qtyLeft > 0 && guard < 20) {
+        guard++;
+        if (!produceOne(team, job.item, log, job.qMult, job.qId)) { job.remaining = 0.5; job.short = true; break; } // stalled: cannot afford
+        job.short = false;
+        job.qtyLeft -= 1;
+        job.remaining += B.RECIPES[job.item].time;
+      }
+      if (job.qtyLeft <= 0) {
+        team.production.shift();
+        // Record the finished batch's quality for the Forge UI.
+        team.qualityLog = team.qualityLog || [];
+        const tier = B.qualityById(job.qId || 'standard');
+        team.qualityLog.unshift({ item: job.item, qId: tier.id, name: tier.name, glyph: tier.glyph });
+        if (team.qualityLog.length > 6) team.qualityLog.length = 6;
+      }
     }
   }
   // Contracts.

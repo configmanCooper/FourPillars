@@ -107,6 +107,18 @@ function applyAction(state, team, role, action, payload) {
       comms.postChat(state, T, role, 'Never mind — cancelling my request.', 'response');
       return { ok: true };
     }
+    // A teammate may release a resource reservation THEY own (one the Lord reserved for them via a
+    // RESERVE request) once they no longer need it. The Lord uses the Lord-only 'releaseHold' instead.
+    case 'releaseOwnHold': {
+      const k = payload.resource;
+      if (!C.RESOURCES.includes(k)) return { ok: false, reason: 'Unknown resource.' };
+      const h = T.holds && T.holds[k];
+      if (!h || typeof h !== 'object') return { ok: false, reason: 'That resource is not reserved.' };
+      if (h.owner !== role) return { ok: false, reason: 'Only the player who reserved it (or the Lord) can release it.' };
+      economy.releaseHold(T, k);
+      comms.postChat(state, T, role, '🔓 Releasing my reservation on ' + (C.RESOURCE_META[k] ? C.RESOURCE_META[k].glyph + ' ' : '') + k + ' — spend freely.', 'response');
+      return { ok: true, msg: 'Released your reservation on ' + k + '.' };
+    }
   }
 
   // Role-gated actions. Worker allocation is shared: the Lord owns it, but the Steward may help
@@ -270,7 +282,10 @@ const ACTION_ROLE = {
 };
 // Resource keys a non-Lord action would spend (for rationing enforcement).
 function spendKeysFor(action, payload) {
-  if (action === 'produce') { const r = B.RECIPES[payload.item]; return r ? Object.keys(r.cost) : []; }
+  // Forging is a DEFERRED spend: it self-gates inside produceOne and PAUSES while a required input is
+  // reserved, instead of being rejected at queue time (so the Blacksmith's minigame result is never
+  // wasted). So 'produce' is intentionally NOT gate-blocked here.
+  if (action === 'produce') return [];
   if (action === 'claim') return Object.keys(B.CLAIM_COST);
   if (action === 'upgradeSite') return Object.keys(B.SITE_UPGRADE_COST);
   if (action === 'formUnits' || action === 'trainUnits') {

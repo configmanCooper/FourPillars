@@ -433,13 +433,16 @@ function holdAllow(team, key) { const h = team.holds && team.holds[key]; if (!h 
 function grantHold(team, key, role, untilElapsed) { team.holdGrants = team.holdGrants || {}; team.holdGrants[key] = team.holdGrants[key] || {}; team.holdGrants[key][role] = Math.max(team.holdGrants[key][role] || 0, untilElapsed); }
 function hasGrant(team, key, role, elapsed) { const u = team.holdGrants && team.holdGrants[key] && team.holdGrants[key][role]; return typeof u === 'number' && u > (elapsed != null ? elapsed : (team._elapsed || 0)); }
 function grantLeft(team, key, role, elapsed) { const u = team.holdGrants && team.holdGrants[key] && team.holdGrants[key][role]; const e = (elapsed != null ? elapsed : (team._elapsed || 0)); return (typeof u === 'number' && u > e) ? Math.ceil(u - e) : 0; }
-function setHold(state, team, key, durationSec, allow) {
+function setHold(state, team, key, durationSec, allow, owner) {
   team.holds = team.holds || {};
   const until = (!durationSec || durationSec <= 0) ? -1 : state.elapsed + durationSec;
   const a = {};
   if (Array.isArray(allow)) { for (const r of allow) if (r !== 'LORD') a[r] = true; }
   else if (allow && typeof allow === 'object') { for (const r of ['STEWARD', 'BLACKSMITH', 'COMMANDER']) if (allow[r]) a[r] = true; }
-  team.holds[key] = { until, allow: a };
+  // owner = the role that may release it (besides the Lord). RESERVE requests set this to the requester;
+  // the Lord's own reservations default to LORD. Preserve an existing owner if the caller passes none.
+  const prevOwner = (team.holds[key] && typeof team.holds[key] === 'object') ? team.holds[key].owner : null;
+  team.holds[key] = { until, allow: a, owner: owner || prevOwner || 'LORD' };
 }
 function releaseHold(team, key) { if (team.holds) delete team.holds[key]; if (team.holdGrants) delete team.holdGrants[key]; }
 function pruneHolds(state, team) {
