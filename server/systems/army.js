@@ -704,11 +704,13 @@ function enforceCaps(state, team) {
     }
   }
 }
-// Next thing to raze at a location: walls first, then any other building, then (at a base) the Keep core.
+// Next thing to raze at a location: walls first, then any other building, then (at a base) the
+// Watchtower (the Keep core) LAST — only once everything else has fallen.
 function nextRazeTarget(area, isBase) {
   if ((area.buildings.walls || 0) > 0) return 'walls';
-  for (const t of C.BUILDINGS) { if (t === 'walls') continue; if ((area.buildings[t] || 0) > 0) return t; }
-  return isBase ? 'keepcore' : null;
+  for (const t of C.BUILDINGS) { if (t === 'walls' || t === 'watchtower') continue; if ((area.buildings[t] || 0) > 0) return t; }
+  if (isBase && (area.buildings.watchtower || 0) > 0) return 'watchtower';
+  return null;
 }
 
 // Razing: an enemy force at an owned location with NO defenders present slowly destroys its
@@ -733,6 +735,19 @@ function tickRaze(state, dt, rng, log) {
     for (const g of enemyHosts) for (const u of C.UNITS) { const n = g.units[u] || 0; if (!n) continue; let rp = (B.RAZE_STAT[u] || 0) * (g.hasArmor ? B.EQUIP_TIER_MULT.advanced : 1); if (u === 'catapult') rp *= (fq.siegeParts || 1); power += n * rp; total += n; }
     if (total > B.MAX_UNITS_PER_AREA) power *= B.MAX_UNITS_PER_AREA / total;
     if (power <= 0) continue;
+
+    // While it still stands, the Watchtower (Keep core) looses arrows like a lone militia at besiegers.
+    if (isBase && (area.buildings.watchtower || 0) > 0) {
+      const towerPow = B.UNIT_STATS.militia.atk;
+      const kills = rollKills(towerPow / (towerPow + Math.max(1, total)), rng);
+      if (kills > 0) {
+        const tfx = new Map();
+        applyKills(state.teams[foe], enemyHosts, kills, rng, tfx);
+        let felled = 0; state._combatFx = state._combatFx || [];
+        for (const [host, e] of tfx) { if ((e.losses || 0) + (e.saves || 0) > 0) state._combatFx.push({ x: host.x, y: host.y, team: foe, losses: e.losses || 0, saves: e.saves || 0 }); felled += e.losses || 0; }
+        if (felled > 0 && log) logMil(state.teams[foe], 'The Watchtower at ' + area.name + ' felled ' + felled + ' besieger' + (felled === 1 ? '' : 's') + '.', 'combat');
+      }
+    }
 
     const target = nextRazeTarget(area, isBase);
     if (!target) {
@@ -761,9 +776,18 @@ function tickRaze(state, dt, rng, log) {
     const targetHp = B.BUILDING_RAZE_HP * (target === 'walls' ? B.WALL_RAZE_MULT : 1) * (isBase ? B.KEEP_RAZE_MULT : 1);
     if (area._razeTarget !== target) { area._razeTarget = target; area._razeHp = targetHp; }
     area._razeHp -= power * dt;
+    // The Keep's health bar reflects the Watchtower being battered down (full → 0 as it's razed).
+    if (target === 'watchtower' && isBase) state.teams[owner].keep.hp = Math.max(0, state.teams[owner].keep.maxHp * (area._razeHp / targetHp));
     if (area._razeHp <= 0) {
       area.buildings[target] = Math.max(0, (area.buildings[target] || 0) - 1);
       area._razeHp = null; area._razeTarget = null;
+      if (target === 'watchtower' && isBase) {
+        // The Watchtower has fallen — the Keep core is destroyed: total victory.
+        state.teams[owner].keep.hp = 0;
+        S.recomputeBuildings(state, state.teams[owner]);
+        log(foe, C.TEAM_META[foe].name + ' has razed the ' + C.TEAM_META[owner].name + ' Watchtower — total victory!', 'siege');
+        continue;
+      }
       const pts = isBase ? B.KEEP_RAZE_POINTS : B.RAZE_POINTS;
       state.teams[foe].razeScore = (state.teams[foe].razeScore || 0) + pts;
       S.recomputeBuildings(state, state.teams[owner]);

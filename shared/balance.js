@@ -64,8 +64,12 @@
     stables:    { name: 'Stables',     cost: { wood: 90, stone: 50, iron: 20 }, buildTime: 24, effect: { unlock: 'cavalry' } },
     workshop:   { name: 'Workshop',    cost: { wood: 90, iron: 40 },   buildTime: 24, effect: { forgeSpeed: 0.35, unlock: 'siege' } },
     walls:      { name: 'Walls',       cost: { stone: 120 },           buildTime: 26, effect: { keepDef: 60, keepHp: 120 } },
+    // The Keep's core. Always present, occupies a build slot, can't be built or demolished. It is the
+    // LAST thing razed in a siege (only after every other building falls) and its fall = total defeat.
+    // It looses arrows like a lone militia at besiegers.
+    watchtower: { name: 'Watchtower',   cost: {}, buildTime: 0, fixed: true, effect: {} },
   };
-  const MAX_PER_BUILDING = { house: 6, farm: 4, lumberCamp: 3, mine: 3, storehouse: 3, barracks: 2, school: 2, stables: 2, workshop: 2, walls: 3 };
+  const MAX_PER_BUILDING = { house: 6, farm: 4, lumberCamp: 3, mine: 3, storehouse: 3, barracks: 2, school: 2, stables: 2, workshop: 2, walls: 3, watchtower: 1 };
 
   // Per-location build slots: your Keep is roomy; outposts are small, so expansion matters.
   const BUILD_SLOTS_BASE = 7;

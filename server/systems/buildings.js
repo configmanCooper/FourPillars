@@ -21,6 +21,7 @@ function canBuildAt(state, team, areaId) {
 function queueBuilding(state, team, areaId, type) {
   const def = B.BUILDINGS[type];
   if (!def) return { ok: false, reason: 'Unknown building.' };
+  if (def.fixed) return { ok: false, reason: 'The ' + def.name + ' cannot be built or replaced.' };   // e.g. the Watchtower
   // Default to the Keep if no/invalid location given.
   if (!areaId || !state.areas[areaId]) areaId = S.homeBase(team.team);
   const chk = canBuildAt(state, team, areaId);

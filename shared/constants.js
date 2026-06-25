@@ -64,7 +64,7 @@
     catapult:  { glyph: '🪨', name: 'Catapult',  needs: { siegeParts: 1 } },
   };
 
-  const BUILDINGS = ['house', 'farm', 'lumberCamp', 'mine', 'storehouse', 'barracks', 'school', 'stables', 'workshop', 'walls'];
+  const BUILDINGS = ['house', 'farm', 'lumberCamp', 'mine', 'storehouse', 'barracks', 'school', 'stables', 'workshop', 'walls', 'watchtower'];
   const TERRAIN = ['base', 'plains', 'forest', 'hills', 'mountain', 'river', 'farmland', 'ruins'];
 
   const PHASES = { EARLY: 'EARLY', MID: 'MID', LATE: 'LATE' };

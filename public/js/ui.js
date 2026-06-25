@@ -647,6 +647,7 @@
     html += '<div class="muted" style="margin:4px 0 8px;font-size:11px">Effects boost the whole kingdom. ⚠ Buildings are destroyed if this location is captured.</div>';
     if (free <= 0) html += '<div class="opt" style="border-color:#7a4a2c"><div class="opt-info"><div class="opt-name" style="color:#d9a441">This location is full</div><div class="opt-desc">Pick another location above, or claim a new site to expand.</div></div></div>';
     for (const type of C.BUILDINGS) { const def = B.BUILDINGS[type];
+      if (def.fixed) continue;   // the Watchtower is the permanent Keep core — not buildable
       const kingdomTotal = team.buildings[type] || 0;
       const aff = canAfford(team, def.cost);
       const why = free <= 0 ? ' — location full' : (!aff ? ' — need ' + missingCost(team, def.cost) : '');
@@ -656,7 +657,7 @@
     openModal('Build — choose location, then structure', html, modalBuild);
   }
   function missingCost(team, cost) { return Object.keys(cost).filter((k) => (team.resources[k] || 0) < cost[k]).map((k) => Math.ceil(cost[k] - (team.resources[k] || 0)) + ' more ' + k).join(', '); }
-  const BUILDING_GLYPH = { house: '🏠', farm: '🌾', lumberCamp: '🪵', mine: '⛏️', storehouse: '📦', barracks: '🏛️', school: '🎓', stables: '🐎', workshop: '🪚', walls: '🧱' };
+  const BUILDING_GLYPH = { house: '🏠', farm: '🌾', lumberCamp: '🪵', mine: '⛏️', storehouse: '📦', barracks: '🏛️', school: '🎓', stables: '🐎', workshop: '🪚', walls: '🧱', watchtower: '🗼' };
   function buildGlyph(type) { return BUILDING_GLYPH[type] || '🏗️'; }
   function effectDesc(type) {
     const e = B.BUILDINGS[type].effect; const m = [];
