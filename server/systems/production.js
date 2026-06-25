@@ -5,7 +5,7 @@ const S = require('../../shared/schema.js');
 const eco = require('./economy.js');
 
 function forgeSpeedMult(team, item) {
-  let m = 1 + team.buildings.workshop * B.BUILDINGS.workshop.effect.forgeSpeed;
+  let m = 1;
   const pol = eco.policy(team);
   if (pol && pol.forgeMult) m *= pol.forgeMult;
   const spec = team.blacksmithSpec ? B.BLACKSMITH_SPECS[team.blacksmithSpec] : null;

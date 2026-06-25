@@ -62,7 +62,7 @@
     barracks:   { name: 'Barracks',    cost: { wood: 70, stone: 30 },  buildTime: 20, effect: { unlock: 'train' } },
     school:     { name: 'School',      cost: { wood: 70, stone: 40 },  buildTime: 20, effect: { unlock: 'educate' } },
     stables:    { name: 'Stables',     cost: { wood: 90, stone: 50, iron: 20 }, buildTime: 24, effect: { unlock: 'cavalry' } },
-    workshop:   { name: 'Workshop',    cost: { wood: 90, iron: 40 },   buildTime: 24, effect: { forgeSpeed: 0.35, unlock: 'siege' } },
+    workshop:   { name: 'Workshop',    cost: { wood: 90, iron: 40 },   buildTime: 24, effect: { unlock: 'siege' } },
     walls:      { name: 'Walls',       cost: { stone: 120 },           buildTime: 26, effect: { keepDef: 60, keepHp: 120 } },
     // The Keep's core. Always present, occupies a build slot, can't be built or demolished. It is the
     // LAST thing razed in a siege (only after every other building falls) and its fall = total defeat.
@@ -152,7 +152,7 @@
     bows:       { cost: { wood: 10 },          time: 8,  batch: 5 },
     arrows:     { cost: { wood: 4 },           time: 4,  batch: 12, isResource: true },
     armor:      { cost: { iron: 12 },          time: 14, batch: 3 },
-    siegeParts: { cost: { wood: 30, iron: 20 },time: 24, batch: 1, needs: 'siege' },
+    siegeParts: { cost: { wood: 30, iron: 20 },time: 15, batch: 1, needs: 'siege' },
   };
   // The Blacksmith specialises in ONE forgeable item — that item forges SPEC_TIME_REDUCTION (10%)
   // faster, AND a sub-par strike on it is lifted by SPEC_QUALITY_BONUS (the specialist's hands save a
