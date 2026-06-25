@@ -99,7 +99,7 @@ function applyAction(state, team, role, action, payload) {
       comms.createRequest(state, T, role, target, payload.type, p);
       return { ok: true };
     }
-    case 'resolveRequest': return comms.resolveRequest(state, T, payload.id, !!payload.accept, SYSTEMS);
+    case 'resolveRequest': return comms.resolveRequest(state, T, payload.id, !!payload.accept, SYSTEMS, role);
     case 'cancelRequest': {
       const r = T.requests.find((x) => x.id === payload.id && x.fromRole === role && x.status === 'open');
       if (!r) return { ok: false, reason: 'No open request to cancel.' };

@@ -22,6 +22,13 @@ function queueBuilding(state, team, areaId, type) {
   const def = B.BUILDINGS[type];
   if (!def) return { ok: false, reason: 'Unknown building.' };
   if (def.fixed) return { ok: false, reason: 'The ' + def.name + ' cannot be built or replaced.' };   // e.g. the Watchtower
+  // Team-wide per-type cap (built across all owned areas + already queued).
+  const cap = B.MAX_PER_BUILDING[type];
+  if (cap != null) {
+    const built = (team.buildings && team.buildings[type]) || 0;
+    let queued = 0; for (const q of team.buildQueue) if (q.type === type) queued++;
+    if (built + queued >= cap) return { ok: false, reason: 'At the limit of ' + cap + ' ' + def.name + (cap === 1 ? '' : 's') + '.' };
+  }
   // Default to the Keep if no/invalid location given.
   if (!areaId || !state.areas[areaId]) areaId = S.homeBase(team.team);
   const chk = canBuildAt(state, team, areaId);

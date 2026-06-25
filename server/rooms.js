@@ -132,6 +132,8 @@ class RoomManager {
       if (result) {
         this.io.to(room.code).emit(C.EV.GAME_OVER, { winner: result.winner, reason: result.reason });
         clearInterval(room.interval); room.interval = null;
+        // If everyone has already left (AI finished the match alone), free the room.
+        if (![...room.players.values()].some((x) => x.connected)) this.rooms.delete(room.code);
       }
     }, B.TICK_MS);
   }
@@ -287,6 +289,12 @@ class RoomManager {
       if (sl.playerId === fp.pid) { sl.controller = C.CONTROLLER.AI; sl.connected = false; }
     }
     this.broadcastLobby(room);
+    // If the host left, hand the host role to any still-connected player so the lobby isn't stuck
+    // (only the host can start/configure). Skip once the match is already running.
+    if (room.hostId === fp.pid && room.state.status !== 'playing') {
+      const next = [...room.players.values()].find((x) => x.connected && x.pid !== fp.pid);
+      if (next) { room.hostId = next.pid; this.broadcastLobby(room); }
+    }
     // Clean up empty idle rooms.
     if (![...room.players.values()].some((x) => x.connected) && room.state.status !== 'playing') {
       if (room.interval) clearInterval(room.interval);

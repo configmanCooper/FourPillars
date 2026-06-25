@@ -22,7 +22,7 @@ function snapshot(state) {
     for (const g of t.armies) { const n = unitCount(g); if (n < 0.0001) continue; total += n; const a = g.moving ? g.moving.route[g.moving.legIndex] : g.area; areas[a] = (areas[a] || 0) + n; }
     const cvAreas = {}; for (const cv of t.caravans) { if ((cv.guards || 0) >= 1) { const a = cv.route[cv.legIndex]; cvAreas[a] = true; } }
     const res = {}; for (const k of C.RESOURCES) res[k] = t.resources[k];
-    out[tk] = { total, areas, food: t.resources.food, housing: t.housing, cap: t.storageCap, res, cvAreas, popTotal: t.pop.total, fighting: t.armies.some((g) => g._fighting) };
+    out[tk] = { total, areas, food: t.resources.food, housing: t.housing, cap: t.storageCap, res, cvAreas, popTotal: t.pop.total, fighting: t.armies.some((g) => g._fighting), guards: Math.round(t.guards || 0) };
   }
   return out;
 }
@@ -77,14 +77,23 @@ for (let m = 0; m < MATCHES; m++) {
     for (const tk of ['BLUE', 'RED']) { const ml = state.teams[tk].militaryLog; log0[tk] = ml && ml[0]; }
     const res = sim.step(state); guard++;
     const after = snapshot(state);
+    // Per-tick combat deaths/saves are recorded authoritatively in state._combatFx (resolveCombat +
+    // watchtower). Guard-skirmish casualties log kind 'combat'/'battle' to the victim's militaryLog.
+    const fxLoss = { BLUE: 0, RED: 0 };
+    for (const fx of (state._combatFx || [])) fxLoss[fx.team] = (fxLoss[fx.team] || 0) + (fx.losses || 0);
     for (const tk of ['BLUE', 'RED']) {
       const drop = before[tk].total - after[tk].total;
       const ml = state.teams[tk].militaryLog; const cur0 = ml && ml[0];
-      const freshCombatLog = cur0 && cur0 !== log0[tk] && (cur0.kind === 'combat' || cur0.kind === 'ambush');
+      // Any FRESH combat-ish log entry this tick (cleanup logs destroyed hosts as 'battle'; the AI then
+      // buries it under 'order'/'train', so scan everything new above the previous head — not just [0]).
+      let freshCombatLog = false;
+      for (const e of ml) { if (e === log0[tk]) break; if (e.kind === 'combat' || e.kind === 'battle' || e.kind === 'ambush') { freshCombatLog = true; break; } }
       // Combat this tick (a host was destroyed/vanished, so co-location can't be seen afterwards) is
       // signalled by the _fighting flag resolveCombat leaves on the surviving combatants of either side.
       const anyFighting = after.BLUE.fighting || after.RED.fighting;
-      if (drop > 0.05 && !enemyNear(state, tk, before, after) && !anyFighting && before[tk].food > 0.5 && !freshCombatLog) flag('unexplained_army_loss', { m, tick: state.tick, tk, lost: +drop.toFixed(2), from: +before[tk].total.toFixed(1), to: +after[tk].total.toFixed(1) });
+      // Lending militia to the caravan-guard pool is a conversion, not a loss (army falls, guards rise).
+      const lending = (after[tk].guards - before[tk].guards) >= drop - 0.5;
+      if (drop > 0.05 && fxLoss[tk] <= 0 && !lending && !enemyNear(state, tk, before, after) && !anyFighting && before[tk].food > 0.5 && !freshCombatLog) flag('unexplained_army_loss', { m, tick: state.tick, tk, lost: +drop.toFixed(2), from: +before[tk].total.toFixed(1), to: +after[tk].total.toFixed(1) });
       // Population over housing is only a BUG if pop rose past the cap — not when housing itself dropped
       // (a House razed in a siege legitimately leaves you temporarily overcrowded).
       const t = state.teams[tk];

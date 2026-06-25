@@ -172,10 +172,19 @@ function tickEconomy(state, team, dt) {
   addResource(team, 'stone', r.stone * dt);
   addResource(team, 'iron', r.iron * dt);
 
-  // Equipped tools wear with USE (only the tools the Steward committed): ~15 min lifetime each.
+  // Equipped tools wear with USE (only the tools the Steward committed): a worn tool eventually breaks
+  // and is removed from the armoury. Accumulate sub-tick wear in _toolWear so it isn't lost when
+  // reconcileGearInv rebuilds equipment.tools from the (integer) gearInv array length each tick.
   const toolsInUse = team.gather.effective.food + team.gather.effective.wood + team.gather.effective.mine;
-  if (toolsInUse > 0 && team.equipment.tools > 0) {
-    team.equipment.tools = Math.max(0, team.equipment.tools - (toolsInUse / B.TOOL_LIFETIME_SEC) * dt);
+  team.gearInv = team.gearInv || {};
+  const toolArr = team.gearInv.tools;
+  if (toolsInUse > 0 && toolArr && toolArr.length > 0) {
+    team._toolWear = (team._toolWear || 0) + (toolsInUse / B.TOOL_LIFETIME_SEC) * dt;
+    while (team._toolWear >= 1 && toolArr.length > 0) {
+      toolArr.sort((a, b) => a - b); toolArr.shift();   // the most worn tool breaks
+      team.equipment.tools = toolArr.length;
+      team._toolWear -= 1;
+    }
   }
 
   // Education: each School educates one Student at a time (30s each). With 3 Schools, 3 students

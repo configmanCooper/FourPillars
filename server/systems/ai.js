@@ -457,7 +457,7 @@ function aiSteward(state, team, sys, rng, persona, st) {
 function enemyAt(state, team, areaId) { const foe = S.enemyOf(team.team); return state.teams[foe].armies.some((g) => (g.moving ? g.moving.route[g.moving.legIndex] : g.area) === areaId && unitCountG(g) >= 0.5); }
 // Find a nearby enemy caravan a host can intercept: aim at the soonest-reachable point on its remaining
 // route. Prefers high-value cargo (relics) and skips caravans that out-gun the host.
-function caravanIntercept(state, team, w, maxReach) {
+function caravanIntercept(state, army, team, w, maxReach) {
   const foe = state.teams[S.enemyOf(team.team)];
   if (!foe.caravans || !foe.caravans.length) return null;
   const reachCap = maxReach || 4;
@@ -709,7 +709,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
     }
     // Deny enemy logistics: intercept a reachable enemy caravan — cheap, high-value, especially relics.
     if (!vulnerable) {
-      const ic = caravanIntercept(state, team, w);
+      const ic = caravanIntercept(state, army, team, w);
       if (ic) { army.command(state, team, w.id, 'garrison', ic); say(state, team, sys, st, C.ROLES.COMMANDER, 'Hunting an enemy caravan near ' + state.areas[ic].name + '!', 16); return; }
     }
     // Offence — be opportunistic but pick fights we can WIN (local strength comparison). SIEGE the enemy
@@ -753,7 +753,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
     if (keepThreat) { army.command(state, team, w.id, 'defend'); return; }
     const choke = enemySupplyPatrol(state, team);
     let tgt = choke;
-    const ic = caravanIntercept(state, team, w, 1);   // only a caravan within ONE leg is worth diverting for
+    const ic = caravanIntercept(state, army, team, w, 1);   // only a caravan within ONE leg is worth diverting for
     if (ic) { tgt = ic; say(state, team, sys, st, C.ROLES.COMMANDER, 'Outriders fall on an enemy caravan at ' + state.areas[ic].name + '!', 22); }
     if (!tgt) tgt = forwardSite(state, team) || home;
     if (army.currentArea(w) !== tgt || w.moving) army.command(state, team, w.id, 'garrison', tgt);

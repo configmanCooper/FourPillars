@@ -70,9 +70,13 @@ function createRequest(state, team, fromRole, targetRole, type, payload) {
   return req;
 }
 
-function resolveRequest(state, team, id, accept, systems) {
+function resolveRequest(state, team, id, accept, systems, actorRole) {
   const req = team.requests.find((r) => r.id === id && r.status === 'open');
   if (!req) return { ok: false, reason: 'Request not found.' };
+  // Role-gating: a human may only resolve a request addressed to the role they occupy (the AI passes
+  // no actorRole and is trusted to act for the role it controls). Prevents e.g. the Commander accepting
+  // a LORD-only RESERVE/USE request and granting resource holds.
+  if (actorRole && actorRole !== req.targetRole) return { ok: false, reason: 'That request is for the ' + (C.ROLE_META[req.targetRole] ? C.ROLE_META[req.targetRole].name : req.targetRole) + '.' };
   const responder = req.targetRole;
   if (accept) {
     const ok = fulfill(state, team, req, systems);
@@ -124,7 +128,7 @@ function fulfill(state, team, req, systems) {
       let lent = 0;
       // Lend spare militia from the garrison first (cheap caravan fodder), then dip into the recruit pool.
       const garr = army.garrison(state, team);
-      if (garr && (garr.units.militia || 0) > 0) { const take = Math.min(garr.units.militia, want); garr.units.militia -= take; lent += take; }
+      if (garr && (garr.units.militia || 0) > 0) { const take = Math.min(Math.round(garr.units.militia), want); for (let k = 0; k < take; k++) army.removeSoldier(garr, 'militia'); lent += take; }
       if (lent < want && team.pop.recruits >= 1) { const take = Math.min(Math.floor(team.pop.recruits), want - lent); team.pop.recruits -= take; lent += take; }
       if (lent <= 0) return false;
       team.guards = (team.guards || 0) + lent;
@@ -158,7 +162,14 @@ function fulfill(state, team, req, systems) {
       const q = forgeQuality(team);
       return !!production.queueProduction(team, item, qty, q.mult, q.id).ok;
     }
-    case 'IRON': { const q = forgeQuality(team); production.queueProduction(team, 'spears', 8, q.mult, q.id); return true; }
+    case 'IRON': {
+      // Blacksmith→Steward: "send more iron from the mines." Bias the mines toward iron and shift idle
+      // hands to mining — NOT forge spears (which would CONSUME the iron we're short of).
+      team._mineDemand = { res: 'iron', until: state.elapsed + 30 };
+      const move = Math.min(3, team.pop.idle);
+      if (move > 0) { team.pop.idle -= move; team.pop.miners = (team.pop.miners || 0) + move; economy.recomputeDerived(team); }
+      return true;
+    }
     case 'TRAIN': {
       const unitType = (req.payload && req.payload.unitType && C.UNIT_META[req.payload.unitType]) ? req.payload.unitType : 'spearman';
       const count = (req.payload && req.payload.count) || 2;
