@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>Four Pillars of the Realm</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=MedievalSharp&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ===================== LOBBY ===================== -->
+  <div id="lobby" class="screen">
+    <div class="vignette"></div>
+    <div class="lobby-card">
+      <h1 class="title">Four Pillars of the Realm</h1>
+      <p class="subtitle">A co-op medieval kingdom — Lord, Steward, Blacksmith &amp; Commander stand or fall together.</p>
+
+      <div id="lobby-entry">
+        <label class="field">Your name
+          <input id="nameInput" type="text" maxlength="16" placeholder="Enter a name" />
+        </label>
+        <div class="entry-buttons">
+          <button id="createBtn" class="btn btn-gold">Create Realm</button>
+          <span class="or">or</span>
+          <input id="codeInput" type="text" maxlength="4" placeholder="CODE" class="code-input" />
+          <button id="joinBtn" class="btn">Join Realm</button>
+        </div>
+        <p class="hint">Solo? Create a realm, claim one seat, leave the rest as AI, and press Begin. Every one of the 8 seats can be a human or an AI.</p>
+      </div>
+
+      <div id="lobby-room" class="hidden">
+        <div class="room-head">
+          <div>Realm code: <span id="roomCode" class="code-badge">----</span></div>
+          <label class="dev-toggle"><input id="devToggle" type="checkbox" checked /> Quick match (12 min)</label>
+        </div>
+        <div id="diffBar" class="diff-bar hidden">
+          <span class="diff-bar-label">🤖 AI difficulty (action speed):</span>
+          <button class="btn btn-sm" onclick="FP.Lobby.allDiff('easy')">All Easy</button>
+          <button class="btn btn-sm" onclick="FP.Lobby.allDiff('medium')">All Medium</button>
+          <button class="btn btn-sm" onclick="FP.Lobby.allDiff('hard')">All Hard</button>
+          <span class="diff-bar-hint">Easy 1 action/10s · Medium 1/5s · Hard 1/2s — or set each AI below.</span>
+        </div>
+        <div class="teams-grid">
+          <div class="team-col" id="team-BLUE">
+            <h3 class="team-h blue">⚜ Blue Kingdom</h3>
+            <div class="slots" data-team="BLUE"></div>
+          </div>
+          <div class="team-col" id="team-RED">
+            <h3 class="team-h red">⚜ Red Kingdom</h3>
+            <div class="slots" data-team="RED"></div>
+          </div>
+        </div>
+        <div class="lobby-foot">
+          <span id="lobbyHint" class="hint">Claim a seat to control that role.</span>
+          <button id="startBtn" class="btn btn-gold" disabled>Begin the Reckoning</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== GAME ===================== -->
+  <div id="game" class="screen hidden">
+    <!-- Top bar -->
+    <div id="topbar">
+      <div class="tb-left">
+        <span id="youBadge" class="you-badge">—</span>
+        <button id="helpBtn" class="btn btn-sm" title="How to play">❔ Help</button>
+        <button id="pauseBtn" class="btn btn-sm" title="Pause">⏸ Pause</button>
+      </div>
+      <div id="resourceBar" class="tb-mid"></div>
+      <div class="tb-right">
+        <div class="score-pill blue"><span class="sl">Blue</span> <span id="scoreBlue">0</span></div>
+        <div class="phasebox"><span id="phaseLabel">EARLY</span><span id="timer">--:--</span></div>
+        <div class="score-pill red"><span class="sl">Red</span> <span id="scoreRed">0</span></div>
+      </div>
+    </div>
+
+    <!-- Objective strip -->
+    <div id="objstrip">
+      <span id="objText">Explore, build, and prepare your kingdom.</span>
+      <span id="threatText" class="threat"></span>
+    </div>
+
+    <div id="main">
+      <!-- Left: alerts / requests / comms -->
+      <div id="leftpanel" class="panel">
+        <div class="tabs">
+          <button class="tab active" data-tab="guide">Guide</button>
+          <button class="tab" data-tab="requests">Requests <span id="reqCount" class="pill">0</span></button>
+          <button class="tab" data-tab="comms">Comms</button>
+          <button class="tab" data-tab="log">Log</button>
+        </div>
+        <div id="tab-guide" class="tabpane active"><div id="guideContent" class="scroll"></div></div>
+        <div id="tab-requests" class="tabpane"></div>
+        <div id="tab-comms" class="tabpane">
+          <div id="commsList" class="scroll"></div>
+          <div class="chat-row">
+            <input id="chatInput" type="text" maxlength="120" placeholder="Message your kingdom…" />
+            <button id="chatSend" class="btn btn-sm">Send</button>
+          </div>
+        </div>
+        <div id="tab-log" class="tabpane"><div id="logList" class="scroll"></div></div>
+      </div>
+
+      <!-- Center: map -->
+      <div id="centerpanel">
+        <canvas id="map"></canvas>
+        <div id="quickReq" class="quick-req"></div>
+      </div>
+
+      <!-- Right: selection + team cards -->
+      <div id="rightpanel" class="panel">
+        <div id="advisor" class="advisor"></div>
+        <div id="selDetails" class="sel-details"><div class="muted">Click an area to inspect it.</div></div>
+        <h4 class="rp-h">Your Council</h4>
+        <div id="teamCards" class="team-cards"></div>
+      </div>
+    </div>
+
+    <!-- Bottom: role actions -->
+    <div id="actionbar">
+      <div id="roleTitle" class="role-title">—</div>
+      <div id="actionButtons" class="action-buttons"></div>
+    </div>
+  </div>
+
+  <!-- ===================== GAME OVER ===================== -->
+  <div id="gameover" class="screen hidden">
+    <div class="vignette"></div>
+    <div class="over-card">
+      <h1 id="overTitle" class="title">Victory</h1>
+      <p id="overReason" class="subtitle"></p>
+      <div id="overScores" class="over-scores"></div>
+      <button onclick="location.reload()" class="btn btn-gold">Return to the Hall</button>
+    </div>
+  </div>
+
+  <!-- A small modal for multi-option choices (build, produce, etc.) -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-bg"></div>
+    <div class="modal-card">
+      <div class="modal-head"><span id="modalTitle">Choose</span><button id="modalClose" class="x">✕</button></div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Pause / vote overlay -->
+  <div id="pauseOverlay" class="pause-overlay hidden">
+    <div class="pause-card" id="pauseCard"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared/constants.js"></script>
+  <script src="/shared/balance.js"></script>
+  <script src="/shared/schema.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/tips.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/lobby.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "four-pillars-of-the-realm",
+  "version": "0.1.0",
+  "description": "A 4-player co-op medieval kingdom strategy game (Lord, Steward, Blacksmith, Commander).",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "smoke": "node test/smoke.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.7.5"
+  },
+  "license": "MIT"
+}
