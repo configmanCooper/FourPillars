@@ -387,11 +387,13 @@ function strength(team, g, enemyComp, wallMult, onOwnOutpost) {
       const rec = recs[i] || { w: 1, a: 0 };
       let ua = st.atk, ud = st.def;
       if (u === 'archer' && !arrowOk) ua = 1;                                  // out of arrows -> fight poorly
-      if (u === 'archer' && onOwnOutpost) { ua *= B.ARCHER_OUTPOST_BONUS; ud *= B.ARCHER_OUTPOST_BONUS; }  // archers dig in on our own outpost
+      if (u === 'archer' && onOwnOutpost) ud *= B.ARCHER_OUTPOST_BONUS;        // archers dig in on our own outpost — DEFENCE only
       if (u === 'cavalry') { ua *= cavBonus; ud *= cavBonus; }                 // strong vs soft (non-spear/non-cav) foes
       if (u === 'spearman') { ua *= spearBonus; ud *= spearBonus; }            // strong vs cavalry
       if (wep) ua *= (rec.w || 1);                                             // this soldier's OWN weapon quality
-      if (wallMult) { const wm = (u === 'archer') ? wallMult.archer : wallMult.troop; ua *= wm; ud *= wm; }
+      // Wall bonus only applies to the side that OWNS this location (battleRound passes wallMult only
+      // for the owner). Archers get it on DEFENCE only; other troops get it on both attack and defence.
+      if (wallMult) { if (u === 'archer') ud *= wallMult.archer; else { ua *= wallMult.troop; ud *= wallMult.troop; } }
       if (rec.a > 0) { ua *= B.EQUIP_TIER_MULT.advanced; ud *= B.EQUIP_TIER_MULT.advanced * (1 + B.ARMOR_DEF_BONUS * rec.a); }  // this soldier's OWN armour
       atk += ua; def += ud;
     }
