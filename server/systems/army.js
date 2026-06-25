@@ -366,7 +366,7 @@ function tickMovement(state, team, dt) {
   }
 }
 
-function strength(team, g, enemyComp, wallMult) {
+function strength(team, g, enemyComp, wallMult, onOwnOutpost) {
   let atk = 0, def = 0;
   const eq = team.equipQuality || {};
   ensureGear(g);
@@ -387,6 +387,7 @@ function strength(team, g, enemyComp, wallMult) {
       const rec = recs[i] || { w: 1, a: 0 };
       let ua = st.atk, ud = st.def;
       if (u === 'archer' && !arrowOk) ua = 1;                                  // out of arrows -> fight poorly
+      if (u === 'archer' && onOwnOutpost) { ua *= B.ARCHER_OUTPOST_BONUS; ud *= B.ARCHER_OUTPOST_BONUS; }  // archers dig in on our own outpost
       if (u === 'cavalry') { ua *= cavBonus; ud *= cavBonus; }                 // strong vs soft (non-spear/non-cav) foes
       if (u === 'spearman') { ua *= spearBonus; ud *= spearBonus; }            // strong vs cavalry
       if (wep) ua *= (rec.w || 1);                                             // this soldier's OWN weapon quality
@@ -517,7 +518,11 @@ function battleRound(state, areaId, blueM, redM, blueT, redT, dt, rng, log, blue
   const wallMult = walls > 0 ? { troop: 1 + Math.min(walls, 2) * B.WALL_TROOP_BONUS, archer: 1 + Math.min(walls, 2) * B.WALL_ARCHER_BONUS } : null;
   const blueWall = (wallMult && area.owner === 'BLUE') ? wallMult : null;
   const redWall = (wallMult && area.owner === 'RED') ? wallMult : null;
-  const bS = strength(blueT, blueM, rComp, blueWall), rS = strength(redT, redM, bComp, redWall);
+  // Archers get a bonus when fighting on their team's OWN outpost (a claimed, non-base site).
+  const isOutpost = area && area.terrain !== 'base' && !!area.site;
+  const blueOutpost = isOutpost && area.owner === 'BLUE';
+  const redOutpost = isOutpost && area.owner === 'RED';
+  const bS = strength(blueT, blueM, rComp, blueWall, blueOutpost), rS = strength(redT, redM, bComp, redWall, redOutpost);
   // Consume arrows.
   blueT.resources.arrows = Math.max(0, (blueT.resources.arrows || 0) - bS.arrowNeed * dt);
   redT.resources.arrows = Math.max(0, (redT.resources.arrows || 0) - rS.arrowNeed * dt);
