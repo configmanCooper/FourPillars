@@ -305,6 +305,7 @@ function snapshot(state) {
     areas: state.areas,
     teams: { BLUE: clean(t.BLUE), RED: clean(t.RED) },
     events: state.events,
+    combatFx: state._combatFx || [],
     pause: state.pause,
   };
 }

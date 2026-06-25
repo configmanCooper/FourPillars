@@ -416,6 +416,8 @@ function applyLosses(g, frac) {
 // Resolve battles in every area where both teams have a host present (moving or not). A host caught
 // in a battle STOPS to fight it out — no marching away mid-engagement — and BOTH sides take losses.
 function resolveCombat(state, dt, rng, log) {
+  state._combatFx = [];
+  const fx = new Map();   // host -> {losses, saves} this tick, for on-screen floaters
   const byArea = {};
   for (const team of [state.teams.BLUE, state.teams.RED]) {
     for (const g of team.armies) {
@@ -435,12 +437,15 @@ function resolveCombat(state, dt, rng, log) {
         fightingNow[g.id] = true;
         if (!g._fighting) rollWeaponDegrade(g, rng, log, g.team === 'BLUE' ? state.teams.BLUE : state.teams.RED);   // new encounter: weapons may wear
       }
-      battleRound(state, areaId, mergeGroups(blue), mergeGroups(red), state.teams.BLUE, state.teams.RED, dt, rng, log, blue, red);
+      battleRound(state, areaId, mergeGroups(blue), mergeGroups(red), state.teams.BLUE, state.teams.RED, dt, rng, log, blue, red, fx);
     }
   }
   // Mark who is (still) fighting so each engagement only rolls weapon wear once.
   for (const team of [state.teams.BLUE, state.teams.RED]) for (const g of team.armies) g._fighting = !!fightingNow[g.id];
+  // Publish per-host combat floaters (losses & armour saves) at each host's position.
+  for (const [host, e] of fx) { if ((e.losses || 0) + (e.saves || 0) > 0) state._combatFx.push({ x: host.x, y: host.y, team: host.team, losses: e.losses || 0, saves: e.saves || 0 }); }
 }
+function recordFx(fx, host, key) { if (!fx) return; let e = fx.get(host); if (!e) { e = { losses: 0, saves: 0 }; fx.set(host, e); } e[key]++; }
 
 // One combat encounter: each soldier with a weapon may degrade it a tier; a lowest-tier weapon breaks.
 function rollWeaponDegrade(g, rng, log, team) {
@@ -495,7 +500,7 @@ function mergeGroups(list) {
   return m;
 }
 
-function battleRound(state, areaId, blueM, redM, blueT, redT, dt, rng, log, blueList, redList) {
+function battleRound(state, areaId, blueM, redM, blueT, redT, dt, rng, log, blueList, redList, fx) {
   const bComp = composition(blueM), rComp = composition(redM);
   // Walls fortify whoever OWNS this location: +20% to all troops, +50% to archers (per wall, capped).
   const area = state.areas[areaId];
@@ -526,8 +531,8 @@ function battleRound(state, areaId, blueM, redM, blueT, redT, dt, rng, log, blue
   const redShare = (rPow * bVuln) / (rPow * bVuln + bPow);
   const killsVsRed = rollKills(blueShare, rng);
   const killsVsBlue = rollKills(redShare, rng);
-  applyKills(redT, redList, killsVsRed, rng);
-  applyKills(blueT, blueList, killsVsBlue, rng);
+  applyKills(redT, redList, killsVsRed, rng, fx);
+  applyKills(blueT, blueList, killsVsBlue, rng, fx);
   for (const g of blueList) g.morale = killsVsBlue >= 2 ? 'low' : (g.morale === 'low' && killsVsBlue === 0 ? 'normal' : g.morale);
   for (const g of redList) g.morale = killsVsRed >= 2 ? 'low' : (g.morale === 'low' && killsVsRed === 0 ? 'normal' : g.morale);
   // Cautious stance retreats home when badly outnumbered.
@@ -565,7 +570,7 @@ function killOneUnit(g, rng) {
   for (const u of C.UNITS) if ((g.units[u] || 0) > 0) { removeSoldier(g, u); return; }
 }
 // Apply this second's kills to a side: spread across hosts; each chosen soldier's OWN armour may save them.
-function applyKills(team, list, kills, rng) {
+function applyKills(team, list, kills, rng, fx) {
   if (kills <= 0) return;
   for (let k = 0; k < kills; k++) {
     const target = pickWeightedHost(list, rng); if (!target) break;
@@ -575,8 +580,9 @@ function applyKills(team, list, kills, rng) {
     for (const u of C.UNITS) { const n = target.units[u] || 0; if (n <= 0) continue; if (r < n) { chosenType = u; chosenIdx = Math.floor(r); break; } r -= n; }
     if (!chosenType) continue;
     const rec = (target.gear[chosenType] || [])[chosenIdx] || { w: 1, a: 0 };
-    if (rec.a > 0 && rng.chance(Math.min(B.ARMOR_SAVE_MAX, B.ARMOR_SAVE_BASE * rec.a))) continue;   // their armour turned the blow
+    if (rec.a > 0 && rng.chance(Math.min(B.ARMOR_SAVE_MAX, B.ARMOR_SAVE_BASE * rec.a))) { recordFx(fx, target, 'saves'); continue; }   // their armour turned the blow
     removeSoldier(target, chosenType, chosenIdx);
+    recordFx(fx, target, 'losses');
   }
 }
 

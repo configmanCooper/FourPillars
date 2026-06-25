@@ -254,9 +254,14 @@
         roundRect(ctx, cx - 8, cy - 6, 16, 12, 2); ctx.fill(); ctx.stroke();
         ctx.fillStyle = (C.RESOURCE_META[cv.resource] || {}).color || '#fff';
         ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
-        if (cv.escort) { ctx.fillStyle = teamCol(team, true); ctx.font = '11px serif'; ctx.fillText('🛡', cx + 11, cy - 8); }
-        else if (cv.fleeing) { const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 120); ctx.fillStyle = 'rgba(217,164,65,' + (0.6 + pulse * 0.4) + ')'; ctx.font = '11px serif'; ctx.fillText('🏃', cx + 11, cy - 8); }
-        else if (cv.guards > 0) { ctx.fillStyle = '#bcd3a0'; ctx.font = '10px serif'; ctx.fillText('🛡' + Math.round(cv.guards), cx + 10, cy - 8); }
+        // Status badge centred ABOVE the caravan so a guarded/escorted convoy reads at a glance.
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        if (cv.escort) { ctx.font = '14px serif'; ctx.fillStyle = teamCol(team, true); ctx.fillText('🛡', cx, cy - 14); }
+        else if (cv.fleeing) { const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 120); ctx.fillStyle = 'rgba(217,164,65,' + (0.6 + pulse * 0.4) + ')'; ctx.font = '13px serif'; ctx.fillText('🏃', cx, cy - 14); }
+        else if (cv.guards > 0) {
+          ctx.font = '14px serif'; ctx.fillStyle = '#cfe6b0'; ctx.fillText('🛡', cx, cy - 14);
+          ctx.font = '700 8px Cinzel'; ctx.fillStyle = '#13301a'; ctx.fillText(Math.round(cv.guards), cx, cy - 13);  // guard count on the shield
+        }
         ctx.restore();
       }
     }
@@ -301,6 +306,16 @@
         floats.push({ x: cx, y: cy - 40, vy: -0.6, life: 1, text: '-' + Math.round(prevKeep[team] - hp), col: '#ff6a4a' });
       }
       prevKeep[team] = hp;
+    }
+
+    // Combat floaters: red "-N" over a host that lost N soldiers this round, and a "🛡 Saved!" badge
+    // when someone's armour turned a killing blow. Sent per-tick by the server in snap.combatFx.
+    if (tickChanged && snap.combatFx) {
+      for (const e of snap.combatFx) {
+        const [cx, cy] = w2s(e.x, e.y);
+        if (e.losses > 0) floats.push({ x: cx, y: cy - 30, vy: -0.75, life: 1.15, text: '-' + e.losses, col: '#ff5a4a' });
+        if (e.saves > 0) floats.push({ x: cx + 16, y: cy - 46, vy: -0.5, life: 1.5, text: '🛡 Saved!' + (e.saves > 1 ? ' ×' + e.saves : ''), col: '#8fd6ff' });
+      }
     }
 
     drawParticles();

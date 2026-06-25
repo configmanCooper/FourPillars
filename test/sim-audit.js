@@ -22,7 +22,7 @@ function snapshot(state) {
     for (const g of t.armies) { const n = unitCount(g); if (n < 0.0001) continue; total += n; const a = g.moving ? g.moving.route[g.moving.legIndex] : g.area; areas[a] = (areas[a] || 0) + n; }
     const cvAreas = {}; for (const cv of t.caravans) { if ((cv.guards || 0) >= 1) { const a = cv.route[cv.legIndex]; cvAreas[a] = true; } }
     const res = {}; for (const k of C.RESOURCES) res[k] = t.resources[k];
-    out[tk] = { total, areas, food: t.resources.food, housing: t.housing, cap: t.storageCap, res, cvAreas, popTotal: t.pop.total };
+    out[tk] = { total, areas, food: t.resources.food, housing: t.housing, cap: t.storageCap, res, cvAreas, popTotal: t.pop.total, fighting: t.armies.some((g) => g._fighting) };
   }
   return out;
 }
@@ -81,7 +81,10 @@ for (let m = 0; m < MATCHES; m++) {
       const drop = before[tk].total - after[tk].total;
       const ml = state.teams[tk].militaryLog; const cur0 = ml && ml[0];
       const freshCombatLog = cur0 && cur0 !== log0[tk] && (cur0.kind === 'combat' || cur0.kind === 'ambush');
-      if (drop > 0.05 && !enemyNear(state, tk, before, after) && before[tk].food > 0.5 && !freshCombatLog) flag('unexplained_army_loss', { m, tick: state.tick, tk, lost: +drop.toFixed(2), from: +before[tk].total.toFixed(1), to: +after[tk].total.toFixed(1) });
+      // Combat this tick (a host was destroyed/vanished, so co-location can't be seen afterwards) is
+      // signalled by the _fighting flag resolveCombat leaves on the surviving combatants of either side.
+      const anyFighting = after.BLUE.fighting || after.RED.fighting;
+      if (drop > 0.05 && !enemyNear(state, tk, before, after) && !anyFighting && before[tk].food > 0.5 && !freshCombatLog) flag('unexplained_army_loss', { m, tick: state.tick, tk, lost: +drop.toFixed(2), from: +before[tk].total.toFixed(1), to: +after[tk].total.toFixed(1) });
       // Population over housing is only a BUG if pop rose past the cap — not when housing itself dropped
       // (a House razed in a siege legitimately leaves you temporarily overcrowded).
       const t = state.teams[tk];
