@@ -8,6 +8,13 @@ one of four vital roles; the kingdom only thrives if all four cooperate. Play **
 > Built as a focused, understandable‑in‑5‑minutes prototype — the complexity comes from
 > players coordinating, not from menus.
 
+**▶️ Hosted on GitHub Pages:** **https://configmancooper.github.io/FourPillars/**
+
+> ⚠️ **Heads‑up about Pages:** GitHub Pages only serves *static files*. This game uses an
+> **authoritative Node + Socket.IO server**, so the Pages site hosts the **client** but a live
+> match still needs that server running somewhere (see *Hosting* below). Pages alone can't run a
+> multiplayer game.
+
 ---
 
 ## The Four Pillars (roles)
@@ -46,6 +53,21 @@ Then open **http://localhost:3100** in your browser.
 - **Co‑op / PvP:** Share the 4‑letter code. Friends open the same URL, **Join**, and claim seats.
   Open seats on either team are filled by AI. Multiple tabs on one machine work for testing.
 - **Quick match** (≈12 min) is on by default; untick it for a full ≈45‑min match.
+
+### Hosting
+
+Because the simulation is server‑authoritative, **a live game needs the Node server running** — the
+browser client (whether served locally or from GitHub Pages) connects back to it over Socket.IO.
+
+- **GitHub Pages** (this repo): Pages publishes the **static client** at
+  **https://configmancooper.github.io/FourPillars/**. To make it playable you must run the Node
+  server somewhere reachable (any Node host — e.g. Render, Railway, Fly.io, Glitch — or your own
+  machine) and point the client's socket at it: in `public/js/net.js`, change `io()` to
+  `io('https://your-server-host')`. (The page also loads `/socket.io/socket.io.js` and
+  `/shared/*.js`, which that server provides.) Without a reachable server the Pages site loads but
+  can't start a match.
+- **Single‑host (simplest):** run `npm start` on any Node host and share its URL — that one process
+  serves both the client and the realtime server, so no extra configuration is needed.
 
 ### Tests / verification
 
