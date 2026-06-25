@@ -83,6 +83,7 @@
     SITE: 'SITE',               // Lord -> Steward: expand (explore/claim) or upgrade a site
     BUILD: 'BUILD',             // anyone -> Lord: construct a specific building
     NEED: 'NEED',               // anyone -> best role for payload.resource
+    MINEFOCUS: 'MINEFOCUS',     // anyone -> Steward: shift the mine split toward stone or iron
     USE: 'USE',                 // anyone -> Lord: permission to spend a reserved resource (one-time)
     RESERVE: 'RESERVE',         // anyone -> Lord: reserve a resource for the requester for a while
   };

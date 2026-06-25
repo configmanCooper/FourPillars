@@ -30,6 +30,7 @@ const REQ_TEXT = {
   SITE: 'Steward, expand our territory!',
   BUILD: 'Lord, we should raise a new building!',
   NEED: 'We need more of this resource!',
+  MINEFOCUS: 'Steward, shift the miners!',
   USE: 'May I spend a reserved resource?',
   RESERVE: 'Lord, please reserve a resource for me.',
 };
@@ -38,6 +39,10 @@ function reqMessage(type, payload) {
   if (type === 'NEED' && payload && payload.resource) {
     const m = C.RESOURCE_META[payload.resource];
     return 'We need more ' + (m ? m.glyph + ' ' + payload.resource : payload.resource) + '!';
+  }
+  if (type === 'MINEFOCUS' && payload && payload.res) {
+    const m = C.RESOURCE_META[payload.res];
+    return 'Steward, mine more ' + (m ? m.glyph + ' ' + payload.res : payload.res) + ' (shift miners off the other ore).';
   }
   if (type === 'USE' && payload && payload.resource) {
     const m = C.RESOURCE_META[payload.resource];
@@ -110,6 +115,7 @@ function resolveRequest(state, team, id, accept, systems, actorRole) {
 
 function lowerType(t, req) {
   if (t === 'NEED') { const res = req && req.payload && req.payload.resource; return 'boosting ' + (res || 'that resource'); }
+  if (t === 'MINEFOCUS') { const res = req && req.payload && req.payload.res; return 'shifting the mines toward ' + (res || 'that ore'); }
   if (t === 'USE') { const res = req && req.payload && req.payload.resource; return 'allowing one spend of ' + (res || 'that resource'); }
   if (t === 'RESERVE') { const res = req && req.payload && req.payload.resource; return 'reserving ' + (res || 'that resource') + ' for you'; }
   return ({ ESCORT: 'escorting the caravan', GUARDS: 'lending caravan guards', WORKERS: 'sending workers', IRON: 'pushing iron through',
@@ -219,6 +225,15 @@ function fulfill(state, team, req, systems) {
       for (const id in state.areas) { const a = state.areas[id]; if (a.owner === team.team && a.terrain !== 'base') order.push(id); }
       for (const areaId of order) { if (buildings.queueBuilding(state, team, areaId, type).ok) return true; }
       return false;
+    }
+    case 'MINEFOCUS': {
+      // Shift the stone↔iron mining split toward the asked-for ore. mineIronFocus: 0 = all stone,
+      // 1 = all iron. We set a longer demand window (the AI Steward holds the focus) AND nudge it now.
+      const res = req.payload && req.payload.res;
+      if (res !== 'iron' && res !== 'stone') return false;
+      team._mineDemand = { res: res, until: state.elapsed + 75 };
+      const g = team.gather; if (g) { const target = res === 'iron' ? B.AI_MINE_FOCUS_MAX : B.AI_MINE_FOCUS_MIN; const cur = (typeof g.mineIronFocus === 'number') ? g.mineIronFocus : B.DEFAULT_MINE_FOCUS; const step = Math.sign(target - cur) * Math.min(0.34, Math.abs(target - cur)); economy.setMineFocus(state, team, cur + step); }
+      return true;
     }
     case 'NEED': {
       const res = req.payload && req.payload.resource;

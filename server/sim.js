@@ -301,7 +301,7 @@ function spendKeysFor(action, payload) {
   return [];
 }
 function defaultTarget(type) {
-  return ({ ESCORT: 'COMMANDER', GUARDS: 'COMMANDER', WORKERS: 'LORD', IRON: 'STEWARD', EQUIPMENT: 'BLACKSMITH', RECRUITS: 'LORD', TRAINERS: 'LORD', DEFEND: 'COMMANDER', TRAIN: 'COMMANDER', MISSION: 'COMMANDER', SITE: 'STEWARD', BUILD: 'LORD', RESERVE: 'LORD' })[type] || 'LORD';
+  return ({ ESCORT: 'COMMANDER', GUARDS: 'COMMANDER', WORKERS: 'LORD', IRON: 'STEWARD', EQUIPMENT: 'BLACKSMITH', RECRUITS: 'LORD', TRAINERS: 'LORD', DEFEND: 'COMMANDER', TRAIN: 'COMMANDER', MISSION: 'COMMANDER', SITE: 'STEWARD', BUILD: 'LORD', RESERVE: 'LORD', MINEFOCUS: 'STEWARD' })[type] || 'LORD';
 }
 function broadcastText(type, p) {
   if (type === 'NEED' && p && p.resource) { const m = C.RESOURCE_META[p.resource]; return 'We could use more ' + (m ? m.glyph + ' ' + p.resource : p.resource) + '.'; }

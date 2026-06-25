@@ -207,6 +207,7 @@
     const pl = (typeof r === 'object' && r.payload) || {};
     const resG = (k) => { const m = C.RESOURCE_META[k]; return m ? m.glyph + ' ' + k : k; };
     if (t === 'NEED') { const res = pl.resource || 'resources'; return 'send more ' + resG(res); }
+    if (t === 'MINEFOCUS') { const res = pl.res || 'ore'; return 'mine more ' + resG(res) + ' (shift the miners off the other ore)'; }
     if (t === 'USE') { const res = pl.resource || 'a resource'; return 'access to spend ' + resG(res) + (pl.reason ? ' — ' + pl.reason : ''); }
     if (t === 'RESERVE') { const res = pl.resource || 'a resource'; return 'reserve ' + resG(res) + ' for them' + (pl.reason ? ' — ' + pl.reason : ''); }
     if (t === 'BUILD') { const def = pl.type && B.BUILDINGS[pl.type]; return 'build ' + (def ? buildGlyph(pl.type) + ' ' + def.name : 'a building'); }
@@ -471,6 +472,14 @@
     for (const [k, why] of secure) { const m = C.RESOURCE_META[k];
       html += optRow(m.glyph + ' Secure ' + m.name + ' <span class="muted">(have ' + Math.round(team.resources[k] || 0) + ')</span>', 'Steward prioritises ' + why, '', 'Request',
         () => sendReq('NEED', { resource: k }, 'Asked the Steward to secure ' + k + '.')); }
+    // Mine focus: shift the stone↔iron split of the existing miners (not just add workers).
+    html += modalSection('Mine focus (stone ↔ iron)');
+    const mif = (team.gather && typeof team.gather.mineIronFocus === 'number') ? team.gather.mineIronFocus : 0.5;
+    html += '<div class="muted" style="font-size:11px;margin-bottom:4px">Miners currently split <b>' + Math.round((1 - mif) * 100) + '% ' + (C.RESOURCE_META.stone.glyph) + ' stone</b> / <b>' + Math.round(mif * 100) + '% ' + (C.RESOURCE_META.iron.glyph) + ' iron</b>.</div>';
+    html += optRow(C.RESOURCE_META.iron.glyph + ' Mine more Iron', 'Shift the miners off stone, toward iron', '', 'Request',
+      () => sendReq('MINEFOCUS', { res: 'iron' }, 'Asked the Steward to mine more iron.'));
+    html += optRow(C.RESOURCE_META.stone.glyph + ' Mine more Stone', 'Shift the miners off iron, toward stone', '', 'Request',
+      () => sendReq('MINEFOCUS', { res: 'stone' }, 'Asked the Steward to mine more stone.'));
     html += modalSection('Expand the realm');
     const ownsSite = Object.values(State.snapshot.areas).some((a) => a.claimedBy === State.myTeam && a.terrain !== 'base');
     html += optRow('🧭 Claim a new site', 'Steward scouts & claims the best available site (income + build slots)', '', 'Request',
