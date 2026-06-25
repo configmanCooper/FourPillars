@@ -42,7 +42,11 @@ function claim(state, team, areaId) {
     team._busyJob = { kind: 'claim', areaId, remaining: B.CLAIM_TIME };
     return { ok: true, msg: 'Building outpost at ' + area.name + '...' };
   }
-  // Hold enforcement happens upstream (applyAction) for the 'claim' action; here we just spend what we have.
+  // Enforce the Lord's rationing HERE too (not only upstream in applyAction): the AI Steward calls
+  // claim() directly, so without this check it would fund outposts with wood the Lord reserved away
+  // from the Steward (e.g. reserved for the Blacksmith). A one-time access grant lifts the block.
+  const held = eco.heldCostForRole(team, 'STEWARD', B.CLAIM_COST);
+  if (held) return { ok: false, reason: (C.RESOURCE_META[held] ? C.RESOURCE_META[held].name : held) + ' is reserved by the Lord — ask to access it.' };
   const have = team.resources.wood || 0;
   if (have < 1) return { ok: false, reason: 'No 🪵 wood to put toward the outpost — gather some or ask the council.' };
   const pay = Math.min(have, need - paid);
