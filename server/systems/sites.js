@@ -243,12 +243,15 @@ function tickSites(state, team, dt, rng, log) {
       const enemyN = near.total; const hitArea = near.area; const attacker = near.host;
       if (enemyN >= 0.5 && !cv.escort) {
         const here = state.areas[enteredId].name;
-        if ((cv.guards || 0) >= 1) {
-          const guardsBefore = Math.round(cv.guards);
-          const r = guardSkirmish(state, team, hitArea, cv.guards);
-          const post = state.areas[cv.guardPost];
+        const post = state.areas[cv.guardPost];
+        // Guards are stationed at the post and shared across its caravans — a caravan can field no more
+        // than the post STILL holds (fixes two concurrent caravans both spending the same guards).
+        const liveGuards = Math.min(Math.round(cv.guards || 0), (post && post.site) ? Math.round(post.site.guards || 0) : 0);
+        if (liveGuards >= 1) {
+          const guardsBefore = liveGuards;
+          const r = guardSkirmish(state, team, hitArea, liveGuards);
           if (post && post.site) post.site.guards = Math.max(0, Math.round((post.site.guards || 0) - r.gLoss));
-          cv.guards = Math.max(0, cv.guards - r.gLoss);
+          cv.guards = Math.min(Math.max(0, Math.round((cv.guards || 0) - r.gLoss)), (post && post.site) ? Math.round(post.site.guards || 0) : 0);
           // The attackers STOP to fight the guards (the caravan keeps rolling — guards buy it time).
           if (attacker) attacker.pinnedUntil = state.elapsed + B.GUARD_PIN_SECONDS;
           if (enemyN > guardsBefore) {

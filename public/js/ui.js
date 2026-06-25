@@ -649,10 +649,14 @@
     for (const type of C.BUILDINGS) { const def = B.BUILDINGS[type];
       if (def.fixed) continue;   // the Watchtower is the permanent Keep core — not buildable
       const kingdomTotal = team.buildings[type] || 0;
+      const cap = B.MAX_PER_BUILDING ? B.MAX_PER_BUILDING[type] : null;
+      let queuedOfType = 0; for (const q of team.buildQueue) if (q.type === type) queuedOfType++;
+      const atCap = cap != null && (kingdomTotal + queuedOfType) >= cap;
       const aff = canAfford(team, def.cost);
-      const why = free <= 0 ? ' — location full' : (!aff ? ' — need ' + missingCost(team, def.cost) : '');
-      html += optRow(def.name + ' <span class="muted">(kingdom total: ' + kingdomTotal + ')</span>', effectDesc(type), costStr(def.cost) + (why ? '<span style="color:#c8553d">' + why + '</span>' : ''), 'Build here',
-        () => { Net.action('build', { type, areaId: target }); }, !aff || free <= 0); }
+      const why = atCap ? ' — at the limit of ' + cap : (free <= 0 ? ' — location full' : (!aff ? ' — need ' + missingCost(team, def.cost) : ''));
+      const capLabel = cap != null ? '/' + cap : '';
+      html += optRow(def.name + ' <span class="muted">(kingdom total: ' + kingdomTotal + capLabel + ')</span>', effectDesc(type), costStr(def.cost) + (why ? '<span style="color:#c8553d">' + why + '</span>' : ''), 'Build here',
+        () => { Net.action('build', { type, areaId: target }); }, !aff || free <= 0 || atCap); }
     if (team.buildQueue.length) html += '<div class="rp-h">Construction queue</div>' + team.buildQueue.map((q, i) => '<div class="opt"><div class="opt-info"><div class="opt-name">' + B.BUILDINGS[q.type].name + ' <span class="muted">@ ' + (snap.areas[q.areaId] ? snap.areas[q.areaId].name : '?') + (i === 0 ? '' : ' · queued') + '</span></div><div class="opt-desc">' + (i === 0 ? Math.ceil(q.remaining) + 's left' + (team.pop.builders <= 0 ? ' (no builders assigned!)' : '') : 'waiting') + '</div></div><button class="btn btn-sm" onclick="FP.UI.act(\'cancelBuild\',{id:\'' + q.id + '\'})">Cancel</button></div>').join('');
     openModal('Build — choose location, then structure', html, modalBuild);
   }
