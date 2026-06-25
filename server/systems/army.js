@@ -175,11 +175,14 @@ function tickTraining(state, team, dt) {
       // Consume the needed gear, drawing the BEST quality forged item for each need; the soldier keeps
       // the quality of their own weapon. Resources (horses, etc.) are spent from the stockpile.
       let weaponQ = 1; const wItem = B.UNIT_WEAPON[job.unitType];
+      const isCatapult = job.unitType === 'catapult';
+      let cataSum = 0, cataN = 0;   // a catapult's build quality = AVERAGE of the siege parts used to build it
       for (const k in needs) {
         if (team.equipment[k] !== undefined) {
-          for (let z = 0; z < needs[k]; z++) { const q = eco.takeBestGear(team, k); if (k === wItem && q != null) weaponQ = q; }
+          for (let z = 0; z < needs[k]; z++) { const q = eco.takeBestGear(team, k); if (k === wItem && q != null) weaponQ = q; if (isCatapult && k === 'siegeParts' && q != null) { cataSum += q; cataN++; } }
         } else { team.resources[k] -= needs[k]; eco.logSpend(team, k, 'COMMANDER', needs[k], (fromMilitia ? 'upgrading to ' : 'training ') + C.UNIT_META[job.unitType].name); }
       }
+      if (isCatapult && cataN > 0) weaponQ = cataSum / cataN;   // stored in rec.w; scales the catapult's attack & siege power
       // Issue this soldier their own armour if any is stockpiled (each soldier carries individual armour).
       let armorQ = 0;
       if ((team.equipment.armor || 0) >= 1) { const aq = eco.takeBestGear(team, 'armor'); if (aq != null) armorQ = aq; }
@@ -391,6 +394,7 @@ function strength(team, g, enemyComp, wallMult, onOwnOutpost) {
       if (u === 'cavalry') { ua *= cavBonus; ud *= cavBonus; }                 // strong vs soft (non-spear/non-cav) foes
       if (u === 'spearman') { ua *= spearBonus; ud *= spearBonus; }            // strong vs cavalry
       if (wep) ua *= (rec.w || 1);                                             // this soldier's OWN weapon quality
+      if (u === 'catapult') ua *= (rec.w || 1);                                // catapult build quality (avg of its siege parts) scales its attack
       // Walls fortify the DEFENCE of the side that OWNS this location only (battleRound passes wallMult
       // only to the owner): +40% def for troops at 2 walls, +100% def for archers. Never boosts attack.
       if (wallMult) ud *= (u === 'archer') ? wallMult.archer : wallMult.troop;
@@ -746,10 +750,16 @@ function tickRaze(state, dt, rng, log) {
       if (!isBase && (area.captureProgress || 0) > 0) area.captureProgress = Math.max(0, area.captureProgress - B.CAPTURE_DECAY * dt);
       continue;
     }
-    // Razing power (siege >> cavalry > infantry > archers), effective force capped at 20.
+    // Razing power (siege >> cavalry > infantry > archers), effective force capped at 20. A catapult's
+    // siege power scales with its OWN build quality (the average of the siege parts it was built from).
     let power = 0, total = 0;
-    const fq = state.teams[foe].equipQuality || {};
-    for (const g of enemyHosts) for (const u of C.UNITS) { const n = g.units[u] || 0; if (!n) continue; let rp = (B.RAZE_STAT[u] || 0) * (g.hasArmor ? B.EQUIP_TIER_MULT.advanced : 1); if (u === 'catapult') rp *= (fq.siegeParts || 1); power += n * rp; total += n; }
+    for (const g of enemyHosts) for (const u of C.UNITS) {
+      const n = g.units[u] || 0; if (!n) continue;
+      const armorMult = g.hasArmor ? B.EQUIP_TIER_MULT.advanced : 1;
+      let rp = (B.RAZE_STAT[u] || 0) * armorMult;
+      if (u === 'catapult') { const recs = (g.gear && g.gear[u]) || []; let q = 0, cnt = 0; for (const r of recs) { q += (r.w || 1); cnt++; } rp *= (cnt > 0 ? q / cnt : 1); }
+      power += n * rp; total += n;
+    }
     if (total > B.MAX_UNITS_PER_AREA) power *= B.MAX_UNITS_PER_AREA / total;
     if (power <= 0) continue;
 

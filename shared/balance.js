@@ -216,7 +216,7 @@
     swordsman: { atk: 3, def: 3, speed: 70, vsKeep: 0.8, upkeep: 1 },
     archer:    { atk: 3, def: 1, speed: 75, vsKeep: 0.5, ranged: true, upkeep: 1 },
     cavalry:   { atk: 4, def: 2, speed: 120, vsKeep: 0.6, isCav: true, upkeep: 1.5 },
-    catapult:  { atk: 1, def: 1, speed: 45, vsKeep: 8,   upkeep: 2 },
+    catapult:  { atk: 5, def: 1, speed: 45, vsKeep: 8,   upkeep: 2 },
   };
   // Composition counters: per matching enemy soldier, a counter unit gains COUNTER_BONUS_PER strength,
   // capped at COUNTER_BONUS_MAX. Cavalry count enemy non-spear/non-cav units; spearmen count enemy cavalry.
@@ -288,7 +288,9 @@
     easy:   { legendary: 0.00, excellent: 0.04, good: 0.18, standard: 0.28, poor: 0.26, awful: 0.24 },
   };
   // The equipment item each unit type relies on (for applying weapon quality in combat).
-  const UNIT_WEAPON = { spearman: 'spears', swordsman: 'swords', archer: 'bows', cavalry: 'swords', catapult: 'siegeParts' };
+  // A catapult is BUILT from siege parts (it carries no forgeable weapon of its own); the others wield
+  // a forged weapon whose individual quality scales their attack.
+  const UNIT_WEAPON = { spearman: 'spears', swordsman: 'swords', archer: 'bows', cavalry: 'swords' };
   function qualityTier(pct) { for (const t of QUALITY_TIERS) if (pct >= t.min) return t; return QUALITY_TIERS[QUALITY_TIERS.length - 1]; }
   function qualityById(id) { return QUALITY_TIERS.find((t) => t.id === id) || QUALITY_TIERS[3]; }
   function rollQuality(difficulty, r) { // r in [0,1)
