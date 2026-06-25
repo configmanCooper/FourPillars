@@ -152,7 +152,7 @@
     bows:       { cost: { wood: 10 },          time: 8,  batch: 5 },
     arrows:     { cost: { wood: 4 },           time: 4,  batch: 12, isResource: true },
     armor:      { cost: { iron: 12 },          time: 14, batch: 3 },
-    siegeParts: { cost: { wood: 30, iron: 20 },time: 15, batch: 1, needs: 'siege' },
+    siegeParts: { cost: { wood: 30, stone: 10, iron: 20 },time: 15, batch: 1, needs: 'siege' },
   };
   // The Blacksmith specialises in ONE forgeable item — that item forges SPEC_TIME_REDUCTION (10%)
   // faster, AND a sub-par strike on it is lifted by SPEC_QUALITY_BONUS (the specialist's hands save a
