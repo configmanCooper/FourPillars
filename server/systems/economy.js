@@ -44,7 +44,7 @@ function canAfford(team, cost) {
   return true;
 }
 function spend(team, cost) { for (const k in cost) team.resources[k] -= cost[k]; }
-function refund(team, cost) { for (const k in cost) team.resources[k] = (team.resources[k] || 0) + cost[k]; }
+function refund(team, cost) { for (const k in cost) addResource(team, k, cost[k]); }
 
 // Spend AND log who used each resource and what for (for the Lord's per-resource usage log).
 function spendFor(team, cost, role, purpose) {
@@ -90,7 +90,7 @@ function recomputeDerived(team) {
     if (p[job] > cap) { p.idle += p[job] - cap; p[job] = cap; }
   }
   p.educated = Math.min(p.educated, workforce(team));
-  p.total = workforce(team) + p.recruits + p.soldiers;
+  p.total = workforce(team) + p.recruits + p.soldiers + (p.away || 0);
   team.storageCap = B.STORAGE_BASE + team.buildings.storehouse * B.STORAGE_PER_STOREHOUSE;
   team.housing = B.START_HOUSING + team.buildings.house * B.HOUSING_PER_HOUSE;
 }

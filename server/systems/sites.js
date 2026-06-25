@@ -136,22 +136,28 @@ function enemyTroopsNear(state, team, areaId) {
 // Guards skirmish the enemy troops at an area to save a caravan: both sides take losses, the caravan
 // lives on. Returns guards lost. Enemy casualties fall on their cheapest units first.
 function guardSkirmish(state, team, areaId, guards) {
+  const army = require('./army.js');
   const enemyN = enemyTroopsAt(state, team, areaId);
   const gLoss = Math.min(guards, Math.max(1, Math.round(enemyN * B.GUARD_LOSS_PER)));
   let eKill = Math.min(enemyN, Math.max(1, Math.round(guards * B.GUARD_KILL_PER)));
+  const totalKill = eKill;
   const enemy = state.teams[S.enemyOf(team.team)];
   for (const u of C.UNITS) {
     if (eKill <= 0) break;
     for (const g of enemy.armies) {
       if (eKill <= 0) break;
       if (currentArea(g) !== areaId) continue;
-      const take = Math.min(g.units[u] || 0, eKill);
-      if (take > 0) { g.units[u] -= take; eKill -= take; }
+      const take = Math.min(Math.round(g.units[u] || 0), eKill);
+      for (let k = 0; k < take; k++) army.removeSoldier(g, u);   // remove the soldier AND their gear record (stay consistent)
+      eKill -= take;
     }
   }
   let soldiers = 0; for (const g of enemy.armies) for (const u of C.UNITS) soldiers += g.units[u] || 0;
   enemy.pop.soldiers = Math.round(soldiers);
-  return { gLoss, eKill: Math.max(1, Math.round(guards * B.GUARD_KILL_PER)) };
+  // Tell the VICTIM why their soldiers fell — otherwise troops seem to "die for no reason" on the road.
+  const killed = totalKill - Math.max(0, eKill);
+  if (killed > 0) army.logMil(enemy, '⚔️ ' + killed + ' of our soldiers fell ambushing an enemy caravan\'s guards at ' + (state.areas[areaId] ? state.areas[areaId].name : 'the road') + '.', 'combat');
+  return { gLoss, eKill: killed };
 }
 
 // Steward stations guards (from the unassigned pool) at a claimed outpost to protect its caravans.
@@ -312,6 +318,9 @@ function commitExpeditionWorkers(team, n, allowCooling) {
       if (b.n <= 0) p.cooling.splice(i, 1);
     }
   }
+  // Workers on expedition still count toward the population/housing (they're away, not gone) — otherwise
+  // their freed housing is refilled by growth and they overflow the cap when they return.
+  p.away = (p.away || 0) + taken;
   return taken;
 }
 function startExpedition(state, team, id) {
@@ -335,7 +344,8 @@ function tickExpedition(state, team, dt, rng, log) {
     for (const k in ex.reward) eco.addResource(team, k, ex.reward[k]);
     let returned = ex.workers;
     if (rng.chance(ex.risk || 0) && (team.pop.total - 1) >= B.POP_FLOOR) returned -= 1; // a crew may not come home
-    if (returned > 0) team.pop.idle += returned;
+    team.pop.away = Math.max(0, (team.pop.away || 0) - ex.workers);   // they're no longer away…
+    if (returned > 0) team.pop.idle += returned;                       // …survivors rejoin the idle pool
     eco.recomputeDerived(team);
     team.expedition = null;
     team.expeditionCooldownUntil = state.elapsed + B.EXPEDITION_COOLDOWN;

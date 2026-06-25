@@ -770,5 +770,5 @@ function tickRaze(state, dt, rng, log) {
 module.exports = {
   formUnits, trainUnits, upgradeUnits, cancelTraining, tickTraining, rally, command, setFormation, setStance, tickMovement, resolveCombat, tickRaze, transferUnits,
   garrison, unitCount, currentArea, barracksAreasOf, unitsAtArea, enforceCaps, roomAt,
-  moveUnits, reconcileGear, ensureGear, reequip, hostPower,
+  moveUnits, reconcileGear, ensureGear, reequip, hostPower, removeSoldier, logMil,
 };

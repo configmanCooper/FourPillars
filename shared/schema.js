@@ -87,6 +87,7 @@
         total: B.START_POP, idle: 0,
         farmers: 4, woodcutters: 4, miners: 2, builders: 2, students: 0, trainers: 0,
         recruits: B.START_RECRUITS, soldiers: 0,
+        away: 0,              // workers committed to an expedition (still housed; rejoin on return)
         educated: 0,          // educated workers (faster reassignment)
         cooling: [],          // re-idled workers waiting out a reassignment cooldown: [{n, until, edu}]
         eduProgress: 0,       // accumulates toward the next educated graduate
