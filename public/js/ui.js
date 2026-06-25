@@ -1042,18 +1042,34 @@
   }
   function finishMinigame() {
     mg.done = true; if (mg.raf) cancelAnimationFrame(mg.raf);
+    const team = State.teamState();
     const maxScore = mg.clicks * B.FORGE_ZONES.scoreGreen;
-    const pct = maxScore > 0 ? mg.score / maxScore : 0;
+    const rawPct = maxScore > 0 ? mg.score / maxScore : 0;
+    // Mirror the server's specialist bonus so the toast shows the quality the player will actually get.
+    let pct = rawPct, specced = false;
+    if (team && team.blacksmithSpec === mg.item && rawPct < B.SPEC_QUALITY_THRESHOLD) { pct = Math.min(1, rawPct + B.SPEC_QUALITY_BONUS); specced = true; }
     const tier = B.qualityTier(pct);
-    Net.action('produce', { item: mg.item, qty: mg.qty, qPct: pct });
-    toast(tier.glyph + ' ' + tier.name + ' ' + (C.EQUIP_META[mg.item] ? C.EQUIP_META[mg.item].name : mg.item) + '! (×' + tier.mult + ' effect)');
+    Net.action('produce', { item: mg.item, qty: mg.qty, qPct: rawPct });
+    toast(tier.glyph + ' ' + tier.name + ' ' + (C.EQUIP_META[mg.item] ? C.EQUIP_META[mg.item].name : mg.item) + '! (×' + tier.mult + ' effect)' + (specced ? ' · +10% specialist bonus' : ''));
     const item = mg.item; mg = null;
     modalForge();
   }
+  function contractGoalStr(goal) { return Object.keys(goal).map((k) => goal[k] + ' ' + (C.EQUIP_META[k] ? C.EQUIP_META[k].name : k)).join(' + '); }
   function modalContracts() {
     const team = State.teamState(); let html = '';
-    if (team.contract) html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + team.contract.name + '</div><div class="opt-desc">' + Math.round(team.contract.progress) + '/' + team.contract.goalQty + ' ' + team.contract.goalItem + ' · ' + Math.ceil(team.contract.timeLeft) + 's left · reward ' + costStr(team.contract.reward) + '</div></div></div>';
-    else for (const c of B.CONTRACTS) { const gi = Object.keys(c.goal)[0]; html += optRow(c.name, 'Make ' + c.goal[gi] + ' ' + gi + ' in ' + c.time + 's', 'Reward: ' + costStr(c.reward), 'Accept', () => Net.action('startContract', { id: c.id }), team.contractCooldown > 0); }
+    if (team.contract) {
+      const goals = team.contract.goals || (team.contract.goalItem ? { [team.contract.goalItem]: team.contract.goalQty } : {});
+      const prog = team.contract.progress || {};
+      const rows = Object.keys(goals).map((k) => { const have = typeof prog === 'object' ? (prog[k] || 0) : prog; const need = goals[k]; const done = have >= need; return '<span style="color:' + (done ? '#6fae5f' : '#d9a441') + '">' + (C.EQUIP_META[k] ? C.EQUIP_META[k].glyph + ' ' : '') + Math.min(have, need) + '/' + need + ' ' + (C.EQUIP_META[k] ? C.EQUIP_META[k].name : k) + (done ? ' ✓' : '') + '</span>'; }).join(' · ');
+      html += '<div class="opt" style="border-color:#c4a35a"><div class="opt-info"><div class="opt-name">📋 ' + esc(team.contract.name) + '</div><div class="opt-desc">' + rows + ' · ⏳ ' + Math.ceil(team.contract.timeLeft) + 's left · reward ' + costStr(team.contract.reward) + '</div></div></div>';
+      html += '<div class="muted" style="font-size:11px;margin-top:4px">Finish the current contract before taking another. Focus the forge on its goal items.</div>';
+    } else {
+      html += '<div class="muted" style="font-size:11px;margin-bottom:4px">Three contracts are on offer; the set rotates in <b>' + (team.contractOffersIn || 0) + 's</b>. They want a LOT — focus the forge (and have the inputs) to finish in time.</div>';
+      const offers = (team.contractOffers && team.contractOffers.length) ? team.contractOffers : B.CONTRACTS.slice(0, 3).map((c) => c.id);
+      for (const id of offers) { const c = B.CONTRACTS.find((x) => x.id === id); if (!c) continue;
+        const mixed = Object.keys(c.goal).length > 1;
+        html += optRow((mixed ? '🎯 ' : '') + c.name + (mixed ? ' <span class="muted">(mixed)</span>' : ''), 'Forge ' + contractGoalStr(c.goal) + ' in ' + c.time + 's', 'Reward: ' + costStr(c.reward), 'Accept', () => Net.action('startContract', { id: c.id }), team.contractCooldown > 0); }
+    }
     if (team.contractCooldown > 0) html += '<div class="muted">Contracts on cooldown (' + Math.ceil(team.contractCooldown) + 's).</div>';
     openModal('Forge Contracts', html, modalContracts);
   }
@@ -1524,15 +1540,84 @@
     openModal('⚔️ Both Armies — Composition &amp; Gear', '<div style="display:flex;gap:18px;flex-wrap:wrap">' + col('BLUE') + col('RED') + '</div>', modalSpectatorMilitary);
   }
 
+  // ---------- host info popup (left-click any host) ----------
+  let hostPopupId = null;
+  function findHostAny(snap, id) {
+    for (const tk of ['BLUE', 'RED']) { const t = snap.teams[tk]; if (!t) continue; for (const g of (t.armies || [])) if (g.id === id) return { g: g, team: tk }; }
+    return null;
+  }
+  function hostPopupHtml(snap, g, team) {
+    const meta = C.TEAM_META ? C.TEAM_META[team] : null;
+    const color = team === 'BLUE' ? '#8fb8e8' : '#d46a5a';
+    const mine = team === State.myTeam;
+    const pw = g.power || { atk: 0, def: 0 };
+    const n = armyCount(g);
+    const loc = snap.areas[hostAreaId(g)] ? snap.areas[hostAreaId(g)].name : '?';
+    const gear = g.gear || {};
+    let comp = '';
+    for (const u of C.UNITS) { const cn = Math.round(g.units[u] || 0); if (!cn) continue; const m = C.UNIT_META[u]; const w = B.UNIT_WEAPON[u]; const wmix = w ? qualMix((gear[u] || []).map((r) => r.w)) : '';
+      comp += '<div class="sel-row" style="font-size:11px"><span>' + m.glyph + ' ' + m.name + ' <b>' + cn + '</b></span><span>' + (w ? (wmix || '—') : '<span class="muted" style="font-size:9px">no weapon</span>') + '</span></div>'; }
+    const allRecs = []; for (const u of C.UNITS) for (const r of (gear[u] || [])) allRecs.push(r);
+    const armRecs = allRecs.filter((r) => r.a > 0); const amix = qualMix(armRecs.map((r) => r.a));
+    let roster = '';
+    for (const u of C.UNITS) { const m = C.UNIT_META[u]; const w = B.UNIT_WEAPON[u]; for (const rec of (gear[u] || [])) {
+      const broken = w && rec.w < 0.5;
+      const wpart = w ? (broken ? '<span style="color:#c8553d" title="weapon broken">✖</span>' : '<span title="' + (C.EQUIP_META[w] ? C.EQUIP_META[w].name : w) + ' ×' + rec.w.toFixed(2) + '">' + qualGlyph(rec.w) + '</span>') : '';
+      const apart = rec.a > 0 ? ' <span title="armour ×' + rec.a.toFixed(2) + '">🛡' + qualGlyph(rec.a) + '</span>' : '';
+      roster += '<span class="ucip" style="font-size:11px">' + m.glyph + (wpart ? ' ' + wpart : '') + apart + '</span>';
+    } }
+    let h = '<div style="font-weight:bold;color:' + color + ';padding-right:16px">' + dominantGlyphC(g) + ' ' + esc(g.name) + (g.isGarrison ? ' <span class="muted" style="font-weight:normal">(Garrison)</span>' : '') + '</div>';
+    h += '<div class="opt-desc" style="margin:2px 0">' + (meta ? meta.name : team) + (mine ? '' : ' <span class="muted">(enemy)</span>') + ' · 📍' + esc(loc) + ' · ' + missionLabel(g) + ' · 💪' + (g.morale || 'normal') + '</div>';
+    h += '<div style="margin:4px 0;font-size:13px"><b>' + Math.round(n) + '</b> units · <b title="total attack">⚔️ ' + pw.atk + '</b> / <b title="total defence">🛡 ' + pw.def + '</b></div>';
+    h += '<div class="rp-h" style="margin:4px 0 2px">Composition</div>' + (comp || '<div class="muted">No units.</div>');
+    h += '<div class="muted" style="font-size:10px;margin:3px 0">🛡️ Armour: ' + (armRecs.length ? '<b>' + armRecs.length + '/' + allRecs.length + '</b> armoured · ' + amix : 'none') + '</div>';
+    h += '<div class="muted" style="font-size:10px">Each soldier (weapon · 🛡 armour):</div><div style="max-height:96px;overflow:auto;display:flex;flex-wrap:wrap;gap:2px;margin-top:2px">' + (roster || '<span class="muted">—</span>') + '</div>';
+    if (mine && State.myRole === 'COMMANDER' && !g.isGarrison) h += '<div class="muted" style="font-size:10px;margin-top:4px">✓ Selected for orders — right-click the map to march it.</div>';
+    return h;
+  }
+  function ensureHostPopupEl() {
+    let el = document.getElementById('hostPopup');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'hostPopup';
+      el.style.cssText = 'position:fixed;z-index:60;display:none;width:248px;max-width:90vw;background:#1c1812;border:1px solid #c4a35a;border-radius:8px;padding:9px 11px;color:#e8dcc0;box-shadow:0 6px 22px rgba(0,0,0,.6);font-size:12px;pointer-events:auto';
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+  function showHostPopup(hostId, sx, sy) {
+    const snap = State.snapshot; if (!snap) return;
+    const found = findHostAny(snap, hostId); if (!found) { hideHostPopup(); return; }
+    hostPopupId = hostId;
+    const el = ensureHostPopupEl();
+    el.innerHTML = '<button onclick="FP.UI.hideHostPopup()" style="position:absolute;top:4px;right:6px;background:none;border:none;color:#c4a35a;font-size:14px;cursor:pointer">✕</button>' + hostPopupHtml(snap, found.g, found.team);
+    el.style.display = 'block';
+    const pad = 10, w = el.offsetWidth || 248;
+    let left = (sx != null ? sx : window.innerWidth / 2) + 14, top = (sy != null ? sy : window.innerHeight / 2) + 8;
+    if (left + w + pad > window.innerWidth) left = (sx || 0) - w - 14;
+    if (left < pad) left = pad;
+    const hh = el.offsetHeight || 220; if (top + hh + pad > window.innerHeight) top = Math.max(pad, window.innerHeight - hh - pad);
+    el.style.left = left + 'px'; el.style.top = top + 'px';
+  }
+  function hideHostPopup() { const el = document.getElementById('hostPopup'); if (el) el.style.display = 'none'; hostPopupId = null; }
+  function refreshHostPopup() {
+    if (!hostPopupId) return;
+    const snap = State.snapshot; if (!snap) return;
+    const found = findHostAny(snap, hostPopupId);
+    if (!found) { hideHostPopup(); return; }   // host destroyed — close
+    const el = document.getElementById('hostPopup'); if (!el || el.style.display === 'none') return;
+    el.innerHTML = '<button onclick="FP.UI.hideHostPopup()" style="position:absolute;top:4px;right:6px;background:none;border:none;color:#c4a35a;font-size:14px;cursor:pointer">✕</button>' + hostPopupHtml(snap, found.g, found.team);
+  }
+
   // ---------- public API ----------
   const UI = {
     _w: null,
     toast, closeModal, buildActionBar, buildSpectatorBar, showHelp, maybeFirstRun,
     specFilter(v) { State.logFilter = v; buildSpectatorBar(); if (State.snapshot) UI.update(State.snapshot); },
     update(snap) {
-      if (State.isSpectator) { updateTopSpectator(snap); updateLeftSpectator(snap); updateRight(snap); updatePause(snap); refreshOpenModal(); return; }
-      updateTop(snap); updateLeft(snap); updateRight(snap); updateGuide(snap); updatePause(snap); refreshOpenModal();
+      if (State.isSpectator) { updateTopSpectator(snap); updateLeftSpectator(snap); updateRight(snap); updatePause(snap); refreshOpenModal(); refreshHostPopup(); return; }
+      updateTop(snap); updateLeft(snap); updateRight(snap); updateGuide(snap); updatePause(snap); refreshOpenModal(); refreshHostPopup();
     },
+    showHostPopup, hideHostPopup,
     showTab(name) {
       document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
       document.querySelectorAll('.tabpane').forEach((x) => x.classList.remove('active'));

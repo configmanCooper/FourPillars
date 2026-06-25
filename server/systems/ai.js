@@ -527,7 +527,7 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
     }
     if (item && forge(item, 8).ok) st.acted = true;
   }
-  if (!st.acted && !team.contract && team.contractCooldown <= 0 && rng.chance(0.5)) { if (prod.startContract(team, rng.pick(B.CONTRACTS).id).ok) st.acted = true; }
+  if (!st.acted && !team.contract && team.contractCooldown <= 0 && rng.chance(0.5)) { const offers = (team.contractOffers && team.contractOffers.length) ? team.contractOffers : B.CONTRACTS.map((c) => c.id); if (prod.startContract(team, rng.pick(offers)).ok) st.acted = true; }
   if ((team.resources.iron || 0) < 12) { if (req(state, team, sys, st, C.ROLES.BLACKSMITH, C.ROLES.STEWARD, 'IRON', {}, 30)) say(state, team, sys, st, C.ROLES.BLACKSMITH, 'Out of iron — Steward, send more!', 25); }
 }
 function countArmy(team) { const o = { militia: 0, spearman: 0, swordsman: 0, archer: 0, cavalry: 0, catapult: 0 }; for (const g of team.armies) for (const u of C.UNITS) o[u] += g.units[u] || 0; return o; }

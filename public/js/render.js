@@ -19,7 +19,7 @@
 
   let canvas, ctx, dpr = 1;
   let scale = 1, offX = 0, offY = 0;
-  let hostHits = [], selHostId = null, myTeamR = null;
+  let hostHits = [], allHostHits = [], selHostId = null, myTeamR = null;
   let staticLayer = null;
   const blobCache = {};
   let particles = [];
@@ -146,7 +146,7 @@
     if (!snap) return;
     if (!staticLayer) buildStatic(snap.areas);
     selHostId = st && st.selectedGroupId; myTeamR = st && st.myTeam;
-    hostHits = [];
+    hostHits = []; allHostHits = [];
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(staticLayer, 0, 0);
 
@@ -291,6 +291,7 @@
         const gx = sp.x, gy = sp.y;
         const [hcx, hcy] = w2s(gx, gy);
         if (team === myTeamR) hostHits.push({ id: g.id, cx: hcx, cy: hcy });
+        else allHostHits.push({ id: g.id, cx: hcx, cy: hcy });
         drawHost(team, g, gx, gy, count);
       }
     }
@@ -388,6 +389,12 @@
     for (const h of hostHits) { const d = Math.hypot(h.cx - dx, h.cy - dy); if (d < bd && d < r) { bd = d; best = h.id; } }
     return best;
   }
+  // Hit-test ANY host marker (either team) — for the click-to-inspect popup.
+  function anyHostAt(px, py) {
+    const dx = px * dpr, dy = py * dpr; let best = null, bd = 1e9; const r = 20 * scale + 8;
+    for (const h of hostHits.concat(allHostHits)) { const d = Math.hypot(h.cx - dx, h.cy - dy); if (d < bd && d < r) { bd = d; best = h.id; } }
+    return best;
+  }
 
-  window.FP.Render = { init, draw, areaAt, hostAt, resize: () => { resize(); staticLayer = null; } };
+  window.FP.Render = { init, draw, areaAt, hostAt, anyHostAt, resize: () => { resize(); staticLayer = null; } };
 })();

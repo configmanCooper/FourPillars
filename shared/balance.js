@@ -155,23 +155,54 @@
     siegeParts: { cost: { wood: 30, iron: 20 },time: 24, batch: 1, needs: 'siege' },
   };
   // The Blacksmith specialises in ONE forgeable item — that item forges SPEC_TIME_REDUCTION (10%)
-  // faster. (Keyed by the item so blacksmithSpec stores the item name directly.)
+  // faster, AND a sub-par strike on it is lifted by SPEC_QUALITY_BONUS (the specialist's hands save a
+  // rushed job): if the minigame score is under SPEC_QUALITY_THRESHOLD, quality is bumped +10%.
+  // (Keyed by the item so blacksmithSpec stores the item name directly.)
   const SPEC_TIME_REDUCTION = 0.10;
+  const SPEC_QUALITY_BONUS = 0.10;        // added to the score% on the specialised item …
+  const SPEC_QUALITY_THRESHOLD = 0.80;    // … only when that score came in under 80%
   const BLACKSMITH_SPECS = {
-    tools:      { name: 'Toolsmith',   item: 'tools',      glyph: '🛠️', desc: '🛠️ Tools forged 10% faster.' },
-    spears:     { name: 'Spearwright', item: 'spears',     glyph: '🔱', desc: '🔱 Spears forged 10% faster.' },
-    swords:     { name: 'Swordsmith',  item: 'swords',     glyph: '⚔️', desc: '⚔️ Swords forged 10% faster.' },
-    bows:       { name: 'Bowyer',      item: 'bows',       glyph: '🏹', desc: '🏹 Bows forged 10% faster.' },
-    arrows:     { name: 'Fletcher',    item: 'arrows',     glyph: '➷',  desc: '➷ Arrows forged 10% faster.' },
-    armor:      { name: 'Armourer',    item: 'armor',      glyph: '🛡️', desc: '🛡️ Armour forged 10% faster.' },
-    siegeParts: { name: 'Siegewright', item: 'siegeParts', glyph: '🏰', desc: '🏰 Siege parts forged 10% faster.' },
+    tools:      { name: 'Toolsmith',   item: 'tools',      glyph: '🛠️', desc: '🛠️ Tools forge 10% faster · +10% quality on sub-80% strikes.' },
+    spears:     { name: 'Spearwright', item: 'spears',     glyph: '🔱', desc: '🔱 Spears forge 10% faster · +10% quality on sub-80% strikes.' },
+    swords:     { name: 'Swordsmith',  item: 'swords',     glyph: '⚔️', desc: '⚔️ Swords forge 10% faster · +10% quality on sub-80% strikes.' },
+    bows:       { name: 'Bowyer',      item: 'bows',       glyph: '🏹', desc: '🏹 Bows forge 10% faster · +10% quality on sub-80% strikes.' },
+    arrows:     { name: 'Fletcher',    item: 'arrows',     glyph: '➷',  desc: '➷ Arrows forge 10% faster · +10% quality on sub-80% strikes.' },
+    armor:      { name: 'Armourer',    item: 'armor',      glyph: '🛡️', desc: '🛡️ Armour forges 10% faster · +10% quality on sub-80% strikes.' },
+    siegeParts: { name: 'Siegewright', item: 'siegeParts', glyph: '🏰', desc: '🏰 Siege parts forge 10% faster · +10% quality on sub-80% strikes.' },
   };
-  // Forge contracts: timed bonus objectives that keep the Blacksmith active (times allow for slow forging).
+  // Forge contracts: timed bonus objectives that keep the Blacksmith active (times allow for slow
+  // forging). Only CONTRACT_OFFER_COUNT are offered at once; the offer set rotates every
+  // CONTRACT_ROTATE_SEC seconds through the whole pool. Goals are deliberately large — you must focus
+  // the forge (and have the inputs) to finish one in time. Some are "mixed" (several items at once).
+  const CONTRACT_OFFER_COUNT = 3;
+  const CONTRACT_ROTATE_SEC = 60;
   const CONTRACTS = [
-    { id: 'armRaiders', name: 'Arm the Raiders', goal: { spears: 10 }, time: 180, reward: { iron: 40 } },
-    { id: 'toolRush',   name: 'Tool Rush',       goal: { tools: 15 },  time: 220, reward: { wood: 60 } },
-    { id: 'fillQuivers',name: 'Fill the Quivers',goal: { arrows: 60 }, time: 200, reward: { horses: 6 } },
-    { id: 'plateOrder', name: 'Plate Order',     goal: { armor: 8 },   time: 260, reward: { relics: 1, iron: 30 } },
+    // --- single-item drives (a lot of one thing) ---
+    { id: 'armRaiders',   name: 'Arm the Raiders',    goal: { spears: 14 },             time: 200, reward: { iron: 45 } },
+    { id: 'toolRush',     name: 'Tool Rush',          goal: { tools: 18 },              time: 220, reward: { wood: 70 } },
+    { id: 'fillQuivers',  name: 'Fill the Quivers',   goal: { arrows: 72 },             time: 210, reward: { horses: 7 } },
+    { id: 'plateOrder',   name: 'Plate Order',        goal: { armor: 10 },              time: 280, reward: { relics: 1, iron: 35 } },
+    { id: 'swordOrder',   name: 'Sword Commission',   goal: { swords: 12 },             time: 230, reward: { iron: 50 } },
+    { id: 'bowOrder',     name: 'Bowyer’s Bulk',      goal: { bows: 16 },               time: 220, reward: { wood: 65, horses: 4 } },
+    { id: 'siegeComm',    name: 'Siege Commission',   goal: { siegeParts: 4 },          time: 300, reward: { relics: 2, stone: 60 } },
+    { id: 'spearLevy',    name: 'Spear Levy',         goal: { spears: 22 },             time: 280, reward: { iron: 60, food: 40 } },
+    { id: 'arrowStock',   name: 'Arrow Stockpile',    goal: { arrows: 120 },            time: 300, reward: { horses: 10, wood: 50 } },
+    { id: 'toolColumns',  name: 'Tooling the Realm',  goal: { tools: 26 },              time: 300, reward: { wood: 100, stone: 40 } },
+    { id: 'swordGuard',   name: 'Guard’s Swords',     goal: { swords: 18 },             time: 290, reward: { iron: 70, relics: 1 } },
+    { id: 'heavyPlate',   name: 'Heavy Plate Run',    goal: { armor: 16 },              time: 320, reward: { relics: 2, iron: 50 } },
+    // --- mixed orders (several items — harder, bigger rewards) ---
+    { id: 'fullKit',      name: 'Full Kit',           goal: { swords: 8, armor: 6 },              time: 300, reward: { iron: 70, relics: 1 } },
+    { id: 'skirmishKit',  name: 'Skirmisher’s Kit',   goal: { bows: 10, arrows: 60 },             time: 280, reward: { horses: 8, wood: 60 } },
+    { id: 'frontline',    name: 'Frontline Order',    goal: { spears: 12, armor: 6 },             time: 300, reward: { iron: 65, food: 50 } },
+    { id: 'raidPackage',  name: 'Raiding Package',    goal: { swords: 8, bows: 8 },               time: 280, reward: { iron: 55, wood: 55 } },
+    { id: 'siegeTrain',   name: 'Siege Train',        goal: { siegeParts: 3, armor: 6 },          time: 330, reward: { relics: 2, stone: 70 } },
+    { id: 'quartermast',  name: 'Quartermaster’s Run',goal: { tools: 12, spears: 10 },            time: 290, reward: { wood: 80, iron: 40 } },
+    { id: 'armoryRun',    name: 'Armoury Resupply',   goal: { swords: 6, spears: 8, armor: 4 },   time: 320, reward: { iron: 80, relics: 1 } },
+    { id: 'archersDream', name: 'Archer’s Dream',     goal: { bows: 12, arrows: 96 },             time: 320, reward: { horses: 12, wood: 70 } },
+    { id: 'warForge',     name: 'War Forge',          goal: { spears: 10, swords: 8, bows: 8 },   time: 340, reward: { iron: 90, food: 60 } },
+    { id: 'grandArsenal', name: 'Grand Arsenal',      goal: { swords: 10, armor: 8, arrows: 60 }, time: 360, reward: { relics: 2, iron: 60 } },
+    { id: 'campaignKit',  name: 'Campaign Kit',       goal: { tools: 10, bows: 8, arrows: 48 },   time: 320, reward: { wood: 90, horses: 6 } },
+    { id: 'ironLegion',   name: 'Iron Legion',        goal: { swords: 12, armor: 10 },            time: 360, reward: { relics: 3, iron: 70 } },
   ];
   // Weapon wear: each combat encounter a soldier has a small chance to degrade one quality tier (a
   // weapon already at the lowest tier is destroyed). The Commander can re-equip from the armoury.
@@ -291,7 +322,7 @@
     CARAVAN_DISPATCH_CARGO, CARAVAN_DISPATCH_BY_RESOURCE, CARAVAN_WARN_SECONDS, CARAVAN_MIN_INTERVAL, CARAVAN_SPEED, ESCORT_PROTECT,
     GUARD_LEND_DEFAULT, GUARD_KILL_PER, GUARD_LOSS_PER, GUARD_PIN_SECONDS,
     HOST_SPEED_MULT, CAVALRY_SPEED_MULT, PURSUIT_CATCH_RADIUS, PURSUIT_TIMEOUT,
-    RECIPES, BLACKSMITH_SPECS, SPEC_TIME_REDUCTION, CONTRACTS, WEAPON_DEGRADE_CHANCE, QUALITY_LADDER,
+    RECIPES, BLACKSMITH_SPECS, SPEC_TIME_REDUCTION, SPEC_QUALITY_BONUS, SPEC_QUALITY_THRESHOLD, CONTRACTS, CONTRACT_OFFER_COUNT, CONTRACT_ROTATE_SEC, WEAPON_DEGRADE_CHANCE, QUALITY_LADDER,
     UNIT_STATS, EQUIP_TIER_MULT, ARMOR_DEF_BONUS, FORMATIONS, STANCES, DOCTRINES, MILITARY_POLICIES, MILITARY_POLICY_DEFAULT, WALL_TROOP_BONUS, WALL_ARCHER_BONUS,
     BUILDING_RAZE_HP, RAZE_STAT, WALL_RAZE_MULT, KEEP_RAZE_MULT, KEEP_DEFENDER_BONUS, MAX_UNITS_PER_AREA, RAZE_POINTS, KEEP_RAZE_POINTS, CAPTURE_AFTER_RAZE,
     QUALITY_TIERS, FORGE_ZONES, AI_QUALITY_DIST, UNIT_WEAPON, qualityTier, qualityById, rollQuality,

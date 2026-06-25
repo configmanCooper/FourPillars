@@ -232,7 +232,13 @@ function applyAction(state, team, role, action, payload) {
     case 'produce': {
       // Quality from the Blacksmith's forging minigame (qPct = score / perfect score).
       let qMult = 1, qId = 'standard';
-      if (typeof payload.qPct === 'number') { const tier = B.qualityTier(Math.max(0, Math.min(1, payload.qPct))); qMult = tier.mult; qId = tier.id; }
+      if (typeof payload.qPct === 'number') {
+        let qPct = Math.max(0, Math.min(1, payload.qPct));
+        // Specialist's touch: a sub-par strike on your SPECIALISED item is lifted +10% (only when the
+        // raw score came in under the threshold — it rescues rushed work, doesn't gild great strikes).
+        if (T.blacksmithSpec === payload.item && qPct < B.SPEC_QUALITY_THRESHOLD) qPct = Math.min(1, qPct + B.SPEC_QUALITY_BONUS);
+        const tier = B.qualityTier(qPct); qMult = tier.mult; qId = tier.id;
+      }
       return production.queueProduction(T, payload.item, payload.qty, qMult, qId);
     }
     case 'cancelProduce': return production.cancelProduction(T, payload.id);

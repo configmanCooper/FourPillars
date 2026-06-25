@@ -110,6 +110,9 @@
       productionMode: 'basic',   // basic | advanced
       contract: null,
       contractCooldown: 0,
+      contractRotation: [],      // stable shuffle of contract ids (filled at init); offers rotate through it
+      contractOffers: [],        // the ids currently offered (CONTRACT_OFFER_COUNT of them)
+      contractOffersIn: 0,       // seconds until the offer set rotates
       caravans: [],
       guards: 0,                 // unassigned caravan-guard pool (militia-grade, lent by the Commander)
       armies: [],
@@ -166,7 +169,20 @@
     state.areas.red_base.buildings = { house: 1, farm: 1, lumberCamp: 1, mine: 1, watchtower: 1 };
     recomputeBuildings(state, state.teams.BLUE);
     recomputeBuildings(state, state.teams.RED);
+    // Seed each team's forge-contract rotation (a stable shuffle of the whole pool); the Forge offers
+    // CONTRACT_OFFER_COUNT of these at a time, advancing through the shuffle every CONTRACT_ROTATE_SEC.
+    state.teams.BLUE.contractRotation = shuffledContractIds(state.seed ^ 0x9e3779b1);
+    state.teams.RED.contractRotation = shuffledContractIds(state.seed ^ 0x85ebca77);
     return state;
+  }
+
+  // Deterministic shuffle of the contract id pool from a 32-bit seed (mulberry32).
+  function shuffledContractIds(seed) {
+    const ids = B.CONTRACTS.map((c) => c.id);
+    let s = (seed >>> 0) || 1;
+    const rnd = () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const tmp = ids[i]; ids[i] = ids[j]; ids[j] = tmp; }
+    return ids;
   }
 
   // Aggregate per-area buildings (owned areas only) into team.buildings cache.

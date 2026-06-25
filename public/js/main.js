@@ -73,12 +73,15 @@
   $('map').addEventListener('click', (e) => {
     const rect = $('map').getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
-    // Left-click a friendly host to select it (Commander); otherwise select the area to inspect.
-    const hostId = Render.hostAt(px, py);
-    if (hostId && State.myRole === 'COMMANDER') {
-      State.selectedGroupId = (State.selectedGroupId === hostId ? null : hostId);
+    // Left-click ANY host (either team) to pop up its strength, composition & per-soldier gear.
+    const anyHost = Render.anyHostAt(px, py);
+    if (anyHost) {
+      // The Commander also (de)selects their OWN host for orders, so the right-click-to-move flow still works.
+      if (State.myRole === 'COMMANDER' && Render.hostAt(px, py)) State.selectedGroupId = (State.selectedGroupId === anyHost ? null : anyHost);
+      UI.showHostPopup(anyHost, e.clientX, e.clientY);
     } else {
       State.selectedArea = Render.areaAt(px, py, State.snapshot);
+      UI.hideHostPopup();
     }
     if (State.snapshot) UI.update(State.snapshot);
   });

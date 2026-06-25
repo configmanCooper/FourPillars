@@ -33,13 +33,34 @@ function cancelProduction(team, id) {
   return { ok: true };
 }
 
+// Refresh which contracts are on offer. Only CONTRACT_OFFER_COUNT show at once; the window advances
+// through the team's shuffled pool every CONTRACT_ROTATE_SEC seconds (driven by team._elapsed, which
+// economy.tickEconomy stamps each tick before production runs).
+function refreshContractOffers(team) {
+  const rot = (team.contractRotation && team.contractRotation.length) ? team.contractRotation : B.CONTRACTS.map((c) => c.id);
+  const count = Math.min(B.CONTRACT_OFFER_COUNT, rot.length);
+  const sec = B.CONTRACT_ROTATE_SEC;
+  const t = team._elapsed || 0;
+  const window = Math.floor(t / sec);
+  const start = (window * count) % rot.length;
+  const ids = []; for (let i = 0; i < count; i++) ids.push(rot[(start + i) % rot.length]);
+  team.contractOffers = ids;
+  team.contractOffersIn = Math.max(0, Math.ceil(sec - (t % sec)));
+}
+
 function startContract(team, id) {
   if (team.contract) return { ok: false, reason: 'Finish the current contract first.' };
   if (team.contractCooldown > 0) return { ok: false, reason: 'Contracts on cooldown.' };
   const def = B.CONTRACTS.find((c) => c.id === id);
   if (!def) return { ok: false, reason: 'Unknown contract.' };
-  const goalItem = Object.keys(def.goal)[0];
-  team.contract = { id: def.id, name: def.name, goalItem, goalQty: def.goal[goalItem], progress: 0, timeLeft: def.time, reward: def.reward };
+  // Only a currently-offered contract may be taken (offers rotate every minute).
+  refreshContractOffers(team);
+  if (!(team.contractOffers || []).includes(id)) return { ok: false, reason: 'That contract is no longer on offer.' };
+  const goals = {}; const progress = {};
+  for (const k in def.goal) { goals[k] = def.goal[k]; progress[k] = 0; }
+  // Keep goalItem/goalQty for back-compat (single-goal display); goals/progress drive multi-item ones.
+  const firstItem = Object.keys(def.goal)[0];
+  team.contract = { id: def.id, name: def.name, goals, progress, goalItem: firstItem, goalQty: def.goal[firstItem], timeLeft: def.time, reward: def.reward };
   return { ok: true, msg: 'Contract started: ' + def.name + '.' };
 }
 
@@ -64,14 +85,15 @@ function produceOne(team, item, log, qMult, qId) {
   team.equipQuality = team.equipQuality || {};
   const oldQ = team.equipQuality[item] || 1;
   team.equipQuality[item] = (oldN * oldQ + (qMult || 1)) / (oldN + 1);
-  // Contract progress.
-  if (team.contract && team.contract.goalItem === item) {
-    team.contract.progress += 1;
+  // Contract progress (supports multi-item "mixed" contracts).
+  if (team.contract && team.contract.goals && team.contract.goals[item] != null) {
+    team.contract.progress[item] = (team.contract.progress[item] || 0) + 1;
   }
   return true;
 }
 
 function tickProduction(team, dt, log) {
+  refreshContractOffers(team);
   // Forge queue: advance the first item, pay per unit on completion.
   if (team.production.length) {
     const job = team.production[0];
@@ -104,7 +126,9 @@ function tickProduction(team, dt, log) {
   // Contracts.
   if (team.contract) {
     team.contract.timeLeft -= dt;
-    if (team.contract.progress >= team.contract.goalQty) {
+    const goals = team.contract.goals || {};
+    const done = Object.keys(goals).every((k) => (team.contract.progress[k] || 0) >= goals[k]);
+    if (done) {
       eco.refund(team, team.contract.reward);
       if (log) log(team.team, 'Contract complete: ' + team.contract.name + '!', 'forge');
       team.contract = null;
