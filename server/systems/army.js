@@ -391,9 +391,9 @@ function strength(team, g, enemyComp, wallMult, onOwnOutpost) {
       if (u === 'cavalry') { ua *= cavBonus; ud *= cavBonus; }                 // strong vs soft (non-spear/non-cav) foes
       if (u === 'spearman') { ua *= spearBonus; ud *= spearBonus; }            // strong vs cavalry
       if (wep) ua *= (rec.w || 1);                                             // this soldier's OWN weapon quality
-      // Wall bonus only applies to the side that OWNS this location (battleRound passes wallMult only
-      // for the owner). Archers get it on DEFENCE only; other troops get it on both attack and defence.
-      if (wallMult) { if (u === 'archer') ud *= wallMult.archer; else { ua *= wallMult.troop; ud *= wallMult.troop; } }
+      // Walls fortify the DEFENCE of the side that OWNS this location only (battleRound passes wallMult
+      // only to the owner): +40% def for troops at 2 walls, +100% def for archers. Never boosts attack.
+      if (wallMult) ud *= (u === 'archer') ? wallMult.archer : wallMult.troop;
       if (rec.a > 0) { ua *= B.EQUIP_TIER_MULT.advanced; ud *= B.EQUIP_TIER_MULT.advanced * (1 + B.ARMOR_DEF_BONUS * rec.a); }  // this soldier's OWN armour
       atk += ua; def += ud;
     }
@@ -514,7 +514,8 @@ function mergeGroups(list) {
 
 function battleRound(state, areaId, blueM, redM, blueT, redT, dt, rng, log, blueList, redList, fx) {
   const bComp = composition(blueM), rComp = composition(redM);
-  // Walls fortify whoever OWNS this location: +20% to all troops, +50% to archers (per wall, capped).
+  // Walls fortify the DEFENCE of whoever OWNS this location: +20% def to all troops, +50% def to
+  // archers (per wall, capped at 2). Attack is never boosted by walls.
   const area = state.areas[areaId];
   const walls = (area && area.buildings) ? (area.buildings.walls || 0) : 0;
   const wallMult = walls > 0 ? { troop: 1 + Math.min(walls, 2) * B.WALL_TROOP_BONUS, archer: 1 + Math.min(walls, 2) * B.WALL_ARCHER_BONUS } : null;
