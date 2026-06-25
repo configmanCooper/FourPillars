@@ -9,6 +9,10 @@ development milestone, newest first.
 ## [Unreleased]
 
 ### Added
+- **Expandable soldier roster in the Military Overview.** Each equipped unit type (swordsman,
+  spearman, archer, cavalry, catapult) in *Army composition* now has an expand/collapse toggle that
+  lists **every individual soldier** of that type — across all hosts — with their own weapon and
+  armour quality. Militia (no weapon) has no toggle.
 - **Per‑soldier individual gear.** Every soldier carries their own weapon, armour, and (for archers)
   bow + arrows, each with an individual **quality tier**. The Military Overview lists each soldier
   with their kit and shows each host's total **strength ⚔️ / defence 🛡**.

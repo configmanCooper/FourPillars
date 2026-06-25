@@ -1231,6 +1231,31 @@
   function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 
   // ---------- Military Overview (any role, read-only; reviewed by mil-review agent) ----------
+  const milExpand = {};   // which composition rows (by unit type) are expanded to show each soldier
+  // Every individual soldier of one type, across all hosts, with their own weapon & armour quality.
+  function compRoster(u, hosts) {
+    const w = B.UNIT_WEAPON[u]; const m = C.UNIT_META[u];
+    let html = '<div class="host-detail" style="margin:2px 0 6px;max-height:220px;overflow:auto">';
+    let any = false;
+    for (const g of hosts) {
+      const recs = (g.gear && g.gear[u]) || [];
+      if (!recs.length) continue;
+      any = true;
+      const loc = hostAreaName(State.snapshot, g);
+      html += '<div class="muted" style="font-size:10px;margin-top:3px">📍 ' + esc(g.name) + ' <span class="muted">(' + esc(loc) + ')</span></div>';
+      let i = 0;
+      for (const rec of recs) { i++;
+        const broken = w && rec.w < 0.5;
+        const wlabel = w
+          ? (C.EQUIP_META[w] ? C.EQUIP_META[w].glyph + ' ' : '') + (broken ? '<span style="color:#c8553d">✖ broken — re-equip</span>' : qualBadge(rec.w))
+          : '<span class="muted">—</span>';
+        const alabel = rec.a > 0 ? '🛡 ' + qualBadge(rec.a) : '🛡 <span class="muted">none</span>';
+        html += '<div class="sel-row" style="font-size:11px"><span>' + m.glyph + ' ' + m.name + ' <span class="muted">#' + i + '</span></span><span>' + wlabel + ' · ' + alabel + '</span></div>';
+      }
+    }
+    html += '</div>';
+    return any ? html : '<div class="muted" style="font-size:11px;margin-bottom:6px">No individual gear records for this type yet.</div>';
+  }
   function hostAreaId(g) { return g.moving ? g.moving.route[g.moving.legIndex] : g.area; }
   function hostAreaName(snap, g) { const a = snap.areas[hostAreaId(g)]; return a ? a.name : '?'; }
   function missionLabel(g) {
@@ -1292,7 +1317,14 @@
     if (totalUnits > 0) {
       for (const u of C.UNITS) { if (!comp[u]) continue; const m = C.UNIT_META[u];
         const pct = Math.round(comp[u] / totalUnits * 100);
-        html += '<div class="mil-bar-row"><span class="mil-bar-lab">' + m.glyph + ' ' + m.name + '</span><span class="mil-bar"><span class="mil-bar-fill" style="width:' + pct + '%"></span></span><b>' + comp[u] + '</b></div>';
+        const hasGear = !!B.UNIT_WEAPON[u];              // only equipped types (not militia) expand
+        const exp = hasGear && milExpand[u];
+        const lab = (hasGear ? (exp ? '▾ ' : '▸ ') : '') + m.glyph + ' ' + m.name;
+        const labSpan = hasGear
+          ? '<span class="mil-bar-lab" style="cursor:pointer" title="Show each soldier\'s weapon &amp; armour" onclick="FP.UI.milCompToggle(\'' + u + '\')">' + lab + '</span>'
+          : '<span class="mil-bar-lab">' + lab + '</span>';
+        html += '<div class="mil-bar-row">' + labSpan + '<span class="mil-bar"><span class="mil-bar-fill" style="width:' + pct + '%"></span></span><b>' + comp[u] + '</b></div>';
+        if (exp) html += compRoster(u, hosts);
       }
     } else html += '<div class="muted" style="font-size:11px">No standing troops yet.</div>';
 
@@ -1308,7 +1340,7 @@
         html += '<div class="opt"><div class="opt-info"><div class="opt-name" style="font-size:12px">' + dominantGlyphC(g) + ' ' + esc(g.name) + ' <span class="muted">📍' + esc(loc) + '</span></div>' +
           '<div class="opt-desc"><b title="attack">⚔️' + pw.atk + '</b> / <b title="defence">🛡' + pw.def + '</b> · ' + wbits.join(' · ') + ' · 🛡️' + armN + '/' + allR.length + ' armoured</div></div></div>';
       }
-      html += '<div class="muted" style="font-size:10px">Open the Commander\'s Army screen to see each individual soldier and re-equip them.</div>';
+      html += '<div class="muted" style="font-size:10px">Tap a unit type under <b>Army composition</b> above to see each individual soldier\'s weapon &amp; armour, or open the Commander\'s Army screen to re-equip them.</div>';
     }
 
     // --- Enemy forces (intel) — what they field and how to counter it. ---
@@ -1534,6 +1566,7 @@
       toast(verb + ' ' + a.name + '.');
     },
     armyExpand(id) { armyUI.expanded = (armyUI.expanded === id ? null : id); reMng(); },
+    milCompToggle(u) { milExpand[u] = !milExpand[u]; refreshOpenModal(); },
     armySrc(id) { armyUI.src = id; armyUI.amt = {}; reMng(); },
     armyDst(id) { armyUI.dst = id; reMng(); },
     armyAmt(u, d) { const s = armySrcHost(); if (!s) return; const have = Math.round(s.units[u] || 0); armyUI.amt[u] = Math.max(0, Math.min(have, (armyUI.amt[u] || 0) + d)); reMng(); },
