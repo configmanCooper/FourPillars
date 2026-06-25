@@ -110,6 +110,7 @@
       productionMode: 'basic',   // basic | advanced
       contract: null,
       contractCooldown: 0,
+      contractHistory: [],       // last few resolved contracts {name, result:'success'|'failed'}
       contractRotation: [],      // stable shuffle of contract ids (filled at init); offers rotate through it
       contractOffers: [],        // the ids currently offered (CONTRACT_OFFER_COUNT of them)
       contractOffersIn: 0,       // seconds until the offer set rotates

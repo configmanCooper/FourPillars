@@ -212,12 +212,16 @@
   // Combat: base attack/defence per unit. Multiplied by equipment/formation/morale/doctrine.
   const UNIT_STATS = {
     militia:   { atk: 1, def: 1, speed: 70, vsKeep: 0.3, upkeep: 0.5 },
-    spearman:  { atk: 2, def: 3, speed: 70, vsKeep: 0.5, vsCav: 1.6, upkeep: 1 },
+    spearman:  { atk: 2, def: 3, speed: 70, vsKeep: 0.5, upkeep: 1 },
     swordsman: { atk: 3, def: 3, speed: 70, vsKeep: 0.8, upkeep: 1 },
     archer:    { atk: 3, def: 1, speed: 75, vsKeep: 0.5, ranged: true, upkeep: 1 },
-    cavalry:   { atk: 4, def: 2, speed: 120, vsKeep: 0.6, isCav: true, vsRanged: 1.5, upkeep: 1.5 },
+    cavalry:   { atk: 4, def: 2, speed: 120, vsKeep: 0.6, isCav: true, upkeep: 1.5 },
     catapult:  { atk: 1, def: 1, speed: 45, vsKeep: 8,   upkeep: 2 },
   };
+  // Composition counters: per matching enemy soldier, a counter unit gains COUNTER_BONUS_PER strength,
+  // capped at COUNTER_BONUS_MAX. Cavalry count enemy non-spear/non-cav units; spearmen count enemy cavalry.
+  const COUNTER_BONUS_PER = 0.10;
+  const COUNTER_BONUS_MAX = 0.50;
   const EQUIP_TIER_MULT = { basic: 1.0, advanced: 1.35 };
   const ARMOR_DEF_BONUS = 0.5;          // +50% def to units that have armour assigned
   const FORMATIONS = {
@@ -323,7 +327,7 @@
     GUARD_LEND_DEFAULT, GUARD_KILL_PER, GUARD_LOSS_PER, GUARD_PIN_SECONDS,
     HOST_SPEED_MULT, CAVALRY_SPEED_MULT, PURSUIT_CATCH_RADIUS, PURSUIT_TIMEOUT,
     RECIPES, BLACKSMITH_SPECS, SPEC_TIME_REDUCTION, SPEC_QUALITY_BONUS, SPEC_QUALITY_THRESHOLD, CONTRACTS, CONTRACT_OFFER_COUNT, CONTRACT_ROTATE_SEC, WEAPON_DEGRADE_CHANCE, QUALITY_LADDER,
-    UNIT_STATS, EQUIP_TIER_MULT, ARMOR_DEF_BONUS, FORMATIONS, STANCES, DOCTRINES, MILITARY_POLICIES, MILITARY_POLICY_DEFAULT, WALL_TROOP_BONUS, WALL_ARCHER_BONUS,
+    UNIT_STATS, EQUIP_TIER_MULT, ARMOR_DEF_BONUS, COUNTER_BONUS_PER, COUNTER_BONUS_MAX, FORMATIONS, STANCES, DOCTRINES, MILITARY_POLICIES, MILITARY_POLICY_DEFAULT, WALL_TROOP_BONUS, WALL_ARCHER_BONUS,
     BUILDING_RAZE_HP, RAZE_STAT, WALL_RAZE_MULT, KEEP_RAZE_MULT, KEEP_DEFENDER_BONUS, MAX_UNITS_PER_AREA, RAZE_POINTS, KEEP_RAZE_POINTS, CAPTURE_AFTER_RAZE,
     QUALITY_TIERS, FORGE_ZONES, AI_QUALITY_DIST, UNIT_WEAPON, qualityTier, qualityById, rollQuality,
     ARCHER_ARROW_USE, COMBAT_ROUND_LOSS, COMBAT_INTENSITY, ARMOR_SAVE_BASE, ARMOR_SAVE_MAX, MORALE,

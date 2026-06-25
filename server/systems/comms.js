@@ -78,10 +78,22 @@ function resolveRequest(state, team, id, accept, systems, actorRole) {
   // a LORD-only RESERVE/USE request and granting resource holds.
   if (actorRole && actorRole !== req.targetRole) return { ok: false, reason: 'That request is for the ' + (C.ROLE_META[req.targetRole] ? C.ROLE_META[req.targetRole].name : req.targetRole) + '.' };
   const responder = req.targetRole;
+  const byHuman = !!actorRole;   // a human pressed accept/decline (the AI calls with no actorRole)
+  if (byHuman) {
+    // For humans, requests are purely a COMMUNICATION tool — accepting does NOT auto-perform the action
+    // (forging needs the minigame, a spend needs the player's own click, …). It just acknowledges in the
+    // comms; the human then does it themselves. The requester gets a popup (client reads req.resolution).
+    req.status = accept ? 'accepted' : 'declined';
+    req.resolution = accept ? 'accepted' : 'declined';
+    req.resolvedBy = responder; req.resolvedByName = slotName(team, responder);
+    postChat(state, team, responder, accept ? ('👍 Accepted — I will ' + lowerType(req.type, req) + '.') : '👎 Sorry — declining that for now.', 'response');
+    return { ok: true };
+  }
+  // AI responder: actually fulfil the request automatically.
   if (accept) {
     const ok = fulfill(state, team, req, systems);
     if (ok) {
-      req.status = 'accepted';
+      req.status = 'accepted'; req.resolution = 'accepted'; req.resolvedBy = responder; req.resolvedByName = slotName(team, responder);
       postChat(state, team, responder, 'On it — ' + lowerType(req.type, req) + '.', 'response');
     } else {
       // Can't fulfil it yet — REMEMBER it and keep trying. Refresh its ttl so it persists, and only
@@ -91,7 +103,7 @@ function resolveRequest(state, team, id, accept, systems, actorRole) {
     }
     return { ok };
   }
-  req.status = 'declined';
+  req.status = 'declined'; req.resolution = 'declined'; req.resolvedBy = responder; req.resolvedByName = slotName(team, responder);
   postChat(state, team, responder, 'Cannot help with that right now.', 'response');
   return { ok: true };
 }

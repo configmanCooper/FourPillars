@@ -131,16 +131,23 @@ function tickProduction(team, dt, log) {
     if (done) {
       eco.refund(team, team.contract.reward);
       if (log) log(team.team, 'Contract complete: ' + team.contract.name + '!', 'forge');
+      recordContract(team, team.contract.name, 'success');
       team.contract = null;
       team.contractCooldown = 20;
     } else if (team.contract.timeLeft <= 0) {
       if (log) log(team.team, 'Contract failed: ' + team.contract.name + '.', 'forge');
+      recordContract(team, team.contract.name, 'failed');
       team.contract = null;
       team.contractCooldown = 25;
     }
   } else if (team.contractCooldown > 0) {
     team.contractCooldown = Math.max(0, team.contractCooldown - dt);
   }
+}
+function recordContract(team, name, result) {
+  team.contractHistory = team.contractHistory || [];
+  team.contractHistory.unshift({ name: name, result: result });
+  if (team.contractHistory.length > 6) team.contractHistory.length = 6;
 }
 
 module.exports = { queueProduction, cancelProduction, startContract, setSpec, tickProduction, forgeSpeedMult };

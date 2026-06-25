@@ -951,7 +951,15 @@
       html += optRow((C.EQUIP_META[item] ? C.EQUIP_META[item].glyph : '🏹') + ' ' + cap(item) + ' <span class="muted">×' + r.batch + '</span>', (C.EQUIP_META[item] || {}).desc || 'Ammunition for archers.', costStr(totalCost) + ' for ×' + r.batch + ' · ' + strikes + ' strikes', 'Forge', () => forgeMinigame(item, r.batch), dis, dis ? 'Needs a Workshop' : '');
     }
     if (team.qualityLog && team.qualityLog.length) html += '<div class="rp-h">Recently forged</div>' + team.qualityLog.map((q) => '<div class="sel-row"><span>' + (C.EQUIP_META[q.item] ? C.EQUIP_META[q.item].glyph : '🏹') + ' ' + cap(q.item) + '</span><span>' + q.glyph + ' ' + q.name + '</span></div>').join('');
-    if (team.production.length) html += '<div class="rp-h">Forging</div>' + team.production.map((q, i) => { const wait = q.waitingOn ? ' <span style="color:#d9a441">⏸ paused — ' + (C.RESOURCE_META[q.waitingOn] ? C.RESOURCE_META[q.waitingOn].glyph + ' ' : '') + q.waitingOn + ' reserved</span>' : (i === 0 && q.short ? ' <span style="color:#c8553d">⏸ short on resources</span>' : (i === 0 ? '' : ' <span class="muted">· queued</span>')); return '<div class="opt"><div class="opt-info"><div class="opt-name">' + cap(q.item) + ' ×' + Math.ceil(q.qtyLeft) + wait + '</div>' + (q.waitingOn ? '<div class="opt-desc">Kept ready — it will forge as soon as ' + q.waitingOn + ' is released.</div>' : '') + '</div><button class="btn btn-sm" onclick="FP.UI.act(\'cancelProduce\',{id:\'' + q.id + '\'})">Cancel</button></div>'; }).join('');
+    if (team.production.length) html += '<div class="rp-h">Forging</div>' + team.production.map((q, i) => {
+      const rt = (B.RECIPES[q.item] && B.RECIPES[q.item].time) || 1;
+      const active = i === 0 && !q.waitingOn;
+      const prog = active ? Math.max(0, Math.min(1, (rt - (q.remaining || 0)) / rt)) : 0;
+      const wait = q.waitingOn ? ' <span style="color:#d9a441">⏸ paused — ' + (C.RESOURCE_META[q.waitingOn] ? C.RESOURCE_META[q.waitingOn].glyph + ' ' : '') + q.waitingOn + ' reserved</span>' : (i === 0 && q.short ? ' <span style="color:#c8553d">⏸ short on resources</span>' : (i === 0 ? '' : ' <span class="muted">· queued</span>'));
+      const barColor = q.waitingOn ? '#7a5a2c' : '#c4a35a';
+      const bar = '<div style="height:6px;background:#2a241a;border-radius:3px;overflow:hidden;margin-top:5px"><div style="height:100%;width:' + Math.round(prog * 100) + '%;background:' + barColor + ';transition:width .2s linear"></div></div>';
+      return '<div class="opt"><div class="opt-info"><div class="opt-name">' + cap(q.item) + ' ×' + Math.ceil(q.qtyLeft) + wait + '</div>' + bar + (q.waitingOn ? '<div class="opt-desc">Kept ready — it will forge as soon as ' + q.waitingOn + ' is released.</div>' : '') + '</div><button class="btn btn-sm" onclick="FP.UI.act(\'cancelProduce\',{id:\'' + q.id + '\'})">Cancel</button></div>';
+    }).join('');
     openModal('The Forge', html, modalForge);
   }
   function qualColor(q) { return q >= 2.5 ? '#ffd54a' : q >= 1.6 ? '#a99bff' : q >= 1.1 ? '#6fae5f' : q >= 0.9 ? '#cfc3a6' : q >= 0.7 ? '#d9a441' : '#c8553d'; }
@@ -1071,6 +1079,11 @@
         html += optRow((mixed ? '🎯 ' : '') + c.name + (mixed ? ' <span class="muted">(mixed)</span>' : ''), 'Forge ' + contractGoalStr(c.goal) + ' in ' + c.time + 's', 'Reward: ' + costStr(c.reward), 'Accept', () => Net.action('startContract', { id: c.id }), team.contractCooldown > 0); }
     }
     if (team.contractCooldown > 0) html += '<div class="muted">Contracts on cooldown (' + Math.ceil(team.contractCooldown) + 's).</div>';
+    const hist = (team.contractHistory || []).slice(0, 3);
+    if (hist.length) {
+      html += '<div class="rp-h">Recent contracts</div>';
+      html += hist.map((h) => '<div class="sel-row" style="font-size:11px"><span>' + esc(h.name) + '</span><span style="color:' + (h.result === 'success' ? '#6fae5f' : '#c8553d') + '">' + (h.result === 'success' ? '✓ Fulfilled' : '✗ Failed') + '</span></div>').join('');
+    }
     openModal('Forge Contracts', html, modalContracts);
   }
   function modalSpec() {
@@ -1608,6 +1621,34 @@
     el.innerHTML = '<button onclick="FP.UI.hideHostPopup()" style="position:absolute;top:4px;right:6px;background:none;border:none;color:#c4a35a;font-size:14px;cursor:pointer">✕</button>' + hostPopupHtml(snap, found.g, found.team);
   }
 
+  // ---------- request-resolution notices (popup below the top bar when YOUR request is accepted/denied) ----------
+  const notifiedReqs = new Set();
+  function showReqNotice(html, good) {
+    let el = document.getElementById('reqNotice');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'reqNotice';
+      el.style.cssText = 'position:fixed;top:54px;left:50%;transform:translateX(-50%);z-index:55;max-width:520px;padding:8px 16px;border-radius:8px;font-size:13px;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.5);pointer-events:none;transition:opacity .3s';
+      document.body.appendChild(el);
+    }
+    el.style.background = good ? '#1d2a18' : '#2a1818';
+    el.style.border = '1px solid ' + (good ? '#6fae5f' : '#c8553d');
+    el.style.color = good ? '#bfe6a8' : '#e0998a';
+    el.innerHTML = html; el.style.display = 'block'; el.style.opacity = '1';
+    clearTimeout(el._h); el._h = setTimeout(() => { el.style.opacity = '0'; setTimeout(() => { el.style.display = 'none'; }, 320); }, 5200);
+  }
+  function checkRequestNotices(snap) {
+    if (!snap || State.isSpectator || !State.myRole) return;
+    const team = snap.teams[State.myTeam]; if (!team || !team.requests) return;
+    for (const r of team.requests) {
+      if (r.fromRole !== State.myRole || !r.resolution) continue;
+      if (notifiedReqs.has(r.id)) continue;
+      notifiedReqs.add(r.id);
+      const who = r.resolvedByName || (C.ROLE_META[r.resolvedBy] ? C.ROLE_META[r.resolvedBy].name : r.resolvedBy) || 'A teammate';
+      const accepted = r.resolution === 'accepted';
+      showReqNotice((accepted ? '✅ ' : '❌ ') + '<b>' + esc(who) + '</b> ' + (accepted ? 'accepted' : 'declined') + ' your request to ' + esc(reqText(r)) + '.', accepted);
+    }
+  }
+
   // ---------- public API ----------
   const UI = {
     _w: null,
@@ -1615,7 +1656,7 @@
     specFilter(v) { State.logFilter = v; buildSpectatorBar(); if (State.snapshot) UI.update(State.snapshot); },
     update(snap) {
       if (State.isSpectator) { updateTopSpectator(snap); updateLeftSpectator(snap); updateRight(snap); updatePause(snap); refreshOpenModal(); refreshHostPopup(); return; }
-      updateTop(snap); updateLeft(snap); updateRight(snap); updateGuide(snap); updatePause(snap); refreshOpenModal(); refreshHostPopup();
+      updateTop(snap); updateLeft(snap); updateRight(snap); updateGuide(snap); updatePause(snap); refreshOpenModal(); refreshHostPopup(); checkRequestNotices(snap);
     },
     showHostPopup, hideHostPopup,
     showTab(name) {

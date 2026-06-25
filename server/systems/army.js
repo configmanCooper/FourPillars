@@ -375,6 +375,11 @@ function strength(team, g, enemyComp, wallMult) {
   // Better arrows last longer (lower consumption).
   let arrowNeed = archerN * B.ARCHER_ARROW_USE / (eq.arrows || 1);
   const arrowOk = arrowsHave >= arrowNeed;
+  // Composition counters (count of enemy SOLDIERS, capped so the bonus tops out at +50%):
+  //  • cavalry get +10% per enemy unit that is neither a spearman nor cavalry (archers, swordsmen, …);
+  //  • spearmen get +10% per enemy cavalry. Both cap at +50% and lift attack AND defence.
+  const cavBonus = enemyComp ? 1 + Math.min(B.COUNTER_BONUS_MAX, B.COUNTER_BONUS_PER * (enemyComp.softVsCav || 0)) : 1;
+  const spearBonus = enemyComp ? 1 + Math.min(B.COUNTER_BONUS_MAX, B.COUNTER_BONUS_PER * (enemyComp.cav || 0)) : 1;
   for (const u of C.UNITS) {
     const n = Math.round(g.units[u] || 0); if (n <= 0) continue;
     const st = B.UNIT_STATS[u]; const wep = B.UNIT_WEAPON[u]; const recs = g.gear[u] || [];
@@ -382,8 +387,8 @@ function strength(team, g, enemyComp, wallMult) {
       const rec = recs[i] || { w: 1, a: 0 };
       let ua = st.atk, ud = st.def;
       if (u === 'archer' && !arrowOk) ua = 1;                                  // out of arrows -> fight poorly
-      if (st.vsCav && enemyComp && enemyComp.cav > 0) ua *= st.vsCav;
-      if (st.vsRanged && enemyComp && enemyComp.ranged > 0) ua *= st.vsRanged;
+      if (u === 'cavalry') { ua *= cavBonus; ud *= cavBonus; }                 // strong vs soft (non-spear/non-cav) foes
+      if (u === 'spearman') { ua *= spearBonus; ud *= spearBonus; }            // strong vs cavalry
       if (wep) ua *= (rec.w || 1);                                             // this soldier's OWN weapon quality
       if (wallMult) { const wm = (u === 'archer') ? wallMult.archer : wallMult.troop; ua *= wm; ud *= wm; }
       if (rec.a > 0) { ua *= B.EQUIP_TIER_MULT.advanced; ud *= B.EQUIP_TIER_MULT.advanced * (1 + B.ARMOR_DEF_BONUS * rec.a); }  // this soldier's OWN armour
@@ -401,8 +406,12 @@ function strength(team, g, enemyComp, wallMult) {
 }
 
 function composition(g) {
+  // softVsCav = enemy soldiers that are neither spearman nor cavalry (what cavalry feast on).
+  let soft = 0;
+  for (const u of C.UNITS) { if (u === 'spearman' || u === 'cavalry') continue; soft += g.units[u] || 0; }
   return {
     cav: g.units.cavalry || 0,
+    softVsCav: soft,
     ranged: (g.units.archer || 0),
     total: unitCount(g),
   };
