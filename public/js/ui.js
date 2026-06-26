@@ -884,6 +884,22 @@
     }
     crow += '</div>';
     html += crow;
+    // Scouts (Steward): assign idle workers to scout. More scouts = faster scouting (8 = full speed).
+    if (State.myRole === 'STEWARD') {
+      const sc = Math.round(team.pop.scouts || 0);
+      html += '<div class="rp-h">🔭 Scouts</div>';
+      html += '<div class="muted" style="font-size:11px;margin-bottom:4px">Scouts reveal the map and keep ground <b>scouted</b>. Soldiers fighting in an <b>unscouted</b> area lose ' + Math.round(B.UNSCOUTED_COMBAT_PENALTY * 100) + '% attack &amp; defence. ' + B.SCOUT_FULL + ' scouts = full speed; fewer take proportionally longer. Areas without your outpost slip back into fog after ' + B.SCOUT_DECAY_SEC + 's.</div>';
+      html += '<div class="sel-row"><span>🔭 Scouts assigned</span><span><button class="btn btn-sm" ' + (sc <= 0 ? 'disabled' : '') + ' onclick="FP.UI.setScouts(-1)">−</button> <b>' + sc + '</b> / ' + B.SCOUT_MAX + ' <button class="btn btn-sm" ' + (sc >= B.SCOUT_MAX || team.pop.idle <= 0 ? 'disabled' : '') + ' onclick="FP.UI.setScouts(1)">＋</button></span></div>';
+      if (team.scoutJob) {
+        const a = State.snapshot.areas[team.scoutJob.areaId];
+        const prog = Math.max(0, Math.min(1, team.scoutJob.progress || 0));
+        const pct = Math.round(prog * 100);
+        html += '<div class="sel-row"><span>📍 Scouting ' + (a ? esc(a.name) : '?') + '</span><span>' + pct + '%' + (sc <= 0 ? ' <span style="color:#d9a441">(no scouts!)</span>' : '') + '</span></div>';
+        html += '<div style="height:6px;background:#2a241a;border-radius:3px;overflow:hidden;margin-top:2px"><div style="height:100%;width:' + pct + '%;background:#8fb8e8;transition:width .2s linear"></div></div>';
+      } else {
+        html += '<div class="muted" style="font-size:10px">Pick a foggy area in the 🧭 Sites screen to scout it.</div>';
+      }
+    }
     openModal('⛏️ Labor & Gathering', html, modalGather);
   }
 
@@ -934,19 +950,29 @@
           '<button class="btn btn-sm" onclick="FP.UI.act(\'upgradeSite\',{areaId:\'' + id + '\'})">⬆ Upgrade<br><span style="font-size:9px">' + B.SITE_UPGRADE_COST.wood + '🪵 ' + B.SITE_UPGRADE_COST.stone + '🪨</span></button></div>';
       }
     }
-    html += '<div class="rp-h">Expand</div>';
+    html += '<div class="rp-h">Expand &amp; Scout</div>';
     let any = false;
     for (const [id, a] of others) {
       const rev = a.revealed[State.myTeam];
-      let act = '', fn = '', keepOpen = false, desc = '';
-      if (!rev && a.connections.some((n) => snap.areas[n].revealed[State.myTeam])) { act = 'Scout'; fn = "FP.UI.act('explore',{areaId:'" + id + "'})"; desc = 'unexplored — scout to reveal'; }
-      else if (rev && a.site && (!a.owner || (a.owner === State.myTeam && a.claimedBy !== State.myTeam))) { act = claimLabel(a); fn = "FP.UI.act('claim',{areaId:'" + id + "'})"; keepOpen = true; const m = C.RESOURCE_META[a.resource]; const yld = (B.SITE_YIELD[a.terrain] || {})[a.resource] || 0; desc = (a.owner === State.myTeam ? 'your ground · outpost destroyed — rebuild · ' : 'neutral · ') + (m ? m.glyph + ' ' + a.resource : a.resource) + ' (~' + yld.toFixed(2) + '/s at Lv1)'; }
-      else if (rev && a.owner && a.owner !== State.myTeam) { desc = 'enemy-held'; }
+      const scouted = !!(a.scouted && a.scouted[State.myTeam]);
+      const adj = a.connections.some((n) => (snap.areas[n].scouted && snap.areas[n].scouted[State.myTeam]) || snap.areas[n].owner === State.myTeam);
+      const scoutingHere = team.scoutJob && team.scoutJob.areaId === id;
+      let act = '', fn = '', keepOpen = false, desc = '', extra = '';
+      if (scoutingHere) {
+        const pct = Math.round(Math.max(0, Math.min(1, team.scoutJob.progress || 0)) * 100);
+        desc = (rev ? 're-scouting' : 'scouting') + '… ' + pct + '%' + ((team.pop.scouts || 0) <= 0 ? ' <span style="color:#d9a441">(assign scouts!)</span>' : '');
+        extra = '<div style="height:6px;background:#2a241a;border-radius:3px;overflow:hidden;margin-top:3px"><div style="height:100%;width:' + pct + '%;background:#8fb8e8"></div></div>';
+        any = true;
+      } else if (!scouted && adj) {
+        act = rev ? 'Re-scout' : 'Scout'; fn = "FP.UI.act('explore',{areaId:'" + id + "'})";
+        desc = rev ? '🌫 lapsed into fog — re-scout (−' + Math.round(B.UNSCOUTED_COMBAT_PENALTY * 100) + '% combat here)' : 'unscouted — scout to reveal';
+      } else if (rev && a.site && (!a.owner || (a.owner === State.myTeam && a.claimedBy !== State.myTeam))) { act = claimLabel(a); fn = "FP.UI.act('claim',{areaId:'" + id + "'})"; keepOpen = true; const m = C.RESOURCE_META[a.resource]; const yld = (B.SITE_YIELD[a.terrain] || {})[a.resource] || 0; desc = (a.owner === State.myTeam ? 'your ground · outpost destroyed — rebuild · ' : 'neutral · ') + (m ? m.glyph + ' ' + a.resource : a.resource) + ' (~' + yld.toFixed(2) + '/s at Lv1)' + (!scouted ? ' · 🌫 unscouted' : ''); }
+      else if (rev && a.owner && a.owner !== State.myTeam) { desc = 'enemy-held' + (!scouted ? ' · 🌫 unscouted (−combat)' : ''); }
       else continue;
       if (act) any = true;
-      html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + a.name + ' <span class="muted">' + (a.resource || '') + '</span></div><div class="opt-desc">' + desc + '</div></div>' + (act ? '<button class="btn btn-sm" onclick="' + fn + (keepOpen ? '' : ';FP.UI.closeModal()') + '">' + act + '</button>' : '') + '</div>';
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + a.name + ' <span class="muted">' + (a.resource || '') + '</span></div><div class="opt-desc">' + desc + '</div>' + extra + '</div>' + (act ? '<button class="btn btn-sm" ' + ((team.pop.scouts || 0) <= 0 && (act === 'Scout' || act === 'Re-scout') ? 'title="Assign Scouts in the Labor screen first"' : '') + ' onclick="' + fn + (keepOpen ? '' : ';FP.UI.closeModal()') + '">' + act + '</button>' : '') + '</div>';
     }
-    if (!any && !owned.length) html += '<div class="muted">Scout neighbouring areas (click them on the map), then claim their sites.</div>';
+    if (!any && !owned.length) html += '<div class="muted">Assign 🔭 Scouts (Labor), then scout neighbouring areas and claim their sites.</div>';
     openModal('🏚️ Outposts & Sites', html, modalSites);
   }
   function modalCaravans() {
@@ -973,20 +999,28 @@
     return true;
   }
   function coolingCountClient(team) { let n = 0; for (const b of ((team.pop && team.pop.cooling) || [])) n += b.n; return n; }
+  let expeditionUseTools = true;
   function modalExpeditions() {
     const snap = State.snapshot, team = State.teamState();
     const allowCooling = !team.workerLock;
     const prep = coolingCountClient(team);
     const avail = team.pop.idle + (allowCooling ? prep : 0);
+    const toolStock = Math.floor(team.equipment.tools || 0);
+    const toolQ = (team.equipQuality && team.equipQuality.tools) || 1;
     let html = '<div class="muted">🧭 <b>Expeditions</b> commit workers for a timed venture, then pay a big resource reward — but a crew may not return. One at a time.' +
       (allowCooling && prep > 0 ? ' You can draw on <b>preparing</b> workers too (' + prep + ' re-settling).' : (!allowCooling ? ' <span style="color:#d9a441">The Lord locked worker control, so only ready idle workers can go.</span>' : '')) + '</div>';
     const cd = Math.max(0, Math.ceil((team.expeditionCooldownUntil || 0) - snap.elapsed));
     if (team.expedition) {
       const left = Math.max(0, Math.ceil(team.expedition.endsAt - snap.elapsed));
-      html += '<div class="opt"><div class="opt-info"><div class="opt-name">⏳ ' + esc(team.expedition.name) + ' — underway</div><div class="opt-desc">' + team.expedition.workers + ' workers away · ' + left + 's left · reward ' + Object.keys(team.expedition.reward).map((k) => (C.RESOURCE_META[k] ? C.RESOURCE_META[k].glyph : '') + team.expedition.reward[k]).join(' ') + '</div></div></div>';
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">⏳ ' + esc(team.expedition.name) + ' — underway</div><div class="opt-desc">' + team.expedition.workers + ' workers away' + (team.expedition.toolsUsed ? ' · 🛠️ ' + team.expedition.toolsUsed + ' tools' : '') + ' · ' + left + 's left · ⚠ ' + Math.round((team.expedition.risk || 0) * 100) + '% loss · reward ' + Object.keys(team.expedition.reward).map((k) => (C.RESOURCE_META[k] ? C.RESOURCE_META[k].glyph : '') + team.expedition.reward[k]).join(' ') + '</div></div></div>';
     } else {
+      // Tools toggle: bring 1 tool/worker to lower the crew-loss risk (consumed; better tools help more).
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">🛠️ Equip the crew with tools</div><div class="opt-desc">Spends 1 tool/worker (' + toolStock + ' in stock' + (toolStock > 0 ? ', avg ' + qualName(toolQ).split(' ')[0] : '') + ') to lower the crew-loss risk. ' + (expeditionUseTools ? 'ON' : 'OFF') + '</div></div><button class="btn btn-sm ' + (expeditionUseTools ? 'btn-gold' : '') + '" onclick="FP.UI.toggleExpeditionTools()">' + (expeditionUseTools ? '🛠️ Bringing tools' : 'No tools') + '</button></div>';
+      const offersIn = team.expeditionOffersIn || 0;
+      html += '<div class="muted" style="font-size:11px;margin:4px 0">Five ventures on offer; the set rotates in <b>' + offersIn + 's</b>.</div>';
       if (cd > 0) html += '<div class="muted">On cooldown — ' + cd + 's until the next venture.</div>';
-      for (const e of B.EXPEDITIONS) {
+      const offers = (team.expeditionOffers && team.expeditionOffers.length) ? team.expeditionOffers : B.EXPEDITIONS.slice(0, 5).map((e) => e.id);
+      for (const eid of offers) { const e = B.EXPEDITIONS.find((x) => x.id === eid); if (!e) continue;
         const elig = expeditionEligibleClient(snap, team, e);
         const workersOk = avail >= e.workers;
         const siteTxt = e.requires.site ? (Array.isArray(e.requires.site) ? e.requires.site.join(' or ') : e.requires.site) : '';
@@ -994,8 +1028,12 @@
         const haveTxt = team.pop.idle + ' idle' + (allowCooling && prep > 0 ? ' + ' + prep + ' preparing' : '');
         const why = !elig ? reqTxt : (!workersOk ? ('needs ' + e.workers + ' workers (have ' + haveTxt + ')') : (cd > 0 ? 'on cooldown' : ''));
         const reward = Object.keys(e.reward).map((k) => (C.RESOURCE_META[k] ? C.RESOURCE_META[k].glyph : '') + e.reward[k]).join(' ');
-        html += optRow('🧭 ' + e.name, e.desc + ' · ⚠ ' + Math.round(e.risk * 100) + '% a crew is lost', e.workers + ' workers · ' + e.time + 's · reward ' + reward, 'Launch',
-          () => Net.action('startExpedition', { id: e.id }), !elig || !workersOk || cd > 0, why);
+        // Effective risk preview if we bring tools.
+        let effRisk = e.risk;
+        if (expeditionUseTools && toolStock > 0) { const n = Math.min(e.workers, toolStock); const red = Math.min(B.EXPEDITION_TOOL_REDUCTION_MAX, B.EXPEDITION_TOOL_RISK_REDUCTION * (n / e.workers) * toolQ); effRisk = e.risk * (1 - red); }
+        const riskTxt = effRisk < e.risk ? '⚠ ' + Math.round(effRisk * 100) + '% (was ' + Math.round(e.risk * 100) + '%) crew lost' : '⚠ ' + Math.round(e.risk * 100) + '% a crew is lost';
+        html += optRow('🧭 ' + e.name, e.desc + ' · ' + riskTxt, e.workers + ' workers · ' + e.time + 's · reward ' + reward, 'Launch',
+          () => Net.action('startExpedition', { id: e.id, useTools: expeditionUseTools }), !elig || !workersOk || cd > 0, why);
       }
     }
     openModal('🧭 Expeditions', html, modalExpeditions);
@@ -1780,6 +1818,8 @@
     modalBuild, modalWorkers, modalPolicy, modalMilitaryPolicy, modalSites, modalCaravans, modalExpeditions, modalForge, modalContracts, modalSpec, modalMuster, modalOrders, modalArmyManage, modalDoctrine, modalNeed, modalMilitary, modalGather, modalResearch, modalSpectatorMilitary,
     gatherTools(pool, delta) { Net.action('setGatherTools', { pool, delta }); },
     toggleDanger(pool) { const t = State.teamState(); const on = !(t && t.dangerWork && t.dangerWork[pool]); Net.action('setDangerWork', { pool, on }); },
+    setScouts(delta) { Net.action('setScouts', { delta }); },
+    toggleExpeditionTools() { expeditionUseTools = !expeditionUseTools; modalExpeditions(); },
     mineFocus(v) { Net.action('setMineFocus', { value: v }); },
     mineFocusStep(d) { const t = State.teamState(); const cur = (t && t.gather && typeof t.gather.mineIronFocus === 'number') ? t.gather.mineIronFocus : B.DEFAULT_MINE_FOCUS; Net.action('setMineFocus', { value: Math.max(0, Math.min(1, cur + d)) }); },
     askToolsFromSmith() { Net.action('request', { type: 'EQUIPMENT', payload: { item: 'tools' } }); toast('Asked the Blacksmith to forge Tools.'); },

@@ -172,6 +172,22 @@
       if (st.myTeam && a.revealed && !a.revealed[st.myTeam]) {
         ctx.save(); ctx.globalAlpha = 0.62; ctx.fillStyle = '#0c0905';
         ctx.beginPath(); ctx.arc(cx, cy, 80 * scale, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      } else if (st.myTeam && a.revealed && a.revealed[st.myTeam] && a.scouted && !a.scouted[st.myTeam]) {
+        // Discovered but currently UNSCOUTED (lapsed into fog): a lighter haze + a 🌫 mark.
+        ctx.save(); ctx.globalAlpha = 0.30; ctx.fillStyle = '#1a2230';
+        ctx.beginPath(); ctx.arc(cx, cy, 80 * scale, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        ctx.font = (14 * scale + 6) + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.globalAlpha = 0.7; ctx.fillText('🌫', cx + 34 * scale, cy - 34 * scale); ctx.globalAlpha = 1;
+      }
+      // Scouting progress bar: the area our scouts are currently working on.
+      const sj = st.myTeam && snap.teams && snap.teams[st.myTeam] && snap.teams[st.myTeam].scoutJob;
+      if (sj && sj.areaId === id) {
+        const pct = Math.max(0, Math.min(1, sj.progress || 0));
+        const bw = 70 * scale, bx = cx - bw / 2, by = cy + 60 * scale;
+        ctx.fillStyle = 'rgba(20,14,8,0.85)'; roundRect(ctx, bx - 2, by - 2, bw + 4, 8, 3); ctx.fill();
+        ctx.fillStyle = '#8fb8e8'; ctx.fillRect(bx, by, bw * pct, 4);
+        ctx.font = '700 9px Cinzel'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#bcd2ee'; ctx.fillText('🔭 ' + Math.round(pct * 100) + '%', cx, by - 3);
       }
       // Selection ring.
       if (st.selectedArea === id) {

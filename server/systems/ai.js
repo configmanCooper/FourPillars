@@ -434,10 +434,20 @@ function aiSteward(state, team, sys, rng, persona, st) {
   }
 
   askIfHeld(state, team, sys, st, C.ROLES.STEWARD, 'wood', 'to claim & build outposts');
-  // Explore.
-  if (!st.acted && !team._busyJob) {
-    for (const id in state.areas) { const a = state.areas[id];
-      if (!a.revealed[team.team] && a.connections.some((n) => state.areas[n].revealed[team.team])) { if (sites.explore(state, team, id).ok) { st.acted = true; break; } } }
+  // ---- Scouting: keep a few Scouts and reveal/maintain the frontier so our soldiers never fight blind
+  //      (unscouted areas cost us 20% attack & defence). Owned outposts stay scouted automatically.
+  const unscoutedAdj = [];
+  for (const id in state.areas) {
+    const a = state.areas[id];
+    if (a.scouted[team.team]) continue;
+    if (a.connections.some((n) => state.areas[n].scouted[team.team] || state.areas[n].owner === team.team)) unscoutedAdj.push(a);
+  }
+  const wantScouts = unscoutedAdj.length > 0 || !!team.scoutJob;
+  if (wantScouts && (team.pop.scouts || 0) < 3 && team.pop.idle > 2) eco.setScouts(state, team, Math.min(3 - (team.pop.scouts || 0), team.pop.idle - 2));
+  else if (!wantScouts && (team.pop.scouts || 0) > 0 && !team.scoutJob) eco.setScouts(state, team, -(team.pop.scouts));
+  if (!team.scoutJob && (team.pop.scouts || 0) > 0 && unscoutedAdj.length) {
+    unscoutedAdj.sort((x, y) => scoutPrio(state, team, y) - scoutPrio(state, team, x));
+    sites.explore(state, team, unscoutedAdj[0].id);
   }
   // Claim — priority by persona + current shortage.
   if (!st.acted && !team._busyJob) {
@@ -460,12 +470,14 @@ function aiSteward(state, team, sys, rng, persona, st) {
     const want = sites.areaIsDangerous(state, team, id) ? 'cautious' : 'push';
     if (a.site.workMode !== want) sites.setWorkMode(state, team, id, want);
   }
-  // Expeditions: launch one when idle labour is plentiful and we're not in crisis (prefer scarce goods).
+  // Expeditions: launch one from the CURRENT OFFERS when idle labour is plentiful and we're not in
+  // crisis (prefer scarce goods). Bring tools along (if any) to lower the crew-loss risk.
   if (!st.acted && !team.expedition && (team.expeditionCooldownUntil || 0) <= state.elapsed && team.pop.idle >= 5 && !team._starving && (st.cd.expedition || 0) <= state.elapsed) {
-    const elig = B.EXPEDITIONS.filter((e) => sites.expeditionEligible(state, team, e) && team.pop.idle >= e.workers + 2);
+    const offers = (team.expeditionOffers && team.expeditionOffers.length) ? team.expeditionOffers : B.EXPEDITIONS.map((e) => e.id);
+    const elig = offers.map((eid) => B.EXPEDITIONS.find((e) => e.id === eid)).filter((e) => e && sites.expeditionEligible(state, team, e) && team.pop.idle >= e.workers + 2);
     if (elig.length) {
       elig.sort((x, y) => expeditionValue(team, y) - expeditionValue(team, x));
-      if (sites.startExpedition(state, team, elig[0].id).ok) { st.acted = true; st.cd.expedition = state.elapsed + 40; say(state, team, sys, st, C.ROLES.STEWARD, elig[0].name + ' departs — fortune awaits!', 30); }
+      if (sites.startExpedition(state, team, elig[0].id, true).ok) { st.acted = true; st.cd.expedition = state.elapsed + 40; say(state, team, sys, st, C.ROLES.STEWARD, elig[0].name + ' departs — fortune awaits!', 30); }
     }
   }
   // ---- Caravan guards: ask the Commander for guards, then station them where caravans are most
@@ -496,6 +508,17 @@ function aiSteward(state, team, sys, rng, persona, st) {
   }
 }
 function enemyAt(state, team, areaId) { const foe = S.enemyOf(team.team); return state.teams[foe].armies.some((g) => (g.moving ? g.moving.route[g.moving.legIndex] : g.area) === areaId && unitCountG(g) >= 0.5); }
+// Scout-target priority: prefer unscouted neutral SITES (expansion), then ground near the enemy / our
+// frontier (so our hosts don't fight blind there), then anything adjacent.
+function scoutPrio(state, team, a) {
+  let s = 1;
+  if (a.site && !a.owner) s += 5;                              // an unclaimed site we might expand to
+  if (a.owner === team.team && a.claimedBy !== team.team) s += 4; // our ground whose outpost fell — re-take it
+  const foe = S.enemyOf(team.team);
+  if (a.connections.some((n) => state.areas[n] && state.areas[n].owner === foe)) s += 3; // borders the enemy
+  if (enemyAt(state, team, a.id)) s += 2;                      // an enemy host is here — see what we face
+  return s;
+}
 // Find a nearby enemy caravan a host can intercept: aim at the soonest-reachable point on its remaining
 // route. Prefers high-value cargo (relics) and skips caravans that out-gun the host.
 function caravanIntercept(state, army, team, w, maxReach) {
@@ -991,8 +1014,11 @@ function friendStrAt(state, army, team, areaId, exceptId) {
   let s = 0; for (const h of team.armies) { if (h.id === exceptId || unitCountG(h) < 0.5) continue; if (areaOf(h) === areaId) s += hostStr(army, team, h); } return s;
 }
 // Win probability (share of combined strength) for host w to take/hold areaId. 1 = uncontested.
+// If WE haven't scouted the area, our soldiers fight there at the unscouted penalty — fold that into
+// the estimate so the AI is wary of attacking blind (and the Steward is nudged to scout ahead).
+function scoutFactor(state, team, areaId) { const a = state.areas[areaId]; return (a && a.scouted && a.scouted[team.team]) ? 1 : (1 - B.UNSCOUTED_COMBAT_PENALTY); }
 function winChanceAt(state, army, team, w, areaId) {
-  const ours = hostStr(army, team, w) + friendStrAt(state, army, team, areaId, w.id);
+  const ours = (hostStr(army, team, w) + friendStrAt(state, army, team, areaId, w.id)) * scoutFactor(state, team, areaId);
   const theirs = enemyStrAt(state, army, team, areaId);
   if (theirs <= 0.01) return 1;
   return ours / (ours + theirs);
@@ -1001,7 +1027,7 @@ function winChanceAt(state, army, team, w, areaId) {
 // weight (they can converge), so we only commit to keeping posts we can actually defend.
 function holdChanceAt(state, army, team, w, areaId) {
   const foe = state.teams[S.enemyOf(team.team)]; const ar = state.areas[areaId];
-  const ours = hostStr(army, team, w) + friendStrAt(state, army, team, areaId, w.id);
+  const ours = (hostStr(army, team, w) + friendStrAt(state, army, team, areaId, w.id)) * scoutFactor(state, team, areaId);
   let theirs = 0;
   for (const h of foe.armies) { if (unitCountG(h) < 0.5) continue; const at = areaOf(h);
     if (at === areaId || (ar && ar.connections.indexOf(at) >= 0)) theirs += hostStr(army, foe, h); }

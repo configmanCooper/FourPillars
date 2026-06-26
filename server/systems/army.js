@@ -369,7 +369,7 @@ function tickMovement(state, team, dt) {
   }
 }
 
-function strength(team, g, enemyComp, wallMult, onOwnOutpost) {
+function strength(team, g, enemyComp, wallMult, onOwnOutpost, unscouted) {
   let atk = 0, def = 0;
   const eq = team.equipQuality || {};
   ensureGear(g);
@@ -413,6 +413,8 @@ function strength(team, g, enemyComp, wallMult, onOwnOutpost) {
   const mp = team.militaryPolicy ? B.MILITARY_POLICIES[team.militaryPolicy] : null;
   if (mp) { if (mp.atkMult) atk *= mp.atkMult; if (mp.defMult) def *= mp.defMult; }
   atk *= B.MORALE[g.morale] || 1; def *= B.MORALE[g.morale] || 1;
+  // Fighting blind: in an area this team hasn't scouted, soldiers fight at a penalty to attack AND defence.
+  if (unscouted) { const m = 1 - B.UNSCOUTED_COMBAT_PENALTY; atk *= m; def *= m; }
   return { atk, def, arrowNeed: arrowOk ? arrowNeed : 0 };
 }
 
@@ -533,7 +535,10 @@ function battleRound(state, areaId, blueM, redM, blueT, redT, dt, rng, log, blue
   const isOutpost = area && area.terrain !== 'base' && !!area.site;
   const blueOutpost = isOutpost && area.owner === 'BLUE';
   const redOutpost = isOutpost && area.owner === 'RED';
-  const bS = strength(blueT, blueM, rComp, blueWall, blueOutpost), rS = strength(redT, redM, bComp, redWall, redOutpost);
+  // Fighting in an area you haven't scouted is a penalty (each side checks its OWN scouting).
+  const blueUnscouted = !(area && area.scouted && area.scouted.BLUE);
+  const redUnscouted = !(area && area.scouted && area.scouted.RED);
+  const bS = strength(blueT, blueM, rComp, blueWall, blueOutpost, blueUnscouted), rS = strength(redT, redM, bComp, redWall, redOutpost, redUnscouted);
   // Consume arrows.
   blueT.resources.arrows = Math.max(0, (blueT.resources.arrows || 0) - bS.arrowNeed * dt);
   redT.resources.arrows = Math.max(0, (redT.resources.arrows || 0) - rS.arrowNeed * dt);

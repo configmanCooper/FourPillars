@@ -134,7 +134,14 @@
   };
   const SITE_UPGRADE_COST = { wood: 60, stone: 40 };
   const SITE_UPGRADE_MULT = 1.6;
-  const EXPLORE_TIME = 6;               // seconds to reveal an area
+  const EXPLORE_TIME = 6;               // seconds to fully scout an area at FULL scout strength (8 scouts)
+  // Scouting (Steward-assigned Scout workers). Speed scales with the number of scouts: SCOUT_FULL
+  // scouts = EXPLORE_TIME; 1 scout takes SCOUT_FULL× as long. Scouted areas without an outpost lapse
+  // back to unscouted after SCOUT_DECAY_SEC. Soldiers fighting in an UNSCOUTED area fight worse.
+  const SCOUT_MAX = 8;                  // most scouts the Steward can field
+  const SCOUT_FULL = 8;                 // scouts that scout at EXPLORE_TIME speed (the old single-scout speed)
+  const SCOUT_DECAY_SEC = 300;          // an unowned scouted area lapses to unscouted after this long
+  const UNSCOUTED_COMBAT_PENALTY = 0.2; // -20% attack AND defence for soldiers fighting in an unscouted area
   const CLAIM_TIME = 8;                 // seconds to claim a revealed neutral site
   const CLAIM_COST = { wood: 40 };
   const CLAIM_MIN_INSTALMENT = 10;      // the Steward must commit at least this much wood per instalment
@@ -181,14 +188,48 @@
   const PURSUIT_TIMEOUT = 22;           // seconds before pursuers give up the chase
 
   // Steward expeditions: timed ventures that commit workers for a big, targeted payout (with risk).
+  // Expeditions: timed ventures that pay a big reward but a crew may not return. Only
+  // EXPEDITION_OFFER_COUNT are offered at once; the offer set rotates through the pool every
+  // EXPEDITION_ROTATE_SEC seconds. Committing tools (1/worker) lowers the crew-loss risk.
+  const EXPEDITION_OFFER_COUNT = 5;
+  const EXPEDITION_ROTATE_SEC = 120;
   const EXPEDITIONS = [
-    { id: 'timberRun', name: 'Great Timber Run', requires: { building: 'lumberCamp' }, workers: 3, time: 80, reward: { wood: 140 }, risk: 0.12, desc: 'Fell a distant forest for a wood windfall.' },
-    { id: 'oreSurvey', name: 'Deep Ore Survey', requires: { site: ['mountain', 'hills'] }, workers: 3, time: 105, reward: { iron: 90, stone: 45 }, risk: 0.2, desc: 'Mine a rich vein — needs a claimed Mountain or Quarry outpost.' },
-    { id: 'grandHunt', name: 'Grand Hunt', requires: { site: 'plains' }, workers: 2, time: 75, reward: { food: 130, horses: 8 }, risk: 0.1, desc: 'A great hunt across the plains.' },
-    { id: 'relicDig', name: 'Relic Excavation', requires: { site: 'ruins' }, workers: 4, time: 125, reward: { relics: 4, iron: 40 }, risk: 0.25, desc: 'Excavate ancient ruins for relics.' },
-    { id: 'merchantRun', name: 'Merchant Venture', requires: { building: 'storehouse' }, workers: 2, time: 95, reward: { wood: 70, stone: 70, iron: 45 }, risk: 0.1, desc: 'Trade abroad — needs a Storehouse.' },
+    { id: 'timberRun',   name: 'Great Timber Run',   requires: { building: 'lumberCamp' }, workers: 3, time: 80,  reward: { wood: 140 },           risk: 0.12, desc: 'Fell a distant forest for a wood windfall.' },
+    { id: 'oreSurvey',   name: 'Deep Ore Survey',    requires: { site: ['mountain', 'hills'] }, workers: 3, time: 105, reward: { iron: 90, stone: 45 }, risk: 0.20, desc: 'Mine a rich vein — needs a claimed Mountain or Quarry outpost.' },
+    { id: 'grandHunt',   name: 'Grand Hunt',         requires: { site: 'plains' },  workers: 2, time: 75,  reward: { food: 130, horses: 8 }, risk: 0.10, desc: 'A great hunt across the plains.' },
+    { id: 'relicDig',    name: 'Relic Excavation',   requires: { site: 'ruins' },   workers: 4, time: 125, reward: { relics: 4, iron: 40 },  risk: 0.25, desc: 'Excavate ancient ruins for relics.' },
+    { id: 'merchantRun', name: 'Merchant Venture',   requires: { building: 'storehouse' }, workers: 2, time: 95,  reward: { wood: 70, stone: 70, iron: 45 }, risk: 0.10, desc: 'Trade abroad — needs a Storehouse.' },
+    { id: 'loggingCamp', name: 'Logging Expedition', requires: { building: 'lumberCamp' }, workers: 4, time: 110, reward: { wood: 200 },           risk: 0.15, desc: 'A long haul into deep timberland.' },
+    { id: 'quarryDig',   name: 'Quarry Dig',         requires: { site: ['hills', 'mountain'] }, workers: 3, time: 90,  reward: { stone: 150 },          risk: 0.14, desc: 'Open a fresh quarry face for stone.' },
+    { id: 'ironVein',    name: 'Iron Vein',          requires: { building: 'mine' }, workers: 3, time: 100, reward: { iron: 120 },           risk: 0.18, desc: 'Chase a rich iron seam underground.' },
+    { id: 'harvestRun',  name: 'Bountiful Harvest',  requires: { building: 'farm' }, workers: 2, time: 70,  reward: { food: 160 },           risk: 0.08, desc: 'Bring in a record harvest from afar.' },
+    { id: 'wildHorses',  name: 'Wild Horse Drive',   requires: { site: 'plains' },  workers: 3, time: 95,  reward: { horses: 18 },          risk: 0.16, desc: 'Round up a herd of wild horses.' },
+    { id: 'forageRun',   name: 'Forager\'s Trek',     requires: {},                  workers: 2, time: 65,  reward: { food: 90, wood: 50 },  risk: 0.10, desc: 'Send foragers into the wilds for food & wood.' },
+    { id: 'prospect',    name: 'Prospecting Party',  requires: {},                  workers: 3, time: 100, reward: { stone: 80, iron: 60 }, risk: 0.18, desc: 'Prospect unclaimed land for ore.' },
+    { id: 'ruinRaid',    name: 'Ruin Raid',          requires: { site: 'ruins' },   workers: 3, time: 110, reward: { relics: 3, stone: 50 }, risk: 0.22, desc: 'Raid crumbling ruins for relics.' },
+    { id: 'oldVault',    name: 'The Old Vault',      requires: { site: 'ruins' },   workers: 5, time: 150, reward: { relics: 6, iron: 60 },  risk: 0.30, desc: 'Crack a sealed vault — high risk, high relics.' },
+    { id: 'tradeCaravan', name: 'Trade Caravan',     requires: { building: 'storehouse' }, workers: 3, time: 105, reward: { wood: 90, stone: 90, food: 60 }, risk: 0.12, desc: 'A laden caravan to distant markets.' },
+    { id: 'saltRoute',   name: 'Salt Route',         requires: { building: 'storehouse' }, workers: 2, time: 85,  reward: { food: 120, stone: 40 }, risk: 0.10, desc: 'Run the old salt road for food & stone.' },
+    { id: 'mountainPass', name: 'Mountain Pass',     requires: { site: 'mountain' }, workers: 4, time: 130, reward: { iron: 140, stone: 70 }, risk: 0.24, desc: 'Brave the high pass for mountain ore.' },
+    { id: 'deepForest',  name: 'Deep Forest March',  requires: { site: 'forest' },  workers: 3, time: 95,  reward: { wood: 160, food: 40 },  risk: 0.14, desc: 'March into old-growth forest.' },
+    { id: 'fenHarvest',  name: 'Fenland Harvest',    requires: { site: 'farmland' }, workers: 2, time: 70,  reward: { food: 150, horses: 4 }, risk: 0.09, desc: 'Work the rich fenland soil.' },
+    { id: 'gemCache',    name: 'Hidden Gem Cache',   requires: { site: ['mountain', 'hills'] }, workers: 4, time: 135, reward: { relics: 3, iron: 70 }, risk: 0.26, desc: 'Dig out a rumoured gem cache.' },
+    { id: 'longHunt',    name: 'The Long Hunt',      requires: { site: ['plains', 'forest'] }, workers: 3, time: 100, reward: { food: 180, horses: 6 }, risk: 0.15, desc: 'A long hunt across plains and wood.' },
+    { id: 'frontierFarm', name: 'Frontier Farmstead', requires: { building: 'farm' }, workers: 4, time: 120, reward: { food: 220 },           risk: 0.13, desc: 'Settle a frontier farmstead for a huge yield.' },
+    { id: 'oreCaravan',  name: 'Ore Caravan',        requires: { building: 'mine' }, workers: 4, time: 125, reward: { iron: 110, stone: 90 }, risk: 0.20, desc: 'Haul a heavy ore caravan home.' },
+    { id: 'horseFair',   name: 'Horse Fair',         requires: { building: 'stables' }, workers: 2, time: 80,  reward: { horses: 22 },          risk: 0.12, desc: 'Trade at a distant horse fair.' },
+    { id: 'warSupplies', name: 'War Supplies Run',   requires: { building: 'barracks' }, workers: 3, time: 100, reward: { iron: 90, wood: 70 },  risk: 0.16, desc: 'Gather raw materials for the war effort.' },
+    { id: 'scholarTrek', name: 'Scholar\'s Trek',     requires: { building: 'school' }, workers: 2, time: 90,  reward: { relics: 2, food: 60 },  risk: 0.14, desc: 'Send scholars to recover lost knowledge.' },
+    { id: 'siegeTimber', name: 'Siege Timber Haul',  requires: { building: 'workshop' }, workers: 4, time: 120, reward: { wood: 180, iron: 50 }, risk: 0.18, desc: 'Haul heavy timber for the war machines.' },
+    { id: 'riverTrade',  name: 'River Trade',        requires: {},                  workers: 2, time: 75,  reward: { wood: 60, food: 70, stone: 40 }, risk: 0.10, desc: 'Trade down the river for mixed goods.' },
+    { id: 'lostMine',    name: 'The Lost Mine',      requires: { site: 'mountain' }, workers: 5, time: 155, reward: { iron: 180, relics: 2 }, risk: 0.30, desc: 'Reopen a legendary lost mine.' },
+    { id: 'pilgrimage',  name: 'Relic Pilgrimage',   requires: { site: 'ruins' },   workers: 3, time: 115, reward: { relics: 5 },            risk: 0.24, desc: 'A pilgrimage to gather sacred relics.' },
+    { id: 'greatMarket', name: 'The Great Market',   requires: { building: 'storehouse' }, workers: 4, time: 140, reward: { wood: 100, stone: 100, iron: 80, food: 80 }, risk: 0.15, desc: 'A grand trading venture for everything.' },
   ];
   const EXPEDITION_COOLDOWN = 45;       // seconds after one finishes before the next may launch
+  const EXPEDITION_TOOL_RISK_REDUCTION = 0.5;   // full tooling (1/worker) at Standard quality halves crew-loss risk
+  const EXPEDITION_TOOL_REDUCTION_MAX = 0.8;    // cap on total risk reduction (legendary tools)
+
 
   // Blacksmith production. cost per unit; time seconds per unit (before forge speed). Forging is slow —
   // every item takes a real investment (the minigame strikes scale with this time).
@@ -374,7 +415,8 @@
     BUILDINGS, MAX_PER_BUILDING, POLICIES,
     BUILD_SLOTS_BASE, BUILD_SLOTS_SITE, SITE_WALL_RESIST, CAPTURE_TIME_BASE, CAPTURE_DECAY,
     SITE_YIELD, SITE_UPGRADE_COST, SITE_UPGRADE_MULT, EXPLORE_TIME, CLAIM_TIME, CLAIM_COST, CLAIM_MIN_INSTALMENT,
-    WORK_MODES, POP_FLOOR, EXPEDITIONS, EXPEDITION_COOLDOWN,
+    SCOUT_MAX, SCOUT_FULL, SCOUT_DECAY_SEC, UNSCOUTED_COMBAT_PENALTY,
+    WORK_MODES, POP_FLOOR, EXPEDITIONS, EXPEDITION_COOLDOWN, EXPEDITION_OFFER_COUNT, EXPEDITION_ROTATE_SEC, EXPEDITION_TOOL_RISK_REDUCTION, EXPEDITION_TOOL_REDUCTION_MAX,
     CARAVAN_DISPATCH_CARGO, CARAVAN_DISPATCH_BY_RESOURCE, CARAVAN_WARN_SECONDS, CARAVAN_MIN_INTERVAL, CARAVAN_SPEED, ESCORT_PROTECT,
     GUARD_LEND_DEFAULT, GUARD_KILL_PER, GUARD_LOSS_PER, GUARD_PIN_SECONDS,
     HOST_SPEED_MULT, CAVALRY_SPEED_MULT, PURSUIT_CATCH_RADIUS, PURSUIT_TIMEOUT,

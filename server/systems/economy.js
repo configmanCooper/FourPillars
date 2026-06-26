@@ -83,7 +83,7 @@ function addResource(team, key, amt) {
 function coolingCount(team) { let n = 0; for (const b of (team.pop.cooling || [])) n += b.n; return n; }
 function workforce(team) {
   const p = team.pop;
-  return p.farmers + p.woodcutters + p.miners + p.builders + p.students + p.trainers + (p.researchers || 0) + p.idle + coolingCount(team);
+  return p.farmers + p.woodcutters + p.miners + p.builders + p.students + p.trainers + (p.researchers || 0) + (p.scouts || 0) + p.idle + coolingCount(team);
 }
 function maxTrainers(team) { return (team.buildings.barracks || 0) * B.TRAINERS_PER_BARRACKS; }
 // Max gatherers a building type supports (4 per Farm / Lumber Camp / Mine).
@@ -97,7 +97,7 @@ function maxWorkers(team, job) {
 
 function recomputeDerived(team) {
   const p = team.pop;
-  for (const k of ['farmers', 'woodcutters', 'miners', 'builders', 'students', 'trainers', 'researchers', 'idle', 'recruits', 'soldiers', 'educated']) {
+  for (const k of ['farmers', 'woodcutters', 'miners', 'builders', 'students', 'trainers', 'researchers', 'scouts', 'idle', 'recruits', 'soldiers', 'educated']) {
     p[k] = Math.max(0, Math.round(p[k] || 0));
   }
   // Enforce building-based gatherer caps; excess workers fall back to idle (e.g. a Farm was lost).
@@ -452,6 +452,25 @@ function conserving(team, resource, elapsed) {
   return typeof u === 'number' && u > elapsed;
 }
 
+// ---- Steward scout assignment ----
+function setScouts(state, team, delta) {
+  const p = team.pop;
+  delta = Math.sign(delta) * Math.min(20, Math.abs(Math.floor(delta || 0)));
+  if (delta > 0) {
+    if (p.scouts >= B.SCOUT_MAX) return { ok: false, reason: 'Max ' + B.SCOUT_MAX + ' scouts.' };
+    const take = Math.min(delta, p.idle, B.SCOUT_MAX - p.scouts);
+    if (take <= 0) return { ok: false, reason: p.idle <= 0 ? 'No idle workers ready to scout.' : 'Max scouts reached.' };
+    p.idle -= take; p.scouts += take;
+  } else if (delta < 0) {
+    const give = Math.min(-delta, p.scouts);
+    if (give <= 0) return { ok: false, reason: 'No scouts to recall.' };
+    p.scouts -= give;
+    p.cooling.push({ n: give, until: state.elapsed + B.COOLDOWN_ORDINARY, edu: false });
+  }
+  recomputeDerived(team);
+  return { ok: true };
+}
+
 // ---- Research actions (Lord) ----
 function setResearchers(state, team, delta) {
   const p = team.pop;
@@ -495,7 +514,7 @@ module.exports = {
   isHeld, heldKeys, isHeldNow, heldCostForRole, heldForRole, blockedFor, roleAllowed, holdAllow, setHold, releaseHold, pruneHolds, spendFor, logSpend,
   grantHold, hasGrant, grantLeft,
   gatherRates, clampGather, gatherPoolWorkers, setGatherTools, setMineFocus, conserving,
-  setDangerWork, setResearchers, buyResearch, maxResearchers, researchStat, researchTier,
+  setDangerWork, setResearchers, buyResearch, maxResearchers, researchStat, researchTier, setScouts,
   addGear, takeBestGear, reconcileGearInv,
 };
 

@@ -11,15 +11,20 @@ function revealedNeighbors(state, team, areaId) {
   return state.areas[areaId].connections;
 }
 
+function isScouted(area, teamName) { return !!(area.scouted && area.scouted[teamName]); }
+
+// Order the Steward's scouts onto a target area. Scouts advance it over time (speed scales with their
+// number); when done the area is revealed & scouted. Re-scouting a lapsed (foggy) area is allowed.
 function explore(state, team, areaId) {
   const area = state.areas[areaId];
   if (!area) return { ok: false, reason: 'No such area.' };
-  if (area.revealed[team.team]) return { ok: false, reason: 'Already explored.' };
-  // Must be adjacent to a revealed area.
-  const adjRevealed = area.connections.some((n) => state.areas[n].revealed[team.team]);
-  if (!adjRevealed) return { ok: false, reason: 'Too far to explore yet.' };
-  if (team._busyJob && team._busyJob.kind === 'explore') return { ok: false, reason: 'Already exploring.' };
-  team._busyJob = { kind: 'explore', areaId, remaining: B.EXPLORE_TIME };
+  if (isScouted(area, team.team)) return { ok: false, reason: 'Already scouted.' };
+  // Must be adjacent to ground we currently scout/own (or be a known area that lapsed into fog).
+  const adj = area.connections.some((n) => state.areas[n].scouted[team.team] || state.areas[n].owner === team.team);
+  if (!adj && !area.revealed[team.team]) return { ok: false, reason: 'Too far to scout yet.' };
+  if (team.scoutJob && team.scoutJob.areaId === areaId) return { ok: false, reason: 'Already scouting there.' };
+  if ((team.pop.scouts || 0) <= 0) return { ok: false, reason: 'Assign Scouts first (Labor screen).' };
+  team.scoutJob = { areaId, progress: 0 };
   return { ok: true, msg: 'Scouting ' + area.name + '...' };
 }
 
@@ -73,7 +78,9 @@ function upgradeSite(state, team, areaId) {
   if (!eco.canAfford(team, B.SITE_UPGRADE_COST)) return { ok: false, reason: 'Not enough resources.' };
   eco.spendFor(team, B.SITE_UPGRADE_COST, 'STEWARD', 'upgrading ' + area.name);
   area.site.level += 1;
-  return { ok: true, msg: area.name + ' upgraded to level ' + area.site.level + '.' };
+  area.maxBuildings = (area.maxBuildings || B.BUILD_SLOTS_SITE) + 1;   // each upgrade grants +1 build slot
+  S.recomputeBuildings(state, team);
+  return { ok: true, msg: area.name + ' upgraded to level ' + area.site.level + ' (+1 build slot).' };
 }
 
 function abandon(state, team, areaId) {
@@ -184,15 +191,39 @@ function currentArea(group) {
 }
 
 function tickSites(state, team, dt, rng, log) {
-  // Timed jobs.
+  refreshExpeditionOffers(team);
+  // Timed jobs (claiming an outpost).
   if (team._busyJob) {
     team._busyJob.remaining -= dt;
     if (team._busyJob.remaining <= 0) {
       const job = team._busyJob; const area = state.areas[job.areaId];
-      if (job.kind === 'explore') { area.revealed[team.team] = true; if (log) log(team.team, 'Scouted ' + area.name + '.', 'scout'); }
-      else if (job.kind === 'claim') { area.claimedBy = team.team; area.owner = team.team; area.site.worked = true; if (!area.site.workMode) area.site.workMode = 'standard'; if (log) log(team.team, 'Claimed ' + area.name + '.', 'claim'); }
+      if (job.kind === 'claim') { area.claimedBy = team.team; area.owner = team.team; area.site.worked = true; if (!area.site.workMode) area.site.workMode = 'standard'; area.revealed[team.team] = true; area.scouted[team.team] = true; area.scoutedUntil[team.team] = state.elapsed + B.SCOUT_DECAY_SEC; if (log) log(team.team, 'Claimed ' + area.name + '.', 'claim'); }
       team._busyJob = null;
     }
+  }
+  // Scouting: the Steward's scouts advance the current target; speed scales with their number
+  // (SCOUT_FULL scouts = EXPLORE_TIME). With no scouts assigned the job simply pauses.
+  if (team.scoutJob) {
+    const area = state.areas[team.scoutJob.areaId];
+    const scouts = Math.max(0, Math.round(team.pop.scouts || 0));
+    if (!area) team.scoutJob = null;
+    else if (scouts > 0) {
+      team.scoutJob.progress += ((scouts / B.SCOUT_FULL) / B.EXPLORE_TIME) * dt;
+      if (team.scoutJob.progress >= 1) {
+        area.revealed[team.team] = true; area.scouted[team.team] = true;
+        area.scoutedUntil[team.team] = state.elapsed + B.SCOUT_DECAY_SEC;
+        if (log) log(team.team, 'Scouted ' + area.name + '.', 'scout');
+        team.scoutJob = null;
+      }
+    }
+  }
+  // Scout decay: an owned area stays scouted (refreshed each tick); an unowned scouted area lapses back
+  // into the fog SCOUT_DECAY_SEC after the last refresh (≈300s after it's scouted or after it's lost).
+  for (const id in state.areas) {
+    const a = state.areas[id];
+    if (!a.scouted[team.team]) continue;
+    if (a.claimedBy === team.team) a.scoutedUntil[team.team] = state.elapsed + B.SCOUT_DECAY_SEC;
+    else if ((a.scoutedUntil[team.team] || 0) <= state.elapsed) { a.scouted[team.team] = false; if (log) log(team.team, a.name + ' has slipped back into the fog — re-scout it.', 'scout'); }
   }
 
   // Claimed outposts accrue cargo (scaled by their work mode) and dispatch caravans home.
@@ -324,19 +355,47 @@ function commitExpeditionWorkers(team, n, allowCooling) {
   p.away = (p.away || 0) + taken;
   return taken;
 }
-function startExpedition(state, team, id) {
+// Refresh which expeditions are on offer (EXPEDITION_OFFER_COUNT of them; the window advances through
+// the team's shuffled pool every EXPEDITION_ROTATE_SEC seconds, driven by team._elapsed).
+function refreshExpeditionOffers(team) {
+  const rot = (team.expeditionRotation && team.expeditionRotation.length) ? team.expeditionRotation : B.EXPEDITIONS.map((e) => e.id);
+  const count = Math.min(B.EXPEDITION_OFFER_COUNT, rot.length);
+  const sec = B.EXPEDITION_ROTATE_SEC;
+  const t = team._elapsed || 0;
+  const start = (Math.floor(t / sec) * count) % rot.length;
+  const ids = []; for (let i = 0; i < count; i++) ids.push(rot[(start + i) % rot.length]);
+  team.expeditionOffers = ids;
+  team.expeditionOffersIn = Math.max(0, Math.ceil(sec - (t % sec)));
+}
+function startExpedition(state, team, id, useTools) {
   if (team.expedition) return { ok: false, reason: 'An expedition is already underway.' };
   if ((team.expeditionCooldownUntil || 0) > state.elapsed) return { ok: false, reason: 'Expeditions are on cooldown.' };
   const def = B.EXPEDITIONS.find((e) => e.id === id);
   if (!def) return { ok: false, reason: 'Unknown expedition.' };
+  refreshExpeditionOffers(team);
+  if (!(team.expeditionOffers || []).includes(id)) return { ok: false, reason: 'That expedition is no longer on offer.' };
   if (!expeditionEligible(state, team, def)) return { ok: false, reason: 'Requirements not met.' };
   // The Steward may draw on preparing (re-settling) workers too — unless the Lord has locked worker control.
   const allowCooling = !team.workerLock;
   const available = team.pop.idle + (allowCooling ? eco.coolingCount(team) : 0);
   if (available < def.workers) return { ok: false, reason: 'Needs ' + def.workers + ' free workers (idle' + (allowCooling ? ' or preparing' : '') + ').' };
   commitExpeditionWorkers(team, def.workers, allowCooling); eco.recomputeDerived(team);
-  team.expedition = { id, name: def.name, workers: def.workers, endsAt: state.elapsed + def.time, reward: def.reward, risk: def.risk };
-  return { ok: true, msg: def.name + ' sets out (' + def.workers + ' workers, ' + def.time + 's).' };
+  // Optionally equip the crew with tools (1/worker, consumed) to lower the crew-loss risk. Better tools
+  // help more, worse less (Standard full tooling ≈ halves it; Legendary up to the cap).
+  let risk = def.risk || 0, toolsUsed = 0;
+  if (useTools !== false) {
+    const arr = (team.gearInv && team.gearInv.tools) || [];
+    const n = Math.min(def.workers, arr.length);
+    if (n > 0) {
+      arr.sort((a, b) => b - a);
+      const used = arr.splice(0, n); toolsUsed = n; team.equipment.tools = arr.length;
+      const avgQ = used.reduce((s, q) => s + q, 0) / used.length;
+      const reduction = Math.min(B.EXPEDITION_TOOL_REDUCTION_MAX, B.EXPEDITION_TOOL_RISK_REDUCTION * (toolsUsed / def.workers) * avgQ);
+      risk = risk * (1 - reduction);
+    }
+  }
+  team.expedition = { id, name: def.name, workers: def.workers, endsAt: state.elapsed + def.time, reward: def.reward, risk, toolsUsed };
+  return { ok: true, msg: def.name + ' sets out (' + def.workers + ' workers' + (toolsUsed ? ', ' + toolsUsed + ' tools' : '') + ', ' + def.time + 's).' };
 }
 function tickExpedition(state, team, dt, rng, log) {
   const ex = team.expedition;
@@ -354,4 +413,4 @@ function tickExpedition(state, team, dt, rng, log) {
   }
 }
 
-module.exports = { explore, claim, upgradeSite, abandon, tickSites, currentArea, areaIsDangerous, enemyTroopsAt, spawnCaravan, setWorkMode, setGuards, startExpedition, expeditionEligible };
+module.exports = { explore, claim, upgradeSite, abandon, tickSites, currentArea, areaIsDangerous, enemyTroopsAt, spawnCaravan, setWorkMode, setGuards, startExpedition, expeditionEligible, isScouted, refreshExpeditionOffers };

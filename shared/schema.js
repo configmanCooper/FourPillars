@@ -47,7 +47,9 @@
         resource: a.resource || null,
         owner: a.owner || null,           // team that controls it, or null neutral
         connections: CONNECTIONS[a.id].slice(),
-        revealed: { BLUE: !!a.owner, RED: !!a.owner },
+        revealed: { BLUE: !!a.owner, RED: !!a.owner },     // ever discovered (map visibility + adjacency)
+        scouted: { BLUE: !!a.owner, RED: !!a.owner },      // CURRENTLY scouted (combat: unscouted = penalty)
+        scoutedUntil: { BLUE: B.SCOUT_DECAY_SEC, RED: B.SCOUT_DECAY_SEC }, // elapsed time a non-owned scout lapses
         claimedBy: a.owner || null,       // team that has built a site here
         site: a.resource ? { level: 1, cargo: 0, worked: false, workMode: 'standard', lastCaravanAt: -999, guards: 0 } : null,
         threat: 0,
@@ -56,9 +58,9 @@
         captureProgress: 0,               // seconds an enemy has held this undefended site
       };
     }
-    // Each base reveals its immediate neighbours from the start.
-    areas.blue_base.connections.forEach((n) => { areas[n].revealed.BLUE = true; });
-    areas.red_base.connections.forEach((n) => { areas[n].revealed.RED = true; });
+    // Each base reveals & scouts its immediate neighbours from the start.
+    areas.blue_base.connections.forEach((n) => { areas[n].revealed.BLUE = true; areas[n].scouted.BLUE = true; });
+    areas.red_base.connections.forEach((n) => { areas[n].revealed.RED = true; areas[n].scouted.RED = true; });
     return areas;
   }
 
@@ -87,6 +89,7 @@
         total: B.START_POP, idle: 0,
         farmers: 4, woodcutters: 4, miners: 2, builders: 2, students: 0, trainers: 0,
         researchers: 0,      // educated workers assigned to a University (generate Research Points)
+        scouts: 0,           // Steward-assigned scouts (scouting speed scales with their number)
         recruits: B.START_RECRUITS, soldiers: 0,
         away: 0,              // workers committed to an expedition (still housed; rejoin on return)
         educated: 0,          // educated workers (faster reassignment; required to research)
@@ -131,6 +134,10 @@
       workerLock: false,         // Lord can lock home-worker allocation so only the Lord assigns workers
       expedition: null,          // active Steward expedition {id,name,workers,endsAt,reward,risk}
       expeditionCooldownUntil: 0,
+      expeditionRotation: [],    // stable shuffle of expedition ids; offers rotate through it
+      expeditionOffers: [],      // expedition ids currently on offer (EXPEDITION_OFFER_COUNT)
+      expeditionOffersIn: 0,     // seconds until the offer set rotates
+      scoutJob: null,            // active scouting target { areaId, progress } (Steward-driven)
       militaryLog: [],           // last-5 Commander actions, for the Lord's Military Overview
       razeScore: 0,              // persistent score from razing enemy buildings (3 each, 6 at Keep)
       militaryPolicy: B.MILITARY_POLICY_DEFAULT, // Lord-set stance: aggressive/balanced/defensive
@@ -179,7 +186,18 @@
     // CONTRACT_OFFER_COUNT of these at a time, advancing through the shuffle every CONTRACT_ROTATE_SEC.
     state.teams.BLUE.contractRotation = shuffledContractIds(state.seed ^ 0x9e3779b1);
     state.teams.RED.contractRotation = shuffledContractIds(state.seed ^ 0x85ebca77);
+    state.teams.BLUE.expeditionRotation = shuffledIds(B.EXPEDITIONS.map((e) => e.id), state.seed ^ 0xc2b2ae35);
+    state.teams.RED.expeditionRotation = shuffledIds(B.EXPEDITIONS.map((e) => e.id), state.seed ^ 0x27d4eb2f);
     return state;
+  }
+
+  // Deterministic Fisher-Yates shuffle of an id list from a 32-bit seed (mulberry32).
+  function shuffledIds(ids, seed) {
+    ids = ids.slice();
+    let s = (seed >>> 0) || 1;
+    const rnd = () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const tmp = ids[i]; ids[i] = ids[j]; ids[j] = tmp; }
+    return ids;
   }
 
   // Deterministic shuffle of the contract id pool from a 32-bit seed (mulberry32).
