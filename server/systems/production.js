@@ -5,7 +5,7 @@ const S = require('../../shared/schema.js');
 const eco = require('./economy.js');
 
 function forgeSpeedMult(team, item) {
-  let m = 1;
+  let m = 1 * (1 + eco.researchStat(team, 'forgeSpeed'));   // Foundry Mastery research speeds the whole forge
   const pol = eco.policy(team);
   if (pol && pol.forgeMult) m *= pol.forgeMult;
   const spec = team.blacksmithSpec ? B.BLACKSMITH_SPECS[team.blacksmithSpec] : null;

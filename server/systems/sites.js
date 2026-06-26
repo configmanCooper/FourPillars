@@ -91,10 +91,14 @@ function spawnCaravan(state, team, area, log) {
   const cargo = {}; cargo[area.resource] = amt;
   area.site.cargo = 0;
   const guards = Math.round(area.site.guards || 0);   // the post's stationed guards ride along to protect it
+  const mode = B.WORK_MODES[area.site.workMode] || B.WORK_MODES.standard;
   team.caravans.push({
     id: S.uid('cv'), from: area.id, route, legIndex: 0, t: 0,
     x: area.x, y: area.y, cargo, escort: false, escortGroupId: null,
     resource: area.resource, guards, guardPost: area.id, fleeing: false,
+    speedMult: mode.speedMult || 1,   // Push caravans roll at half speed
+    sneak: mode.sneak || 0,           // Cautious caravans may slip past enemy troops
+    mode: area.site.workMode || 'standard',
   });
   if (log) log(team.team, 'Caravan of ' + Math.round(amt) + ' ' + area.resource + ' departs ' + area.name + (guards ? ' (🛡 ' + guards + ' guards)' : '') + '.', 'caravan');
 }
@@ -186,7 +190,7 @@ function tickSites(state, team, dt, rng, log) {
     if (team._busyJob.remaining <= 0) {
       const job = team._busyJob; const area = state.areas[job.areaId];
       if (job.kind === 'explore') { area.revealed[team.team] = true; if (log) log(team.team, 'Scouted ' + area.name + '.', 'scout'); }
-      else if (job.kind === 'claim') { area.claimedBy = team.team; area.owner = team.team; area.site.worked = true; if (log) log(team.team, 'Claimed ' + area.name + '.', 'claim'); }
+      else if (job.kind === 'claim') { area.claimedBy = team.team; area.owner = team.team; area.site.worked = true; if (!area.site.workMode) area.site.workMode = 'standard'; if (log) log(team.team, 'Claimed ' + area.name + '.', 'claim'); }
       team._busyJob = null;
     }
   }
@@ -200,8 +204,6 @@ function tickSites(state, team, dt, rng, log) {
     const mode = B.WORK_MODES[area.site.workMode] || B.WORK_MODES.standard;
     const amt = (y[area.resource] || 0) * area.site.level * mode.yield;
     area.site.cargo += amt * dt;
-    // PUSH mode at an enemy-contested outpost: rare, capped, pop-floored chance a worker is lost.
-    if (mode.lossPerSec > 0 && areaIsDangerous(state, team, id) && rng.chance(mode.lossPerSec * dt)) loseWorker(team, area, log);
     // Dispatch a caravan once cargo reaches this good's threshold AND the min interval has passed.
     // Most goods ship in big loads (60); precious goods like relics ship one at a time.
     const threshold = (B.CARAVAN_DISPATCH_BY_RESOURCE && B.CARAVAN_DISPATCH_BY_RESOURCE[area.resource]) || B.CARAVAN_DISPATCH_CARGO;
@@ -231,7 +233,7 @@ function tickSites(state, team, dt, rng, log) {
     const toA = state.areas[cv.route[cv.legIndex + 1]];
     if (!toA) { deliver(state, team, cv, log); team.caravans.splice(i, 1); continue; }
     const legLen = dist(fromA, toA);
-    cv.t += (B.CARAVAN_SPEED * dt) / Math.max(1, legLen);
+    cv.t += (B.CARAVAN_SPEED * (cv.speedMult || 1) * dt) / Math.max(1, legLen);
     cv.x = fromA.x + (toA.x - fromA.x) * Math.min(1, cv.t);
     cv.y = fromA.y + (toA.y - fromA.y) * Math.min(1, cv.t);
     if (cv.t >= 1) {
@@ -243,6 +245,10 @@ function tickSites(state, team, dt, rng, log) {
       const enemyN = near.total; const hitArea = near.area; const attacker = near.host;
       if (enemyN >= 0.5 && !cv.escort) {
         const here = state.areas[enteredId].name;
+        // Cautious caravans may slip past the enemy entirely (50% by default).
+        if ((cv.sneak || 0) > 0 && rng.chance(cv.sneak)) {
+          if (log) log(team.team, '🌙 Cautious caravan slipped past enemy troops at ' + here + ' unseen.', 'caravan');
+        } else {
         const post = state.areas[cv.guardPost];
         // Guards are stationed at the post and shared across its caravans — a caravan can field no more
         // than the post STILL holds (fixes two concurrent caravans both spending the same guards).
@@ -267,6 +273,7 @@ function tickSites(state, team, dt, rng, log) {
           if (log) log(team.team, '💥 Caravan DESTROYED by enemy at ' + here + ' — it had no guards!', 'ambush');
           team.caravans.splice(i, 1); continue;
         }
+        }   // end sneak-else
       }
     }
   }

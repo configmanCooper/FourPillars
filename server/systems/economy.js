@@ -5,6 +5,22 @@ const B = require('../../shared/balance.js');
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+// ---- Research (University) -------------------------------------------------------------------
+// team.research[key] = tier owned (0..3). Returns the cumulative effect value for a research STAT
+// (matched by B.RESEARCH[*].stat), or 0 if untouched.
+function researchTier(team, key) { return (team.research && team.research[key]) || 0; }
+function researchStat(team, stat) {
+  for (const key in B.RESEARCH) {
+    if (B.RESEARCH[key].stat !== stat) continue;
+    const t = researchTier(team, key);
+    return t > 0 ? B.RESEARCH[key].tiers[t - 1].val : 0;
+  }
+  return 0;
+}
+// Max researchers a team can field (4 per University) and whether they have a University at all.
+function maxResearchers(team) { return (team.buildings.university || 0) * B.RESEARCHERS_PER_UNIVERSITY; }
+
+
 // ---- Individual forged-gear inventory --------------------------------------------------------
 // team.gearInv[item] = array of forged item QUALITIES not yet equipped to a soldier/worker. The legacy
 // team.equipment[item] COUNT is kept equal to the array length so every existing reader still works.
@@ -67,7 +83,7 @@ function addResource(team, key, amt) {
 function coolingCount(team) { let n = 0; for (const b of (team.pop.cooling || [])) n += b.n; return n; }
 function workforce(team) {
   const p = team.pop;
-  return p.farmers + p.woodcutters + p.miners + p.builders + p.students + p.trainers + p.idle + coolingCount(team);
+  return p.farmers + p.woodcutters + p.miners + p.builders + p.students + p.trainers + (p.researchers || 0) + p.idle + coolingCount(team);
 }
 function maxTrainers(team) { return (team.buildings.barracks || 0) * B.TRAINERS_PER_BARRACKS; }
 // Max gatherers a building type supports (4 per Farm / Lumber Camp / Mine).
@@ -81,18 +97,21 @@ function maxWorkers(team, job) {
 
 function recomputeDerived(team) {
   const p = team.pop;
-  for (const k of ['farmers', 'woodcutters', 'miners', 'builders', 'students', 'trainers', 'idle', 'recruits', 'soldiers', 'educated']) {
-    p[k] = Math.max(0, Math.round(p[k]));
+  for (const k of ['farmers', 'woodcutters', 'miners', 'builders', 'students', 'trainers', 'researchers', 'idle', 'recruits', 'soldiers', 'educated']) {
+    p[k] = Math.max(0, Math.round(p[k] || 0));
   }
   // Enforce building-based gatherer caps; excess workers fall back to idle (e.g. a Farm was lost).
   for (const job of ['farmers', 'woodcutters', 'miners']) {
     const cap = maxWorkers(team, job);
     if (p[job] > cap) { p.idle += p[job] - cap; p[job] = cap; }
   }
+  // Researchers are capped by Universities (4 each) AND can't exceed the educated headcount.
+  const rcap = Math.min(maxResearchers(team), p.educated);
+  if (p.researchers > rcap) { p.idle += p.researchers - rcap; p.researchers = Math.max(0, rcap); }
   p.educated = Math.min(p.educated, workforce(team));
   p.total = workforce(team) + p.recruits + p.soldiers + (p.away || 0);
-  team.storageCap = B.STORAGE_BASE + team.buildings.storehouse * B.STORAGE_PER_STOREHOUSE;
-  team.housing = B.START_HOUSING + team.buildings.house * B.HOUSING_PER_HOUSE;
+  team.storageCap = B.STORAGE_BASE + team.buildings.storehouse * B.STORAGE_PER_STOREHOUSE + researchStat(team, 'storage');
+  team.housing = B.START_HOUSING + team.buildings.house * (B.HOUSING_PER_HOUSE + researchStat(team, 'housing'));
 }
 
 function policy(team) { return team.policy ? B.POLICIES[team.policy] : null; }
@@ -150,17 +169,24 @@ function gatherRates(team) {
   const foodBuild = 1 + team.buildings.farm * B.BUILDINGS.farm.effect.foodMult;
   const woodBuild = 1 + team.buildings.lumberCamp * B.BUILDINGS.lumberCamp.effect.woodMult;
   const mineBuild = 1 + team.buildings.mine * B.BUILDINGS.mine.effect.mineMult;
-  const food = eff(p.farmers, g.effective.food) * B.WORKER_YIELD.farmer.food * foodBuild;
-  const wood = eff(p.woodcutters, g.effective.wood) * B.WORKER_YIELD.woodcutter.wood * woodBuild;
+  // Research productivity bonuses (Crop Rotation / Logging / Quarrying / Deep-Vein Mining) and the
+  // Steward's DANGEROUS-work toggle (+50% output on that pool, paid for in worker lives elsewhere).
+  const dw = team.dangerWork || {};
+  const foodRes = (1 + researchStat(team, 'food')) * (dw.food ? (1 + B.DANGER_YIELD_BONUS) : 1);
+  const woodRes = (1 + researchStat(team, 'wood')) * (dw.wood ? (1 + B.DANGER_YIELD_BONUS) : 1);
+  const stoneRes = (1 + researchStat(team, 'stone')) * (dw.mine ? (1 + B.DANGER_YIELD_BONUS) : 1);
+  const ironRes = (1 + researchStat(team, 'iron')) * (dw.mine ? (1 + B.DANGER_YIELD_BONUS) : 1);
+  const food = eff(p.farmers, g.effective.food) * B.WORKER_YIELD.farmer.food * foodBuild * foodRes;
+  const wood = eff(p.woodcutters, g.effective.wood) * B.WORKER_YIELD.woodcutter.wood * woodBuild * woodRes;
   const focus = g.mineIronFocus;
   const mineUnits = eff(p.miners, g.effective.mine);   // boosted effective miner-units
-  const stone = mineUnits * (1 - focus) * B.MINER_STONE_YIELD * mineBuild;
-  const iron = mineUnits * focus * B.MINER_IRON_YIELD * mineBuild;
+  const stone = mineUnits * (1 - focus) * B.MINER_STONE_YIELD * mineBuild * stoneRes;
+  const iron = mineUnits * focus * B.MINER_IRON_YIELD * mineBuild * ironRes;
   const boost = tooledAll > 0 ? boostSumAll / tooledAll : (1 + B.TOOLS_BONUS * 1 * tp);  // avg tooled-worker multiplier (display)
   return { food, wood, stone, iron, boost, focus, foodBuild, woodBuild, mineBuild };
 }
 
-function tickEconomy(state, team, dt) {
+function tickEconomy(state, team, dt, log) {
   const p = team.pop;
   team._elapsed = state.elapsed; // timestamp for system-level hold checks (AI paths)
   const pol = policy(team);
@@ -173,9 +199,11 @@ function tickEconomy(state, team, dt) {
   addResource(team, 'iron', r.iron * dt);
 
   // Equipped tools wear with USE (only the tools the Steward committed): a worn tool eventually breaks
-  // and is removed from the armoury. Accumulate sub-tick wear in _toolWear so it isn't lost when
-  // reconcileGearInv rebuilds equipment.tools from the (integer) gearInv array length each tick.
-  const toolsInUse = team.gather.effective.food + team.gather.effective.wood + team.gather.effective.mine;
+  // and is removed from the armoury. DANGEROUS-work pools chew through tools twice as fast.
+  const eff0 = team.gather.effective;
+  const dw = team.dangerWork || {};
+  const dangerTools = (dw.food ? eff0.food : 0) + (dw.wood ? eff0.wood : 0) + (dw.mine ? eff0.mine : 0);
+  const toolsInUse = eff0.food + eff0.wood + eff0.mine + dangerTools * (B.DANGER_TOOL_WEAR_MULT - 1);
   team.gearInv = team.gearInv || {};
   const toolArr = team.gearInv.tools;
   if (toolsInUse > 0 && toolArr && toolArr.length > 0) {
@@ -185,6 +213,17 @@ function tickEconomy(state, team, dt) {
       team.equipment.tools = toolArr.length;
       team._toolWear -= 1;
     }
+  }
+
+  // Dangerous home labour: each worker in a dangerous pool risks death each second. A tool mitigates it
+  // (Standard ≈1%/s, Legendary ≈0.3%/s; untooled = the full base). Never drops below POP_FLOOR.
+  tickDangerDeaths(state, team, dt, log);
+
+  // Research: each Researcher at a University yields 1 RP per RESEARCH_INTERVAL seconds (Scholarship speeds it).
+  if ((p.researchers || 0) > 0 && (team.buildings.university || 0) > 0) {
+    const rate = (p.researchers / B.RESEARCH_INTERVAL) * (1 + researchStat(team, 'research'));
+    team.researchProgress = (team.researchProgress || 0) + rate * dt;
+    while (team.researchProgress >= 1) { team.researchProgress -= 1; team.researchPoints = (team.researchPoints || 0) + 1; }
   }
 
   // Education: each School educates one Student at a time (30s each). With 3 Schools, 3 students
@@ -215,7 +254,7 @@ function tickEconomy(state, team, dt) {
   // recomputeDerived rounds the fractional growth in `idle` to 0 every tick (it never grew).
   if (!starving && p.total < team.housing) {
     const surplus = clamp(team.resources.food / Math.max(1, p.total * 6), 0, 1);
-    const popMult = (pol && pol.popMult) ? pol.popMult : 1;
+    const popMult = ((pol && pol.popMult) ? pol.popMult : 1) * (1 + researchStat(team, 'popGrowth'));
     p.growthProgress = (p.growthProgress || 0) + B.POP_GROWTH_PER_SEC * surplus * popMult * dt;
     while (p.growthProgress >= 1 && p.total < team.housing) {
       p.growthProgress -= 1; p.idle += 1; recomputeDerived(team);
@@ -357,6 +396,37 @@ function adjustWorker(state, team, job, delta) {
 }
 
 // ---- Steward gathering actions ----
+// Dangerous-work toggle per gather pool (food/wood/mine): +50% output, but workers risk death.
+function setDangerWork(state, team, pool, on) {
+  if (!['food', 'wood', 'mine'].includes(pool)) return { ok: false, reason: 'Unknown work crew.' };
+  team.dangerWork = team.dangerWork || { food: false, wood: false, mine: false };
+  team.dangerWork[pool] = !!on;
+  const lab = { food: 'Farmers', wood: 'Woodcutters', mine: 'Miners' }[pool];
+  return { ok: true, msg: lab + (on ? ' now work DANGEROUSLY (+50% output, but risk death).' : ' return to safe work.') };
+}
+// Each second, roll worker deaths for any dangerous pool. Tool quality mitigates; POP_FLOOR protects.
+function tickDangerDeaths(state, team, dt, log) {
+  const dw = team.dangerWork; if (!dw) return;
+  const p = team.pop;
+  const Q = (team.equipQuality && team.equipQuality.tools) || 1;
+  const tooledChance = Math.min(B.DANGER_DEATH_BASE, B.DANGER_DEATH_TOOLED / Math.max(0.1, Q));
+  const POOLS = [['food', 'farmers'], ['wood', 'woodcutters'], ['mine', 'miners']];
+  for (const [pool, jobField] of POOLS) {
+    if (!dw[pool]) continue;
+    const W = Math.round(p[jobField] || 0); if (W <= 0) continue;
+    const E = Math.min(Math.round((team.gather.effective || {})[pool] || 0), W);  // tooled workers in this pool
+    const expected = (E * tooledChance + (W - E) * B.DANGER_DEATH_BASE) * dt;
+    team._dangerAcc = team._dangerAcc || {};
+    team._dangerAcc[pool] = (team._dangerAcc[pool] || 0) + expected;
+    while (team._dangerAcc[pool] >= 1) {
+      team._dangerAcc[pool] -= 1;
+      if (p.total <= B.POP_FLOOR || (p[jobField] || 0) <= 0) { team._dangerAcc[pool] = 0; break; }
+      p[jobField] -= 1;
+      if (log) log(team.team, '☠️ A ' + ({ farmers: 'farmer', woodcutters: 'woodcutter', miners: 'miner' }[jobField]) + ' died working dangerously.', 'info');
+      recomputeDerived(team);
+    }
+  }
+}
 function setGatherTools(state, team, pool, delta) {
   if (!['food', 'wood', 'mine'].includes(pool)) return { ok: false, reason: 'Unknown work crew.' };
   const d = Number(delta);
@@ -382,12 +452,50 @@ function conserving(team, resource, elapsed) {
   return typeof u === 'number' && u > elapsed;
 }
 
+// ---- Research actions (Lord) ----
+function setResearchers(state, team, delta) {
+  const p = team.pop;
+  if ((team.buildings.university || 0) <= 0) return { ok: false, reason: 'Build a University first.' };
+  delta = Math.sign(delta) * Math.min(20, Math.abs(Math.floor(delta || 0)));
+  if (delta > 0) {
+    const cap = Math.min(maxResearchers(team), p.educated);
+    if (p.researchers >= cap) return { ok: false, reason: p.educated <= p.researchers ? 'Need more EDUCATED workers (assign Students at a School first).' : 'University full (4 researchers each).' };
+    const take = Math.min(delta, p.idle, cap - p.researchers);
+    if (take <= 0) return { ok: false, reason: p.idle <= 0 ? 'No idle workers ready.' : 'Need educated workers / University capacity.' };
+    p.idle -= take; p.researchers += take;
+  } else if (delta < 0) {
+    const give = Math.min(-delta, p.researchers);
+    if (give <= 0) return { ok: false, reason: 'No researchers to remove.' };
+    p.researchers -= give;
+    p.cooling.push({ n: give, until: state.elapsed + B.COOLDOWN_EDUCATED, edu: true });   // researchers are educated
+  }
+  recomputeDerived(team);
+  return { ok: true };
+}
+function buyResearch(state, team, key) {
+  const def = B.RESEARCH[key];
+  if (!def) return { ok: false, reason: 'Unknown research.' };
+  if ((team.buildings.university || 0) <= 0) return { ok: false, reason: 'Build a University first.' };
+  const cur = researchTier(team, key);
+  if (cur >= def.tiers.length) return { ok: false, reason: def.name + ' is fully researched.' };
+  const tier = def.tiers[cur];   // the NEXT tier (each requires the previous, enforced by `cur`)
+  if ((team.researchPoints || 0) < tier.rp) return { ok: false, reason: 'Need ' + tier.rp + ' Research Points (have ' + Math.floor(team.researchPoints || 0) + ').' };
+  if (!canAfford(team, tier.cost)) return { ok: false, reason: 'Not enough resources for ' + def.name + ' Tier ' + (cur + 1) + '.' };
+  team.researchPoints -= tier.rp;
+  spendFor(team, tier.cost, 'LORD', 'researching ' + def.name + ' T' + (cur + 1));
+  team.research = team.research || {};
+  team.research[key] = cur + 1;
+  recomputeDerived(team);
+  return { ok: true, msg: def.name + ' Tier ' + (cur + 1) + ' researched!' };
+}
+
 module.exports = {
   clamp, canAfford, spend, refund, addResource, workforce, recomputeDerived,
   tickEconomy, setWorkers, adjustWorker, levy, maxTrainers, maxWorkers, coolingCount, updatePhase, policy,
   isHeld, heldKeys, isHeldNow, heldCostForRole, heldForRole, blockedFor, roleAllowed, holdAllow, setHold, releaseHold, pruneHolds, spendFor, logSpend,
   grantHold, hasGrant, grantLeft,
   gatherRates, clampGather, gatherPoolWorkers, setGatherTools, setMineFocus, conserving,
+  setDangerWork, setResearchers, buyResearch, maxResearchers, researchStat, researchTier,
   addGear, takeBestGear, reconcileGearInv,
 };
 

@@ -40,7 +40,7 @@ function step(state) {
   for (const team of order) {
     S.recomputeBuildings(state, team);
     economy.pruneHolds(state, team);
-    economy.tickEconomy(state, team, dt);
+    economy.tickEconomy(state, team, dt, log);
     buildings.tickBuildings(state, team, dt, log);
     production.tickProduction(team, dt, log);
     sites.tickSites(state, team, dt, rng, log);
@@ -145,6 +145,8 @@ function applyAction(state, team, role, action, payload) {
     // Lord
     case 'setWorkers': return economy.setWorkers(state, T, payload);
     case 'assignWorker': return economy.adjustWorker(state, T, payload.job, payload.delta);
+    case 'setResearchers': return economy.setResearchers(state, T, payload.delta);
+    case 'buyResearch': return economy.buyResearch(state, T, payload.key);
     case 'levy': return economy.levy(T, payload.count);
     case 'build': return buildings.queueBuilding(state, T, payload.areaId, payload.type);
     case 'cancelBuild': return buildings.cancelBuilding(state, T, payload.id);
@@ -215,6 +217,7 @@ function applyAction(state, team, role, action, payload) {
     case 'abandon': return sites.abandon(state, T, payload.areaId);
     case 'setGatherTools': return economy.setGatherTools(state, T, payload.pool, payload.delta);
     case 'setMineFocus': return economy.setMineFocus(state, T, payload.value);
+    case 'setDangerWork': return economy.setDangerWork(state, T, payload.pool, payload.on);
     case 'setWorkMode': return sites.setWorkMode(state, T, payload.areaId, payload.mode);
     case 'setGuards': return sites.setGuards(state, T, payload.areaId, payload.count);
     case 'startExpedition': return sites.startExpedition(state, T, payload.id);
@@ -281,8 +284,8 @@ function applyAction(state, team, role, action, payload) {
 }
 
 const ACTION_ROLE = {
-  setWorkers: 'LORD', assignWorker: 'LORD', levy: 'LORD', build: 'LORD', cancelBuild: 'LORD', setPolicy: 'LORD', setMilitaryPolicy: 'LORD', setHold: 'LORD', setResourceAccess: 'LORD', releaseHold: 'LORD', setWorkerLock: 'LORD',
-  explore: 'STEWARD', claim: 'STEWARD', upgradeSite: 'STEWARD', abandon: 'STEWARD', setGatherTools: 'STEWARD', setMineFocus: 'STEWARD', requestConserve: 'STEWARD', setWorkMode: 'STEWARD', setGuards: 'STEWARD', startExpedition: 'STEWARD',
+  setWorkers: 'LORD', assignWorker: 'LORD', levy: 'LORD', build: 'LORD', cancelBuild: 'LORD', setPolicy: 'LORD', setMilitaryPolicy: 'LORD', setHold: 'LORD', setResourceAccess: 'LORD', releaseHold: 'LORD', setWorkerLock: 'LORD', setResearchers: 'LORD', buyResearch: 'LORD',
+  explore: 'STEWARD', claim: 'STEWARD', upgradeSite: 'STEWARD', abandon: 'STEWARD', setGatherTools: 'STEWARD', setMineFocus: 'STEWARD', requestConserve: 'STEWARD', setWorkMode: 'STEWARD', setGuards: 'STEWARD', startExpedition: 'STEWARD', setDangerWork: 'STEWARD',
   produce: 'BLACKSMITH', cancelProduce: 'BLACKSMITH', startContract: 'BLACKSMITH', setSpec: 'BLACKSMITH',
   formUnits: 'COMMANDER', trainUnits: 'COMMANDER', upgradeUnits: 'COMMANDER', reequip: 'COMMANDER', cancelTraining: 'COMMANDER', rally: 'COMMANDER', transferUnits: 'COMMANDER', command: 'COMMANDER', setFormation: 'COMMANDER', setStance: 'COMMANDER', setDoctrine: 'COMMANDER',
 };

@@ -383,6 +383,9 @@ function strength(team, g, enemyComp, wallMult, onOwnOutpost) {
   //  • spearmen get +10% per enemy cavalry. Both cap at +50% and lift attack AND defence.
   const cavBonus = enemyComp ? 1 + Math.min(B.COUNTER_BONUS_MAX, B.COUNTER_BONUS_PER * (enemyComp.softVsCav || 0)) : 1;
   const spearBonus = enemyComp ? 1 + Math.min(B.COUNTER_BONUS_MAX, B.COUNTER_BONUS_PER * (enemyComp.cav || 0)) : 1;
+  // Research: Weaponsmithing lifts every soldier's attack; Plate Armour boosts armour's defence effect.
+  const resAtk = 1 + eco.researchStat(team, 'attack');
+  const armorDefMult = 1 + eco.researchStat(team, 'armorDef');
   for (const u of C.UNITS) {
     const n = Math.round(g.units[u] || 0); if (n <= 0) continue;
     const st = B.UNIT_STATS[u]; const wep = B.UNIT_WEAPON[u]; const recs = g.gear[u] || [];
@@ -395,10 +398,11 @@ function strength(team, g, enemyComp, wallMult, onOwnOutpost) {
       if (u === 'spearman') { ua *= spearBonus; ud *= spearBonus; }            // strong vs cavalry
       if (wep) ua *= (rec.w || 1);                                             // this soldier's OWN weapon quality
       if (u === 'catapult') ua *= (rec.w || 1);                                // catapult build quality (avg of its siege parts) scales its attack
+      ua *= resAtk;                                                            // Weaponsmithing research
       // Walls fortify the DEFENCE of the side that OWNS this location only (battleRound passes wallMult
       // only to the owner): +40% def for troops at 2 walls, +100% def for archers. Never boosts attack.
       if (wallMult) ud *= (u === 'archer') ? wallMult.archer : wallMult.troop;
-      if (rec.a > 0) { ua *= B.EQUIP_TIER_MULT.advanced; ud *= B.EQUIP_TIER_MULT.advanced * (1 + B.ARMOR_DEF_BONUS * rec.a); }  // this soldier's OWN armour
+      if (rec.a > 0) { ua *= B.EQUIP_TIER_MULT.advanced; ud *= B.EQUIP_TIER_MULT.advanced * (1 + B.ARMOR_DEF_BONUS * armorDefMult * rec.a); }  // this soldier's OWN armour (+ Plate Armour research)
       atk += ua; def += ud;
     }
   }
@@ -751,21 +755,24 @@ function tickRaze(state, dt, rng, log) {
       continue;
     }
     // Razing power (siege >> cavalry > infantry > archers), effective force capped at 20. A catapult's
-    // siege power scales with its OWN build quality (the average of the siege parts it was built from).
+    // siege power scales with its OWN build quality (the average of the siege parts it was built from)
+    // and the attacker's Siege Engineering research.
     let power = 0, total = 0;
+    const siegeRes = 1 + eco.researchStat(state.teams[foe], 'siege');
     for (const g of enemyHosts) for (const u of C.UNITS) {
       const n = g.units[u] || 0; if (!n) continue;
       const armorMult = g.hasArmor ? B.EQUIP_TIER_MULT.advanced : 1;
       let rp = (B.RAZE_STAT[u] || 0) * armorMult;
-      if (u === 'catapult') { const recs = (g.gear && g.gear[u]) || []; let q = 0, cnt = 0; for (const r of recs) { q += (r.w || 1); cnt++; } rp *= (cnt > 0 ? q / cnt : 1); }
+      if (u === 'catapult') { const recs = (g.gear && g.gear[u]) || []; let q = 0, cnt = 0; for (const r of recs) { q += (r.w || 1); cnt++; } rp *= (cnt > 0 ? q / cnt : 1) * siegeRes; }
       power += n * rp; total += n;
     }
     if (total > B.MAX_UNITS_PER_AREA) power *= B.MAX_UNITS_PER_AREA / total;
     if (power <= 0) continue;
 
-    // While it still stands, the Watchtower (Keep core) looses arrows like a lone militia at besiegers.
+    // While it still stands, the Watchtower (Keep core) looses arrows at besiegers — as a lone militia,
+    // or harder with the defender's Fortified Tower research (fires as 2 / 3 / 5 militia).
     if (isBase && (area.buildings.watchtower || 0) > 0) {
-      const towerPow = B.UNIT_STATS.militia.atk;
+      const towerPow = B.UNIT_STATS.militia.atk * (eco.researchStat(state.teams[owner], 'towerAtk') || 1);
       const kills = rollKills(towerPow / (towerPow + Math.max(1, total)), rng);
       if (kills > 0) {
         const tfx = new Map();

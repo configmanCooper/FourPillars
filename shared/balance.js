@@ -52,6 +52,43 @@
   const COOLDOWN_ORDINARY = 30;         // seconds a re-idled ordinary worker must wait before reassignment
   const COOLDOWN_EDUCATED = 5;          // educated workers reassign far faster
 
+  // ---- Research (University) ----
+  // The Lord assigns EDUCATED workers as Researchers at a University (max RESEARCHERS_PER_UNIVERSITY
+  // each). Every RESEARCH_INTERVAL seconds each researcher yields 1 Research Point (RP). RP buy 3-tier
+  // upgrades (each tier needs the previous). Effects are team-wide and permanent.
+  const RESEARCHERS_PER_UNIVERSITY = 4;
+  const RESEARCH_INTERVAL = 5;          // seconds per Research Point, per researcher (1 RP / 5s = 0.2/s)
+  // Each upgrade: stat key + 3 tiers. tier.val is the CUMULATIVE effect at that tier; tier.rp + tier.cost
+  // is what it takes to unlock it. (RP costs are the halved ladder 20 / 45 / 90.)
+  const RESEARCH = {
+    foundry:      { name: 'Foundry Mastery', glyph: '🔥', stat: 'forgeSpeed', unit: 'pct', desc: 'Forge faster',
+      tiers: [{ rp: 20, cost: { iron: 20 }, val: 0.10 }, { rp: 45, cost: { iron: 40 }, val: 0.25 }, { rp: 90, cost: { iron: 70 }, val: 0.35 }] },
+    logging:      { name: 'Logging Techniques', glyph: '🪵', stat: 'wood', unit: 'pct', desc: 'Woodcutters gather more',
+      tiers: [{ rp: 20, cost: { wood: 30 }, val: 0.10 }, { rp: 45, cost: { wood: 60 }, val: 0.25 }, { rp: 90, cost: { wood: 100 }, val: 0.45 }] },
+    mining:       { name: 'Deep-Vein Mining', glyph: '⛏️', stat: 'iron', unit: 'pct', desc: 'Miners produce more iron',
+      tiers: [{ rp: 20, cost: { iron: 20 }, val: 0.10 }, { rp: 45, cost: { iron: 40 }, val: 0.25 }, { rp: 90, cost: { iron: 70 }, val: 0.45 }] },
+    quarrying:    { name: 'Quarrying', glyph: '🪨', stat: 'stone', unit: 'pct', desc: 'Miners produce more stone',
+      tiers: [{ rp: 20, cost: { stone: 30 }, val: 0.10 }, { rp: 45, cost: { stone: 60 }, val: 0.25 }, { rp: 90, cost: { stone: 100 }, val: 0.45 }] },
+    agriculture:  { name: 'Crop Rotation', glyph: '🌾', stat: 'food', unit: 'pct', desc: 'Farmers grow more food',
+      tiers: [{ rp: 20, cost: { food: 30 }, val: 0.10 }, { rp: 45, cost: { food: 60 }, val: 0.25 }, { rp: 90, cost: { food: 100 }, val: 0.45 }] },
+    growth:       { name: 'Prosperity', glyph: '👶', stat: 'popGrowth', unit: 'pct', desc: 'Population grows faster',
+      tiers: [{ rp: 20, cost: { food: 40 }, val: 0.25 }, { rp: 45, cost: { food: 80 }, val: 0.60 }, { rp: 90, cost: { food: 140 }, val: 1.00 }] },
+    weapons:      { name: 'Weaponsmithing', glyph: '⚔️', stat: 'attack', unit: 'pct', desc: 'All soldiers hit harder',
+      tiers: [{ rp: 20, cost: { iron: 25 }, val: 0.05 }, { rp: 45, cost: { iron: 50 }, val: 0.12 }, { rp: 90, cost: { iron: 90 }, val: 0.20 }] },
+    armour:       { name: 'Plate Armour', glyph: '🛡️', stat: 'armorDef', unit: 'pct', desc: 'Armour protects better',
+      tiers: [{ rp: 20, cost: { iron: 25 }, val: 0.10 }, { rp: 45, cost: { iron: 50 }, val: 0.25 }, { rp: 90, cost: { iron: 90 }, val: 0.35 }] },
+    architecture: { name: 'Architecture', glyph: '🏠', stat: 'housing', unit: 'flat', desc: 'Each House holds more',
+      tiers: [{ rp: 20, cost: { wood: 30, stone: 20 }, val: 2 }, { rp: 45, cost: { wood: 60, stone: 40 }, val: 4 }, { rp: 90, cost: { wood: 100, stone: 70 }, val: 6 }] },
+    tower:        { name: 'Fortified Tower', glyph: '🗼', stat: 'towerAtk', unit: 'mult', desc: 'Watchtower fires harder',
+      tiers: [{ rp: 20, cost: { stone: 40 }, val: 2 }, { rp: 45, cost: { stone: 70 }, val: 3 }, { rp: 90, cost: { stone: 120 }, val: 5 }] },
+    siege:        { name: 'Siege Engineering', glyph: '🪨', stat: 'siege', unit: 'pct', desc: 'Catapults raze faster',
+      tiers: [{ rp: 20, cost: { wood: 30, iron: 30 }, val: 0.15 }, { rp: 45, cost: { wood: 60, iron: 60 }, val: 0.35 }, { rp: 90, cost: { wood: 100, iron: 100 }, val: 0.50 }] },
+    granaries:    { name: 'Granaries & Vaults', glyph: '📦', stat: 'storage', unit: 'flat', desc: 'Raise every storage cap',
+      tiers: [{ rp: 20, cost: { stone: 30, wood: 30 }, val: 60 }, { rp: 45, cost: { stone: 60, wood: 60 }, val: 140 }, { rp: 90, cost: { stone: 100, wood: 100 }, val: 260 }] },
+    scholarship:  { name: 'Scholarship', glyph: '🎓', stat: 'research', unit: 'pct', desc: 'Researchers work faster',
+      tiers: [{ rp: 20, cost: { relics: 1 }, val: 0.25 }, { rp: 45, cost: { relics: 2 }, val: 0.60 }, { rp: 90, cost: { relics: 3 }, val: 1.20 }] },
+  };
+
   // Building costs and effects. effect keys are read by systems.
   const BUILDINGS = {
     house:      { name: 'House',       cost: { wood: 50 },             buildTime: 12, effect: { housing: HOUSING_PER_HOUSE } },
@@ -63,13 +100,14 @@
     school:     { name: 'School',      cost: { wood: 70, stone: 40 },  buildTime: 20, effect: { unlock: 'educate' } },
     stables:    { name: 'Stables',     cost: { wood: 90, stone: 50, iron: 20 }, buildTime: 24, effect: { unlock: 'cavalry' } },
     workshop:   { name: 'Workshop',    cost: { wood: 90, iron: 40 },   buildTime: 24, effect: { unlock: 'siege' } },
+    university: { name: 'University',   cost: { wood: 30, stone: 90, iron: 30 }, buildTime: 26, effect: { unlock: 'research' } },
     walls:      { name: 'Walls',       cost: { stone: 120 },           buildTime: 26, effect: { keepDef: 60, keepHp: 120 } },
     // The Keep's core. Always present, occupies a build slot, can't be built or demolished. It is the
     // LAST thing razed in a siege (only after every other building falls) and its fall = total defeat.
     // It looses arrows like a lone militia at besiegers.
     watchtower: { name: 'Watchtower',   cost: {}, buildTime: 0, fixed: true, effect: {} },
   };
-  const MAX_PER_BUILDING = { house: 6, farm: 4, lumberCamp: 3, mine: 3, storehouse: 3, barracks: 2, school: 2, stables: 2, workshop: 2, walls: 3, watchtower: 1 };
+  const MAX_PER_BUILDING = { house: 6, farm: 4, lumberCamp: 3, mine: 3, storehouse: 3, barracks: 2, school: 2, stables: 2, workshop: 2, university: 1, walls: 3, watchtower: 1 };
 
   // Per-location build slots: your Keep is roomy; outposts are small, so expansion matters.
   const BUILD_SLOTS_BASE = 7;
@@ -101,13 +139,22 @@
   const CLAIM_COST = { wood: 40 };
   const CLAIM_MIN_INSTALMENT = 10;      // the Steward must commit at least this much wood per instalment
 
-  // Outpost work modes (Steward): trade safety for output. Worker loss only ever happens on PUSH at a
-  // genuinely enemy-contested site, and is rare + capped + floored (see sites.js).
+  // Outpost work modes (Steward): trade cargo for safety/speed.
+  //  • Cautious — 30% less cargo, but each caravan has a 50% chance to slip past enemy troops untouched.
+  //  • Standard — balanced.
+  //  • Push — +25% cargo, but caravans move at half speed (easier to intercept).
   const WORK_MODES = {
-    cautious: { name: 'Cautious', yield: 0.7, lossPerSec: 0,     desc: 'Crews stay safe — 30% less cargo.' },
-    standard: { name: 'Standard', yield: 1.0, lossPerSec: 0,     desc: 'Balanced output.' },
-    push:     { name: 'Push',     yield: 1.7, lossPerSec: 0.012, desc: '+70% cargo, but crews at a CONTESTED outpost risk death.' },
+    cautious: { name: 'Cautious', yield: 0.7,  sneak: 0.5, speedMult: 1.0, desc: '30% less cargo, but caravans have a 50% chance to slip past enemy troops.' },
+    standard: { name: 'Standard', yield: 1.0,  sneak: 0,   speedMult: 1.0, desc: 'Balanced output.' },
+    push:     { name: 'Push',     yield: 1.25, sneak: 0,   speedMult: 0.5, desc: '+25% cargo, but caravans move at HALF speed.' },
   };
+  // Dangerous home labour (Steward): a gather pool may be worked dangerously for +50% output, but each
+  // such worker has a per-second chance to die. A tool mitigates it (Standard ≈1%, Legendary ≈0.3%,
+  // untooled/awful = the full base) and tools used by dangerous crews wear out twice as fast.
+  const DANGER_YIELD_BONUS = 0.5;       // +50% output for a dangerous pool
+  const DANGER_DEATH_BASE = 0.02;       // per worker per second, untooled
+  const DANGER_DEATH_TOOLED = 0.01;     // per worker per second at Standard tool, scaled by /toolQuality (capped at BASE)
+  const DANGER_TOOL_WEAR_MULT = 2;      // dangerous crews chew through tools twice as fast
   const POP_FLOOR = 6;                  // never let worker-loss drop a team below this population
 
   // Caravans: carry accumulated cargo from a site to home base.
@@ -322,6 +369,8 @@
     START_POP, START_HOUSING, HOUSING_PER_HOUSE, POP_GROWTH_PER_SEC, FOOD_PER_POP, FOOD_PER_SOLDIER,
     WORKER_YIELD, TOOLS_BONUS, MINER_STONE_YIELD, MINER_IRON_YIELD, DEFAULT_MINE_FOCUS, AI_MINE_FOCUS_MIN, AI_MINE_FOCUS_MAX, TOOL_LIFETIME_SEC,
     TRAINERS_PER_BARRACKS, TRAIN_SECONDS_PER_UNIT, EDU_SECONDS, COOLDOWN_ORDINARY, COOLDOWN_EDUCATED,
+    RESEARCHERS_PER_UNIVERSITY, RESEARCH_INTERVAL, RESEARCH,
+    DANGER_YIELD_BONUS, DANGER_DEATH_BASE, DANGER_DEATH_TOOLED, DANGER_TOOL_WEAR_MULT,
     BUILDINGS, MAX_PER_BUILDING, POLICIES,
     BUILD_SLOTS_BASE, BUILD_SLOTS_SITE, SITE_WALL_RESIST, CAPTURE_TIME_BASE, CAPTURE_DECAY,
     SITE_YIELD, SITE_UPGRADE_COST, SITE_UPGRADE_MULT, EXPLORE_TIME, CLAIM_TIME, CLAIM_COST, CLAIM_MIN_INSTALMENT,

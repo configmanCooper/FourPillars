@@ -18,6 +18,15 @@ const PERSONA_NAME = {
   quartermaster: 'the Quartermaster', armorer: 'the Armorer', siege: 'the Siege-Smith', toolsmith: 'the Toolsmith',
   wolf: 'Wolf Banner', ironwall: 'Iron Wall', roadmarshal: 'Road Marshal', hammer: 'Hammer of Stone',
 };
+// Order in which the AI Lord buys research, by Lord persona. It walks the list and takes the next
+// affordable tier (each upgrade is a 3-tier line). Every line is reachable; this just sets emphasis.
+const RESEARCH_PRIORITY = {
+  builder:   ['agriculture', 'logging', 'quarrying', 'mining', 'growth', 'architecture', 'granaries', 'foundry', 'scholarship', 'weapons', 'armour', 'tower', 'siege'],
+  warmonger: ['weapons', 'armour', 'foundry', 'siege', 'mining', 'logging', 'tower', 'agriculture', 'quarrying', 'growth', 'architecture', 'granaries', 'scholarship'],
+  turtler:   ['armour', 'tower', 'architecture', 'agriculture', 'granaries', 'quarrying', 'logging', 'weapons', 'foundry', 'mining', 'growth', 'scholarship', 'siege'],
+  balanced:  ['agriculture', 'weapons', 'logging', 'mining', 'foundry', 'armour', 'growth', 'quarrying', 'architecture', 'tower', 'granaries', 'siege', 'scholarship'],
+  default:   ['agriculture', 'logging', 'mining', 'weapons', 'foundry', 'armour', 'growth', 'quarrying', 'architecture', 'granaries', 'tower', 'siege', 'scholarship'],
+};
 
 function aiTick(state, team, dt, sys, rng) {
   team.aiState = team.aiState || {};
@@ -295,6 +304,7 @@ function aiLord(state, team, sys, rng, persona, st) {
     // Mid/late specialization — exercise the full building set.
     if (state.phase !== 'EARLY') {
       if (persona !== 'warmonger' && planned('school') < 1) wish.push('school');
+      if (planned('school') >= 1 && planned('university') < 1) wish.push('university');  // unlocks Research
       if (hasBarracks && planned('workshop') < 1) wish.push('workshop');
       if (hasBarracks && planned('stables') < 1) wish.push('stables');
       if (planned('storehouse') < 2) wish.push('storehouse'); // higher cap unlocks Walls (120 stone)
@@ -311,7 +321,7 @@ function aiLord(state, team, sys, rng, persona, st) {
     // first Barracks — training is more important than a little wasted surplus).
     if (capHit && hasBarracks && planned('storehouse') < 3) wish.unshift('storehouse');
 
-    const KEY = { storehouse: 1, school: 1, stables: 1, workshop: 1, walls: 1, barracks: 1 };
+    const KEY = { storehouse: 1, school: 1, stables: 1, workshop: 1, university: 1, walls: 1, barracks: 1 };
     const defaultArea = pickBuildArea(state, team);
     const wallArea = bestWallArea(state, team);
     // Honour the Steward's "conserve wood" request: once the core economy stands, defer optional
@@ -332,9 +342,40 @@ function aiLord(state, team, sys, rng, persona, st) {
   else if ((team.resources.iron || 0) < 12 && state.phase !== 'EARLY') req(state, team, sys, st, C.ROLES.LORD, C.ROLES.STEWARD, 'NEED', { resource: 'iron' }, 30);
   else say(state, team, sys, st, C.ROLES.LORD, rng.pick(['Economy steady — building on.', 'The realm grows.', 'Keep the granaries full.']), 45);
 
+  // Research: staff the University with educated workers and spend RP on prioritised upgrades.
+  aiManageResearch(state, team, sys, rng, persona, st);
+
   // Set the kingdom's strategic reservations (goal-driven), then weigh and answer the council's asks.
   lordManageReservations(state, team, sys, st, persona);
   lordHandleRequests(state, team, sys, st);
+}
+
+// AI research brain: ensure there are educated workers + researchers at a University, then buy the
+// next affordable upgrade by a persona-weighted priority. (No-op until a University is built.)
+function aiManageResearch(state, team, sys, rng, persona, st) {
+  if ((team.buildings.university || 0) <= 0) return;
+  const p = team.pop;
+  // 1. Make sure some workers are being educated (researchers must be educated).
+  if (team.buildings.school > 0 && p.educated < 5 && p.students < 3 && p.idle > 1) {
+    sys.economy.adjustWorker(state, team, 'students', Math.min(2, p.idle - 1));
+  }
+  // 2. Staff the University from educated idle workers (keep a small civilian buffer).
+  const rcap = Math.min(eco.maxResearchers(team), p.educated);
+  if (p.researchers < rcap && p.idle > 1) {
+    const add = Math.min(rcap - p.researchers, p.idle - 1);
+    if (add > 0) sys.economy.setResearchers(state, team, add);
+  }
+  // 3. Spend Research Points on the next tier of a prioritised line we can afford.
+  const order = RESEARCH_PRIORITY[persona] || RESEARCH_PRIORITY.default;
+  for (const key of order) {
+    const def = B.RESEARCH[key]; if (!def) continue;
+    const cur = (team.research && team.research[key]) || 0;
+    if (cur >= def.tiers.length) continue;
+    const tier = def.tiers[cur];
+    if ((team.researchPoints || 0) < tier.rp) continue;
+    if (!eco.canAfford(team, tier.cost)) continue;
+    if (sys.economy.buyResearch(state, team, key).ok) { st.acted = true; say(state, team, sys, st, C.ROLES.LORD, '📚 Researched ' + def.name + ' (T' + (cur + 1) + ').', 25); break; }
+  }
 }
 function freeSlots(state, team, areaId) { const a = state.areas[areaId]; let n = S.buildingsAt(a); for (const q of team.buildQueue) if (q.areaId === areaId) n++; return a.maxBuildings - n; }
 // Patience heuristic: worth saving for a key building only if we can store enough of each

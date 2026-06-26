@@ -404,7 +404,7 @@
     const ab = $('actionButtons'); const mk = (ico, label, sub, fn) =>
       '<button class="btn" onclick="' + fn + '"><span class="ab-ico">' + ico + '</span><span>' + label + '</span><span class="ab-sub">' + sub + '</span></button>';
     let html = '';
-    if (role === 'LORD') html = mk('🏗️', 'Build', 'structures', 'FP.UI.modalBuild()') + mk('👷', 'Workers', 'assign jobs', 'FP.UI.modalWorkers()') + mk('📜', 'Policy', 'kingdom tempo', 'FP.UI.modalPolicy()') + mk('⚔️', 'Stance', 'military posture', 'FP.UI.modalMilitaryPolicy()') + mk('🔒', 'Rationing', 'hold resources', 'FP.UI.modalRationing()');
+    if (role === 'LORD') html = mk('🏗️', 'Build', 'structures', 'FP.UI.modalBuild()') + mk('👷', 'Workers', 'assign jobs', 'FP.UI.modalWorkers()') + mk('🏫', 'Research', 'University', 'FP.UI.modalResearch()') + mk('📜', 'Policy', 'kingdom tempo', 'FP.UI.modalPolicy()') + mk('⚔️', 'Stance', 'military posture', 'FP.UI.modalMilitaryPolicy()') + mk('🔒', 'Rationing', 'hold resources', 'FP.UI.modalRationing()');
     else if (role === 'STEWARD') html = mk('⛏️', 'Labor', 'crews & tools', 'FP.UI.modalGather()') + mk('🧭', 'Sites', 'outposts', 'FP.UI.modalSites()') + mk('🐎', 'Caravans', 'shipments', 'FP.UI.modalCaravans()') + mk('🗺️', 'Expeditions', 'big ventures', 'FP.UI.modalExpeditions()') + mk('👷', 'Workers', 'assign jobs', 'FP.UI.modalWorkers()') + mk('🛡️', 'Ask Escort', 'from Commander', "FP.UI.request('ESCORT')");
     else if (role === 'BLACKSMITH') html = mk('🔨', 'Forge', 'gear & arrows', 'FP.UI.modalForge()') + mk('📋', 'Contracts', 'timed bonus', 'FP.UI.modalContracts()') + mk('⚙️', 'Specialize', 'forge path', 'FP.UI.modalSpec()');
     else if (role === 'COMMANDER') html = mk('🪖', 'Train', 'recruits→troops', 'FP.UI.modalMuster()') + mk('🚩', 'Army', 'manage & orders', 'FP.UI.modalArmyManage()') + mk('🎖️', 'Doctrine', 'army & form', 'FP.UI.modalDoctrine()');
@@ -677,7 +677,7 @@
     openModal('Build — choose location, then structure', html, modalBuild);
   }
   function missingCost(team, cost) { return Object.keys(cost).filter((k) => (team.resources[k] || 0) < cost[k]).map((k) => Math.ceil(cost[k] - (team.resources[k] || 0)) + ' more ' + k).join(', '); }
-  const BUILDING_GLYPH = { house: '🏠', farm: '🌾', lumberCamp: '🪵', mine: '⛏️', storehouse: '📦', barracks: '🏛️', school: '🎓', stables: '🐎', workshop: '🪚', walls: '🧱', watchtower: '🗼' };
+  const BUILDING_GLYPH = { house: '🏠', farm: '🌾', lumberCamp: '🪵', mine: '⛏️', storehouse: '📦', barracks: '🏛️', school: '🎓', stables: '🐎', workshop: '🪚', university: '🏫', walls: '🧱', watchtower: '🗼' };
   function buildGlyph(type) { return BUILDING_GLYPH[type] || '🏗️'; }
   function effectDesc(type) {
     const e = B.BUILDINGS[type].effect; const m = [];
@@ -788,6 +788,52 @@
     return { g, q, boost, food, wood, stone, iron, focus, usedQ };
   }
 
+  // 🏫 Lord's Research screen: staff a University with educated workers, bank Research Points, and
+  // buy 3-tier upgrades (each tier requires the previous).
+  function modalResearch() {
+    const team = State.teamState(); if (!team) return;
+    const snap = State.snapshot; const role = State.myRole;
+    const unis = (team.buildings.university || 0);
+    const p = team.pop;
+    const rp = Math.floor(team.researchPoints || 0);
+    let html = '';
+    if (unis <= 0) {
+      html += '<div class="muted">Research happens at a <b>🏫 University</b>. The Lord assigns <b>educated</b> workers as Researchers (4 per University); each yields <b>1 Research Point every 5s</b>. RP buy permanent, team-wide upgrades.</div>';
+      html += '<div class="opt" style="border-color:#7a4a2c"><div class="opt-info"><div class="opt-name" style="color:#d9a441">No University yet</div><div class="opt-desc">' + (role === 'LORD' ? 'Build one from the 🏗️ Build menu (' + costStr(B.BUILDINGS.university.cost) + ').' : 'Ask the Lord to build a University.') + '</div></div></div>';
+      openModal('🏫 Research', html, modalResearch); return;
+    }
+    const rcap = Math.min(unis * B.RESEARCHERS_PER_UNIVERSITY, p.educated);
+    const rate = ((p.researchers || 0) / B.RESEARCH_INTERVAL) * (1 + (researchVal(team, 'scholarship')));
+    html += '<div class="muted">🔬 <b>' + rp + ' Research Points</b> · +<b>' + rate.toFixed(2) + '</b>/s · 👩‍🔬 Researchers <b>' + (p.researchers || 0) + '/' + rcap + '</b> <span class="muted">(' + (unis * B.RESEARCHERS_PER_UNIVERSITY) + ' slots · ' + p.educated + ' educated)</span></div>';
+    if (role === 'LORD') {
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">👩‍🔬 Assign Researchers</div><div class="opt-desc">Educated workers only. ' + (p.educated <= (p.researchers || 0) ? '<span style="color:#d9a441">Educate more workers at a School.</span>' : 'Idle ready: ' + p.idle) + '</div></div><span><button class="btn btn-sm" ' + ((p.researchers || 0) <= 0 ? 'disabled' : '') + ' onclick="FP.UI.act(\'setResearchers\',{delta:-1});FP.UI.modalResearch()">−</button> <b>' + (p.researchers || 0) + '</b> <button class="btn btn-sm" ' + ((p.researchers || 0) >= rcap || p.idle <= 0 ? 'disabled' : '') + ' onclick="FP.UI.act(\'setResearchers\',{delta:1});FP.UI.modalResearch()">＋</button></span></div>';
+    }
+    html += '<div class="rp-h">Upgrades (3 tiers each — each needs the previous)</div>';
+    for (const key in B.RESEARCH) {
+      const def = B.RESEARCH[key];
+      const cur = (team.research && team.research[key]) || 0;
+      const done = cur >= def.tiers.length;
+      const next = done ? null : def.tiers[cur];
+      const curVal = cur > 0 ? fmtResearch(def, def.tiers[cur - 1].val) : '—';
+      const nextVal = next ? fmtResearch(def, next.val) : '';
+      const affRP = next && rp >= next.rp;
+      const affMat = next && canAfford(team, next.cost);
+      const why = !next ? '' : (!affRP ? ' — need ' + next.rp + ' RP' : (!affMat ? ' — need ' + missingCost(team, next.cost) : ''));
+      const pips = '●'.repeat(cur) + '○'.repeat(def.tiers.length - cur);
+      const sub = (cur > 0 ? 'Now: ' + curVal + ' · ' : def.desc + ' · ') + (done ? '<span style="color:#6fae5f">maxed</span>' : 'Next (T' + (cur + 1) + '): <b>' + nextVal + '</b> · ' + next.rp + ' RP ' + costStr(next.cost)) + (why ? '<span style="color:#c8553d">' + why + '</span>' : '');
+      const canBuy = role === 'LORD' && next && affRP && affMat;
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + def.glyph + ' ' + def.name + ' <span class="muted">' + pips + '</span></div><div class="opt-desc">' + sub + '</div></div>' +
+        (done ? '<span class="muted">✓</span>' : (role === 'LORD' ? '<button class="btn btn-sm ' + (canBuy ? 'btn-gold' : '') + '" ' + (canBuy ? '' : 'disabled') + ' onclick="FP.UI.act(\'buyResearch\',{key:\'' + key + '\'});FP.UI.modalResearch()">Research</button>' : '')) + '</div>';
+    }
+    openModal('🏫 Research', html, modalResearch);
+  }
+  function researchVal(team, key) { const def = B.RESEARCH[key]; const t = (team.research && team.research[key]) || 0; return t > 0 ? def.tiers[t - 1].val : 0; }
+  function fmtResearch(def, val) {
+    if (def.unit === 'pct') return '+' + Math.round(val * 100) + '%';
+    if (def.unit === 'mult') return '×' + val;
+    return '+' + val;   // flat
+  }
+
   // ⛏️ Steward's labor screen: equip crews with the Blacksmith's tools and steer the mines.
   function modalGather() {
     const team = State.teamState(); if (!team) return;
@@ -806,6 +852,14 @@
       h += '<div class="sel-row"><span>👷 Workers (Lord)</span><span>' + workers + ' / ' + (bldCount * 4) + ' <span class="muted">(' + bldCount + ' ' + bldName + ')</span>' + (workers === 0 ? ' <span style="color:#d9a441">⚠ ask the Lord</span>' : '') + '</span></div>';
       h += '<div class="sel-row"><span>🛠️ Tools equipped</span><span>' + minus + ' <b>' + des + '</b>' + (miss > 0 ? ' <span style="color:#d9a441">(' + eff + ' active · ' + miss + ' awaiting tools)</span>' : '') + ' ' + plus + '</span></div>';
       if (eff > 0) { const mix = qualMix((c.usedQ && c.usedQ[pool]) || []); h += '<div class="sel-row"><span class="muted" style="font-size:10px">↳ each worker\'s tool</span><span style="font-size:10px">' + (mix || qualBadge(c.q)) + ' → <b>×' + c.boost.toFixed(2) + '</b> avg</span></div>'; }
+      // Steward: work this crew DANGEROUSLY (+50% output, but workers risk death each second; a tool
+      // lowers the risk, a Legendary tool a lot — and dangerous crews wear tools out twice as fast).
+      const dangerOn = !!(team.dangerWork && team.dangerWork[pool]);
+      if (State.myRole === 'STEWARD') {
+        h += '<div class="sel-row"><span title="+50% output, but each worker has up to a 2%/s chance to die (Standard tool ~1%, Legendary ~0.3%). Tools wear 2× faster.">☠️ Dangerous work</span><span><button class="btn btn-sm" style="' + (dangerOn ? 'border-color:#c8553d;color:#e0998a;' : '') + '" onclick="FP.UI.toggleDanger(\'' + pool + '\')">' + (dangerOn ? 'ON · +50% (risky)' : 'OFF') + '</button></span></div>';
+      } else if (dangerOn) {
+        h += '<div class="sel-row"><span class="muted" style="font-size:10px">☠️ worked dangerously</span><span style="color:#e0998a;font-size:10px">+50% · risky</span></div>';
+      }
       h += perRow;
       if (extra) h += extra;
       return h;
@@ -830,14 +884,14 @@
     }
     crow += '</div>';
     html += crow;
-    openModal('⛏️ Labor &amp; Gathering', html, modalGather);
+    openModal('⛏️ Labor & Gathering', html, modalGather);
   }
 
   // Label for a claim/fund button that reflects partial wood funding toward an outpost.
   function claimLabel(a) {
     const need = B.CLAIM_COST.wood;
     const paid = (a.claimFund && a.claimFund.team === State.myTeam) ? Math.round(a.claimFund.wood) : 0;
-    return paid > 0 ? 'Fund (' + paid + '/' + need + ' 🪵)' : 'Claim (' + need + ' 🪵)';
+    return paid > 0 ? 'Fund (' + Math.max(0, need - paid) + ' 🪵 left · ' + paid + '/' + need + ')' : 'Claim (' + need + ' 🪵)';
   }
 
   // Contested = enemy owns this area or an enemy host is on it (mirrors server areaIsDangerous).
@@ -854,7 +908,7 @@
   function modalSites() {
     const snap = State.snapshot, team = State.teamState();
     const pool = Math.round(team.guards || 0);
-    let html = '<div class="muted">🏚️ <b>Outposts</b> turn claimed sites into income — each ships its goods home by 🐎 <b>caravan</b>. Claim costs <b>' + B.CLAIM_COST.wood + ' 🪵</b> (instalments); upgrade <b>' + B.SITE_UPGRADE_COST.wood + ' 🪵 + ' + B.SITE_UPGRADE_COST.stone + ' 🪨</b>. <b>Push</b> earns more but risks crews at contested sites.</div>' +
+    let html = '<div class="muted">🏚️ <b>Outposts</b> turn claimed sites into income — each ships its goods home by 🐎 <b>caravan</b>. Claim costs <b>' + B.CLAIM_COST.wood + ' 🪵</b> (instalments). <b>Cautious</b> caravans may slip past the enemy; <b>Push</b> carries more but rolls at half speed.</div>' +
       '<div class="muted" style="font-size:11px;margin-top:2px">🛡 <b>Guards</b> protect a post\'s caravans: an <u>unguarded</u> caravan that meets enemy troops is <b style="color:#d46a5a">destroyed</b>. Guards stop the attackers and fight (and can <b>die</b>); if overwhelmed they still buy the caravan time to flee — but faster soldiers may run it down. <b>Guards are a one-way commitment</b> — once lent they never return to the army.</div>';
     // Guard pool + ask the Commander for more.
     html += '<div class="opt"><div class="opt-info"><div class="opt-name">🛡 Guard pool: <b>' + pool + '</b> unassigned</div><div class="opt-desc">militia/recruits the Commander lent you (permanently)</div></div><button class="btn btn-sm" onclick="FP.UI.askGuards()">Ask Commander for guards</button></div>';
@@ -865,8 +919,8 @@
       for (const [id, a] of owned) {
         const m = C.RESOURCE_META[a.resource]; const yld = siteYieldPerSec(a); const danger = areaContested(snap, id);
         const mode = (a.site && a.site.workMode) || 'standard';
-        const modeBtns = ['cautious', 'standard', 'push'].map((k) => { const wm = B.WORK_MODES[k]; const yl = '×' + wm.yield.toFixed(1); const risk = wm.lossPerSec > 0 ? ' ⚠' : ''; return '<button class="btn btn-sm" title="' + esc(wm.desc) + '" style="' + (mode === k ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.setWorkModeSafe(\'' + id + '\',\'' + k + '\',' + (danger ? 'true' : 'false') + ')">' + wm.name + ' <span style="font-size:9px">' + yl + risk + '</span></button>'; }).join('');
-        const riskNote = (mode === 'push' && danger) ? '<div style="color:#d46a5a;font-size:10px;margin-top:2px">⚠ Push at a contested outpost risks losing a crew (~' + Math.round(B.WORK_MODES.push.lossPerSec * 100) + '%/s).</div>' : '';
+        const modeBtns = ['cautious', 'standard', 'push'].map((k) => { const wm = B.WORK_MODES[k]; const yl = '×' + wm.yield.toFixed(2); const hint = wm.sneak ? ' 🌙' : (wm.speedMult < 1 ? ' 🐢' : ''); return '<button class="btn btn-sm" title="' + esc(wm.desc) + '" style="' + (mode === k ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.setWorkModeSafe(\'' + id + '\',\'' + k + '\',' + (danger ? 'true' : 'false') + ')">' + wm.name + ' <span style="font-size:9px">' + yl + hint + '</span></button>'; }).join('');
+        const riskNote = mode === 'cautious' ? '<div style="color:#8fb8e8;font-size:10px;margin-top:2px">🌙 Cautious caravans have a 50% chance to slip past enemy troops.</div>' : (mode === 'push' ? '<div style="color:#d9a441;font-size:10px;margin-top:2px">🐢 Push caravans carry +25% but move at half speed.</div>' : '');
         const thr = (B.CARAVAN_DISPATCH_BY_RESOURCE && B.CARAVAN_DISPATCH_BY_RESOURCE[a.resource]) || B.CARAVAN_DISPATCH_CARGO;
         // Caravan ETA: warn ~5s before a caravan departs this post.
         const remain = thr - a.site.cargo; const eta = yld > 0 ? remain / yld : Infinity;
@@ -1675,8 +1729,6 @@
     },
     act(action, payload) { Net.action(action, payload); },
     setWorkModeSafe(areaId, mode, contested) {
-      if (mode === 'push' && contested && typeof confirm === 'function' &&
-        !confirm('Push mode at a CONTESTED outpost risks losing a crew (~' + Math.round((B.WORK_MODES.push.lossPerSec || 0) * 100) + '%/sec). Continue?')) return;
       Net.action('setWorkMode', { areaId, mode });
     },
     askEscort(caravanId) { Net.action('request', { type: 'ESCORT', payload: caravanId ? { caravanId } : {} }); toast('Asked the Commander to escort this caravan.'); },
@@ -1725,8 +1777,9 @@
     reequip(gid) { Net.action('reequip', { groupId: gid }); },
     commandSel(mission, area) { const team = State.teamState(); const gid = State.selectedGroupId || garrisonId(team); if (!gid) return toast('No host to command.', true); Net.action('command', { groupId: gid, mission, targetArea: area }); },
     cmd(gid, mission) { Net.action('command', { groupId: gid, mission }); closeModal(); },
-    modalBuild, modalWorkers, modalPolicy, modalMilitaryPolicy, modalSites, modalCaravans, modalExpeditions, modalForge, modalContracts, modalSpec, modalMuster, modalOrders, modalArmyManage, modalDoctrine, modalNeed, modalMilitary, modalGather, modalSpectatorMilitary,
+    modalBuild, modalWorkers, modalPolicy, modalMilitaryPolicy, modalSites, modalCaravans, modalExpeditions, modalForge, modalContracts, modalSpec, modalMuster, modalOrders, modalArmyManage, modalDoctrine, modalNeed, modalMilitary, modalGather, modalResearch, modalSpectatorMilitary,
     gatherTools(pool, delta) { Net.action('setGatherTools', { pool, delta }); },
+    toggleDanger(pool) { const t = State.teamState(); const on = !(t && t.dangerWork && t.dangerWork[pool]); Net.action('setDangerWork', { pool, on }); },
     mineFocus(v) { Net.action('setMineFocus', { value: v }); },
     mineFocusStep(d) { const t = State.teamState(); const cur = (t && t.gather && typeof t.gather.mineIronFocus === 'number') ? t.gather.mineIronFocus : B.DEFAULT_MINE_FOCUS; Net.action('setMineFocus', { value: Math.max(0, Math.min(1, cur + d)) }); },
     askToolsFromSmith() { Net.action('request', { type: 'EQUIPMENT', payload: { item: 'tools' } }); toast('Asked the Blacksmith to forge Tools.'); },

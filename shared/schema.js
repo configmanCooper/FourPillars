@@ -86,18 +86,23 @@
       pop: {
         total: B.START_POP, idle: 0,
         farmers: 4, woodcutters: 4, miners: 2, builders: 2, students: 0, trainers: 0,
+        researchers: 0,      // educated workers assigned to a University (generate Research Points)
         recruits: B.START_RECRUITS, soldiers: 0,
         away: 0,              // workers committed to an expedition (still housed; rejoin on return)
-        educated: 0,          // educated workers (faster reassignment)
+        educated: 0,          // educated workers (faster reassignment; required to research)
         cooling: [],          // re-idled workers waiting out a reassignment cooldown: [{n, until, edu}]
         eduProgress: 0,       // accumulates toward the next educated graduate
       },
       housing: B.START_HOUSING,
+      research: {},            // research key -> tier owned (1..3). Team-wide permanent upgrades.
+      researchPoints: 0,       // banked Research Points
+      researchProgress: 0,     // accrues toward the next RP from researchers
+      dangerWork: { food: false, wood: false, mine: false },  // Steward: which gather pools work dangerously
       // Steward's gathering management: how many tool-sets are committed to each gatherer pool
       // (desired = what the Steward asked for; effective = what the tool stock can currently equip),
       // and how miner labour is split between iron (mineIronFocus) and stone (the remainder).
       gather: { desired: { food: 0, wood: 0, mine: 0 }, effective: { food: 0, wood: 0, mine: 0 }, mineIronFocus: B.DEFAULT_MINE_FOCUS },
-      buildings: { house: 0, farm: 0, lumberCamp: 0, mine: 0, storehouse: 0, barracks: 0, school: 0, stables: 0, workshop: 0, walls: 0 }, // aggregate cache (recomputed from owned areas)
+      buildings: { house: 0, farm: 0, lumberCamp: 0, mine: 0, storehouse: 0, barracks: 0, school: 0, stables: 0, workshop: 0, university: 0, walls: 0 }, // aggregate cache (recomputed from owned areas)
       buildQueue: [],
       training: [],           // Commander training jobs: [{id, area, unitType, count, progress}]
       policy: null,
