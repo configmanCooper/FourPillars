@@ -80,7 +80,7 @@
     architecture: { name: 'Architecture', glyph: '🏠', stat: 'housing', unit: 'flat', desc: 'Each House holds more',
       tiers: [{ rp: 20, cost: { wood: 30, stone: 20 }, val: 2 }, { rp: 45, cost: { wood: 60, stone: 40 }, val: 4 }, { rp: 90, cost: { wood: 100, stone: 70 }, val: 6 }] },
     tower:        { name: 'Fortified Tower', glyph: '🗼', stat: 'towerAtk', unit: 'mult', desc: 'Watchtower fires harder',
-      tiers: [{ rp: 20, cost: { stone: 40 }, val: 2 }, { rp: 45, cost: { stone: 70 }, val: 3 }, { rp: 90, cost: { stone: 120 }, val: 5 }] },
+      tiers: [{ rp: 45, cost: { stone: 70 }, val: 2 }, { rp: 90, cost: { stone: 120 }, val: 3 }] },
     siege:        { name: 'Siege Engineering', glyph: '🪨', stat: 'siege', unit: 'pct', desc: 'Catapults raze faster',
       tiers: [{ rp: 20, cost: { wood: 30, iron: 30 }, val: 0.15 }, { rp: 45, cost: { wood: 60, iron: 60 }, val: 0.35 }, { rp: 90, cost: { wood: 100, iron: 100 }, val: 0.50 }] },
     granaries:    { name: 'Granaries & Vaults', glyph: '📦', stat: 'storage', unit: 'flat', desc: 'Raise every storage cap',
@@ -413,7 +413,7 @@
   const ARCHER_OUTPOST_BONUS = 1.25;    // archers fight +25% when stationed on their team's own outpost
   // Building razing: an unopposed enemy force destroys a location's buildings, walls first.
   const BUILDING_RAZE_HP = 60;          // base HP per building (≈ 1 archer in 60s)
-  const RAZE_STAT = { catapult: 15, cavalry: 3, militia: 2, spearman: 2, swordsman: 2, archer: 1 }; // raze HP/sec each
+  const RAZE_STAT = { catapult: 20, cavalry: 3, militia: 2, spearman: 2, swordsman: 2, archer: 1 }; // raze HP/sec each
   const WALL_RAZE_MULT = 2;             // walls take twice as long and must fall first
   const CATAPULT_WALL_RAZE_BONUS = 1.5; // catapults raze WALLS 50% faster (siege engines shine vs fortifications)
   const KEEP_RAZE_MULT = 2;             // buildings at the Keep take 100% longer
