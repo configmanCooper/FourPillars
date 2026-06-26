@@ -491,6 +491,11 @@
       () => sendReq('SITE', { mode: 'upgrade' }, 'Asked the Steward to upgrade a site.'), !ownsSite, ownsSite ? '' : 'No claimed sites yet');
     html += optRow('🏛️ Search the Ruins (relics)', 'Relics raise your Kingdom Score', '', 'Request',
       () => sendReq('NEED', { resource: 'relics' }, 'Asked the Steward to seek relics.'));
+    if (State.myRole === 'BLACKSMITH') {
+      html += modalSection('Speed the forge');
+      html += optRow('🔥 Crank the Forge Bellows', 'Steward enacts Forge Bellows — the whole forge works +30% faster for a while', '', 'Request',
+        () => { Net.action('request', { type: 'FORGESPEED', targetRole: 'STEWARD', payload: { target: 'STEWARD' } }); toast('Asked the Steward to crank the bellows.'); closeModal(); });
+    }
     openModal(C.ROLE_META.STEWARD.glyph + ' Ask the Steward', html, modalStewardRequests);
   }
   function modalCommanderRequests() {
@@ -564,6 +569,14 @@
       for (const k of held) { const m = C.RESOURCE_META[k];
         html += optRow('🔒 Spend ' + m.name, 'Ask the Lord for a one-time pass to spend held ' + k, '', 'Ask',
           () => sendReq('USE', { resource: k, reason: useReason(k) }, 'Asked the Lord to allow ' + k + '.')); }
+    }
+    if (State.myRole === 'BLACKSMITH') {
+      html += modalSection('Speed the forge');
+      const fTier = (team.research && team.research.foundry) || 0;
+      const fMax = B.RESEARCH.foundry.tiers.length;
+      const fReason = (team.buildings.university || 0) <= 0 ? 'Lord needs a University' : (fTier >= fMax ? 'Already maxed' : '');
+      html += optRow('🔥 Research Foundry Mastery <span class="muted">(T' + fTier + '/' + fMax + ')</span>', 'Lord researches Foundry Mastery — a permanent forge-speed boost for the whole forge', '', 'Request',
+        () => { Net.action('request', { type: 'FORGESPEED', targetRole: 'LORD', payload: { target: 'LORD' } }); toast('Asked the Lord to research Foundry Mastery.'); closeModal(); }, !!fReason, fReason);
     }
     openModal(C.ROLE_META.LORD.glyph + ' Ask the Lord', html, modalLordRequests);
   }

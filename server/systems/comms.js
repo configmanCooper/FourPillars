@@ -33,6 +33,7 @@ const REQ_TEXT = {
   MINEFOCUS: 'Steward, shift the miners!',
   USE: 'May I spend a reserved resource?',
   RESERVE: 'Lord, please reserve a resource for me.',
+  FORGESPEED: 'Could we speed up the forge?',
 };
 
 function reqMessage(type, payload) {
@@ -57,6 +58,7 @@ function reqMessage(type, payload) {
   if (type === 'MISSION' && payload && payload.mission) { return 'Commander, ' + ({ raid: 'raid the enemy', siege: 'siege their Keep', garrison: 'hold the frontier' }[payload.mission] || payload.mission) + '!'; }
   if (type === 'SITE' && payload) { return payload.mode === 'upgrade' ? 'Steward, upgrade our best site!' : 'Steward, expand our territory!'; }
   if (type === 'BUILD' && payload && payload.type) { return 'Lord, build a ' + (B.BUILDINGS[payload.type] ? B.BUILDINGS[payload.type].name : payload.type) + '!'; }
+  if (type === 'FORGESPEED') return (payload && payload.target === 'LORD') ? 'Lord, research Foundry Mastery to speed our forge!' : 'Steward, crank the Forge Bellows to speed our forge!';
   return REQ_TEXT[type] || 'Request: ' + type;
 }
 
@@ -118,6 +120,7 @@ function lowerType(t, req) {
   if (t === 'MINEFOCUS') { const res = req && req.payload && req.payload.res; return 'shifting the mines toward ' + (res || 'that ore'); }
   if (t === 'USE') { const res = req && req.payload && req.payload.resource; return 'allowing one spend of ' + (res || 'that resource'); }
   if (t === 'RESERVE') { const res = req && req.payload && req.payload.resource; return 'reserving ' + (res || 'that resource') + ' for you'; }
+  if (t === 'FORGESPEED') return (req && req.targetRole === 'LORD') ? 'research Foundry Mastery to speed the forge' : 'crank the Forge Bellows to speed the forge';
   return ({ ESCORT: 'escorting the caravan', GUARDS: 'lending caravan guards', WORKERS: 'sending workers', IRON: 'pushing iron through',
     EQUIPMENT: 'forging gear', RECRUITS: 'training recruits', DEFEND: 'sending defenders',
     TRAIN: 'training troops', MISSION: 'taking the offensive', SITE: 'expanding our territory', BUILD: 'raising the building', RECRUITS: 'training recruits', TRAINERS: 'assigning trainers' })[t] || t.toLowerCase();
@@ -263,6 +266,14 @@ function fulfill(state, team, req, systems) {
       const g = army.garrison(state, team);
       const tgt = (req.payload && req.payload.area) || S.homeBase(team.team);
       army.command(state, team, g.id, tgt === S.homeBase(team.team) ? 'defend' : 'garrison', tgt); return true;
+    }
+    case 'FORGESPEED': {
+      // Blacksmith asks for a faster forge. The Steward can crank the bellows now (a timed +30%); the
+      // Lord can research Foundry Mastery (a permanent boost). Route by whoever the ask was addressed to.
+      if (req.targetRole === 'LORD') return !!economy.buyResearch(state, team, 'foundry').ok;
+      if (req.targetRole === 'STEWARD') return !!economy.doStewardAction(state, team, 'forgeBellows').ok;
+      // Fallback (broadcast/unknown): try the instant bellows first, then the research.
+      return !!(economy.doStewardAction(state, team, 'forgeBellows').ok || economy.buyResearch(state, team, 'foundry').ok);
     }
     default: return false;
   }

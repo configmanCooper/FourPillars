@@ -313,13 +313,13 @@ function spendKeysFor(action, payload) {
   return [];
 }
 function defaultTarget(type) {
-  return ({ ESCORT: 'COMMANDER', GUARDS: 'COMMANDER', WORKERS: 'LORD', IRON: 'STEWARD', EQUIPMENT: 'BLACKSMITH', RECRUITS: 'LORD', TRAINERS: 'LORD', DEFEND: 'COMMANDER', TRAIN: 'COMMANDER', MISSION: 'COMMANDER', SITE: 'STEWARD', BUILD: 'LORD', RESERVE: 'LORD', MINEFOCUS: 'STEWARD' })[type] || 'LORD';
+  return ({ ESCORT: 'COMMANDER', GUARDS: 'COMMANDER', WORKERS: 'LORD', IRON: 'STEWARD', EQUIPMENT: 'BLACKSMITH', RECRUITS: 'LORD', TRAINERS: 'LORD', DEFEND: 'COMMANDER', TRAIN: 'COMMANDER', MISSION: 'COMMANDER', SITE: 'STEWARD', BUILD: 'LORD', RESERVE: 'LORD', MINEFOCUS: 'STEWARD', FORGESPEED: 'STEWARD' })[type] || 'LORD';
 }
 function broadcastText(type, p) {
   if (type === 'NEED' && p && p.resource) { const m = C.RESOURCE_META[p.resource]; return 'We could use more ' + (m ? m.glyph + ' ' + p.resource : p.resource) + '.'; }
   if (type === 'USE' && p && p.resource) { const m = C.RESOURCE_META[p.resource]; return 'Requesting use of ' + (m ? m.glyph + ' ' + p.resource : p.resource) + '.'; }
   if (type === 'BUILD' && p && p.type) { return 'We should build a ' + (B.BUILDINGS[p.type] ? B.BUILDINGS[p.type].name : p.type) + '.'; }
-  return ({ ESCORT: 'We need an escort.', GUARDS: 'We need guards for our caravans.', WORKERS: 'We could use more workers.', IRON: 'We need more iron.', EQUIPMENT: 'We need weapons forged.', RECRUITS: 'We need more recruits.', DEFEND: 'We need defenders.', TRAIN: 'We should train more troops.', MISSION: 'Take the fight to the enemy.', SITE: 'We should expand our territory.', BUILD: 'We should build more.' })[type] || 'Request to the council.';
+  return ({ ESCORT: 'We need an escort.', GUARDS: 'We need guards for our caravans.', WORKERS: 'We could use more workers.', IRON: 'We need more iron.', EQUIPMENT: 'We need weapons forged.', RECRUITS: 'We need more recruits.', DEFEND: 'We need defenders.', TRAIN: 'We should train more troops.', MISSION: 'Take the fight to the enemy.', SITE: 'We should expand our territory.', BUILD: 'We should build more.', FORGESPEED: 'We should speed up the forge.' })[type] || 'Request to the council.';
 }
 
 // Snapshot: strip a few server-only scratch fields to keep payloads tidy.

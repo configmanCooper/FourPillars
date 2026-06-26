@@ -86,6 +86,7 @@
     MINEFOCUS: 'MINEFOCUS',     // anyone -> Steward: shift the mine split toward stone or iron
     USE: 'USE',                 // anyone -> Lord: permission to spend a reserved resource (one-time)
     RESERVE: 'RESERVE',         // anyone -> Lord: reserve a resource for the requester for a while
+    FORGESPEED: 'FORGESPEED',   // Blacksmith -> Steward (Forge Bellows) or Lord (Foundry Mastery research)
   };
   // Which role can best supply a given resource (target of a NEED request).
   const RESOURCE_SUPPLIER = {
