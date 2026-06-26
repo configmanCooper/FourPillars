@@ -557,22 +557,28 @@ function battleRound(state, areaId, blueM, redM, blueT, redT, dt, rng, log, blue
   // not dominates. Defence is unaffected.
   const spMult = (m) => { let tot = 0, sp = 0; for (const u of C.UNITS) { const n = m.units[u] || 0; if (n > 0) { tot += n; sp += (B.UNIT_STATS[u].speed || B.SPEED_COMBAT_REF) * n; } } const avg = tot > 0 ? sp / tot : B.SPEED_COMBAT_REF; return Math.max(B.SPEED_COMBAT_MIN, Math.min(B.SPEED_COMBAT_MAX, avg / B.SPEED_COMBAT_REF)); };
   const bSpd = spMult(blueM), rSpd = spMult(redM);
-  const bPow = (bS.atk * 0.6 * bSpd + bS.def * 0.4) * bCap * bKeep + 1;
-  const rPow = (rS.atk * 0.6 * rSpd + rS.def * 0.4) * rCap * rKeep + 1;
-  // Per-second discrete combat: each side rolls 0/1/2/3 kills based on the strength comparison (stronger
-  // = more kills; killing more is rarer). A stance's lossMult makes it more/less vulnerable. Then the
-  // target host's ARMOUR may save each soldier from dying.
+  // Combat model: your ATTACK (× speed cadence) drives how many of the enemy you kill; the enemy's
+  // DEFENCE (× their Keep bonus) blunts it. So defence directly LESSENS your chance of being killed,
+  // while attack drives your killing — they no longer blur into one "power" number.
+  const bOff = bS.atk * bSpd * bCap;          // blue's offensive output
+  const rOff = rS.atk * rSpd * rCap;          // red's offensive output
+  const bDefr = bS.def * bCap * bKeep + 1;    // blue's defensive resilience (Keep bonus aids defenders)
+  const rDefr = rS.def * rCap * rKeep + 1;    // red's defensive resilience
+  // Per-second discrete combat: each side rolls 0/1/2/3 kills. A stance's lossMult makes the TARGET more
+  // or less vulnerable; then the target soldier's own ARMOUR may still save them.
   const bVuln = B.STANCES[blueM.stance].lossMult || 1;
   const rVuln = B.STANCES[redM.stance].lossMult || 1;
-  const blueShare = (bPow * rVuln) / (bPow * rVuln + rPow);
-  const redShare = (rPow * bVuln) / (rPow * bVuln + bPow);
+  // Kills BLUE lands on RED = blue offence vs red defence (and red's stance vulnerability); vice-versa.
+  const blueShare = (bOff * rVuln) / (bOff * rVuln + rDefr);
+  const redShare = (rOff * bVuln) / (rOff * bVuln + bDefr);
   const killsVsRed = rollKills(blueShare, rng);
   const killsVsBlue = rollKills(redShare, rng);
   applyKills(redT, redList, killsVsRed, rng, fx);
   applyKills(blueT, blueList, killsVsBlue, rng, fx);
   for (const g of blueList) g.morale = killsVsBlue >= 2 ? 'low' : (g.morale === 'low' && killsVsBlue === 0 ? 'normal' : g.morale);
   for (const g of redList) g.morale = killsVsRed >= 2 ? 'low' : (g.morale === 'low' && killsVsRed === 0 ? 'normal' : g.morale);
-  // Cautious stance retreats home when badly outnumbered.
+  // Cautious stance retreats home when badly outnumbered (total-strength proxy = offence + resilience).
+  const bPow = bOff + bDefr, rPow = rOff + rDefr;
   retreatCheck(state, blueList, bPow, rPow);
   retreatCheck(state, redList, rPow, bPow);
   // Cleanup destroyed; log decisive results.

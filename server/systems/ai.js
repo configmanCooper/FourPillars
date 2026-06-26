@@ -458,11 +458,19 @@ function aiSteward(state, team, sys, rng, persona, st) {
     sites.explore(state, team, unscoutedAdj[0].id);
   }
   // Claim — priority by persona + current shortage.
-  if (!st.acted && !team._busyJob) {
+  // But DON'T starve the Lord's foundation: while we still lack a Barracks (the army's home), reserve
+  // enough wood & stone for it before sinking resources into new outposts. Outposts are expensive
+  // (60🪵+40🪨); without this the Steward drains every scrap and the Lord can never build the Barracks,
+  // so the team fields no army. The military base comes before expansion.
+  const noBarracks = (team.buildings.barracks || 0) < 1 && team.buildQueue.every((q) => q.type !== 'barracks');
+  const bWood = (B.BUILDINGS.barracks.cost.wood || 0), bStone = (B.BUILDINGS.barracks.cost.stone || 0);
+  const reserveForCore = noBarracks && ((team.resources.wood || 0) < bWood + 20 || (team.resources.stone || 0) < bStone + 10);
+  if (!st.acted && !team._busyJob && !reserveForCore) {
     const cand = [];
-    // Claimable: revealed neutral sites, AND our own ground whose outpost was destroyed when we took
+    // Claimable: SCOUTED neutral sites, AND our own ground whose outpost was destroyed when we took
     // it (owner is us but no working outpost yet) — so the Steward rebuilds outposts on captured land.
-    for (const id in state.areas) { const a = state.areas[id]; if (a.revealed[team.team] && a.site && a.terrain !== 'base' && (!a.owner || (a.owner === team.team && a.claimedBy !== team.team))) cand.push(a); }
+    // (You can only build on SCOUTED ground now, so don't bother trying unscouted sites.)
+    for (const id in state.areas) { const a = state.areas[id]; if (a.scouted[team.team] && a.site && a.terrain !== 'base' && (!a.owner || (a.owner === team.team && a.claimedBy !== team.team))) cand.push(a); }
     cand.sort((x, y) => sitePrio(team, persona, y) - sitePrio(team, persona, x));
     for (const a of cand) {
       // Cautious steward won't claim next to an enemy host.
@@ -874,10 +882,16 @@ function aiCommander(state, team, sys, rng, persona, st) {
   // is RIGHT NEXT to us (one leg away) — chasing a moving caravan just loses the race.
   const harass = (w) => {
     if (keepThreat) { army.command(state, team, w.id, 'defend'); return; }
+    // Don't throw the outriders away: if a SUPERIOR enemy force is already on us, slip back home rather
+    // than trade a lone raider into a doomed fight (the "1 troop charges 5" silliness).
+    const myA = army.currentArea(w);
+    if (!w.moving && winChanceAt(state, army, team, w, myA) < retreatBar) { army.command(state, team, w.id, 'defend'); return; }
     const choke = enemySupplyPatrol(state, team);
     let tgt = choke;
     const ic = caravanIntercept(state, army, team, w, 1);   // only a caravan within ONE leg is worth diverting for
     if (ic) { tgt = ic; say(state, team, sys, st, C.ROLES.COMMANDER, 'Outriders fall on an enemy caravan at ' + state.areas[ic].name + '!', 22); }
+    // Never garrison a chokepoint we'd lose at — pick safer forward ground instead of a death-trap.
+    if (tgt && winChanceAt(state, army, team, w, tgt) < retreatBar) tgt = null;
     if (!tgt) tgt = forwardSite(state, team) || home;
     if (army.currentArea(w) !== tgt || w.moving) army.command(state, team, w.id, 'garrison', tgt);
   };
