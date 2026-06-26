@@ -31,7 +31,7 @@
   // Per-worker production per second (before tools/policy/building multipliers).
   const WORKER_YIELD = {
     farmer:     { food: 0.30 },
-    woodcutter: { wood: 0.22 },
+    woodcutter: { wood: 0.28 },
     miner:      { stone: 0.10, iron: 0.07 },
   };
   const TOOLS_BONUS = 0.10;             // a TOOLED worker yields +10% at Standard tool quality, scaling with quality (×equipQuality.tools): Good +12.5%, Excellent +20%, Legendary +30%
@@ -93,7 +93,7 @@
   const BUILDINGS = {
     house:      { name: 'House',       cost: { wood: 50 },             buildTime: 12, effect: { housing: HOUSING_PER_HOUSE } },
     farm:       { name: 'Farm',        cost: { wood: 60 },             buildTime: 14, effect: { foodMult: 0.25 } },
-    lumberCamp: { name: 'Lumber Camp', cost: { wood: 50, stone: 20 },  buildTime: 14, effect: { woodMult: 0.30 } },
+    lumberCamp: { name: 'Lumber Camp', cost: { wood: 50, stone: 20 },  buildTime: 14, effect: { woodMult: 0.40 } },
     mine:       { name: 'Mine',        cost: { wood: 60, stone: 40 },  buildTime: 18, effect: { mineMult: 0.40 } },
     storehouse: { name: 'Storehouse',  cost: { wood: 70, stone: 50 },  buildTime: 18, effect: { storage: STORAGE_PER_STOREHOUSE } },
     barracks:   { name: 'Barracks',    cost: { wood: 70, stone: 30 },  buildTime: 20, effect: { unlock: 'train' } },
@@ -108,7 +108,7 @@
     // It looses arrows like a lone militia at besiegers.
     watchtower: { name: 'Watchtower',   cost: {}, buildTime: 0, fixed: true, effect: {} },
   };
-  const MAX_PER_BUILDING = { house: 6, farm: 4, lumberCamp: 3, mine: 3, storehouse: 3, barracks: 2, school: 2, stables: 2, workshop: 2, university: 1, marketplace: 1, walls: 3, watchtower: 1 };
+  const MAX_PER_BUILDING = { house: 6, farm: 4, lumberCamp: 4, mine: 3, storehouse: 3, barracks: 2, school: 2, stables: 2, workshop: 2, university: 1, marketplace: 1, walls: 3, watchtower: 1 };
 
   // Per-location build slots: your Keep is roomy; outposts are small, so expansion matters.
   const BUILD_SLOTS_BASE = 7;

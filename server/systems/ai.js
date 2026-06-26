@@ -127,6 +127,31 @@ function evalUseRequest(state, team, r) {
   if (r.fromRole === 'BLACKSMITH' && (res === 'wood' || res === 'iron')) return { grant: true, why: 'the forge needs it' };
   return { deny: true, reason: (h && h.reason) ? 'for ' + (roleName(h.forRole) || 'the realm') + ' — ' + h.reason : '' };
 }
+// The Lord's own building GOAL: the next important structure it WANTS but can't yet afford. While it has
+// such a goal, the Lord reserves the resource it's short on FOR ITSELF — so the Steward doesn't sink that
+// wood/stone into outposts before the Lord can build its Barracks or tech. With no blocking goal (it can
+// afford what it wants, or wants nothing pressing), the Lord stays flexible and lets the resource flow.
+function lordBuildGoal(state, team) {
+  const planned = (t) => (team.buildings[t] || 0) + (team.buildQueue || []).filter((q) => q.type === t).length;
+  const want = [];
+  if (planned('lumberCamp') < 2) want.push('lumberCamp');   // wood economy underpins everything — protect it first
+  if (planned('barracks') < 1) want.push('barracks');
+  if (state.phase !== 'EARLY') {
+    if (planned('lumberCamp') < 3) want.push('lumberCamp');
+    if (planned('workshop') < 1) want.push('workshop');     // unlocks catapults
+    if (planned('school') < 1) want.push('school');         // unlocks education → research
+    if (planned('school') >= 1 && planned('university') < 1) want.push('university');
+    if (planned('stables') < 1) want.push('stables');       // unlocks cavalry
+  }
+  for (const b of want) {
+    const def = B.BUILDINGS[b]; if (!def) continue;
+    if (eco.canAfford(team, def.cost)) continue;            // can build it right now — not a blocking goal
+    let res = null, worst = 0;
+    for (const k in def.cost) { const short = def.cost[k] - (team.resources[k] || 0); if (short > worst) { worst = short; res = k; } }
+    if (res) return { building: b, res };
+  }
+  return null;
+}
 // The Lord proactively RESERVES the most strategically important resources for the role that needs
 // them most, with a stated goal — so weapons aren't starved of iron, expansion isn't starved of wood,
 // and so on. Reservations are released once their goal lapses; humans' own holds are never touched.
@@ -142,6 +167,18 @@ function lordManageReservations(state, team, sys, st, persona) {
   const cavalry = team.buildings.stables > 0;
   const R = team.resources;
   const cands = [];
+  // The Lord's OWN building goal comes first: lock the resource it's short on for itself so the Steward
+  // can't drain it on outposts before the Lord builds its Barracks/tech. (No goal ⇒ no self-lock.)
+  const goal = lordBuildGoal(state, team);
+  if (goal && (R[goal.res] || 0) >= 6) cands.push({ res: goal.res, forRole: 'LORD', reason: 'to build a ' + (B.BUILDINGS[goal.building] ? B.BUILDINGS[goal.building].name : goal.building), w: 95 });
+  // "I have a plan — hands off the wood." While saving for a wood/stone building the team can't yet
+  // afford, the Lord asks the council to CONSERVE that good so it actually ACCUMULATES (the Blacksmith
+  // eases off wood gear, the Steward defers outposts) instead of being nibbled away to a stuck
+  // equilibrium. With no such goal the Lord is flexible — no conserve, everyone spends freely.
+  if (goal && (goal.res === 'wood' || goal.res === 'stone')) {
+    team.conserve = team.conserve || {};
+    team.conserve[goal.res] = Math.max(team.conserve[goal.res] || 0, state.elapsed + 20);
+  }
   if (atWar && (R.iron || 0) >= 8) cands.push({ res: 'iron', forRole: 'BLACKSMITH', reason: 'to forge our weapons & armour', w: persona === 'warmonger' ? 100 : 70 });
   if (cavalry && atWar && (R.horses || 0) >= 2) cands.push({ res: 'horses', forRole: 'COMMANDER', reason: 'to muster our cavalry', w: 60 });
   if (fortifying && (R.stone || 0) >= 10) cands.push({ res: 'stone', forRole: 'LORD', reason: 'to fortify the realm with walls', w: persona === 'turtler' ? 90 : 55 });
@@ -287,19 +324,22 @@ function aiLord(state, team, sys, rng, persona, st) {
     // Food sits at its cap from turn 1 (it regrows) — only treat wood/stone/iron as "wasting".
     const capHit = ['wood', 'stone', 'iron'].some((k) => (team.resources[k] || 0) >= team.storageCap - 5);
     const wish = [];
-    // Foundation.
-    if (planned('barracks') < 1) wish.push('barracks');
-    if (planned('farm') < 1) wish.push('farm');
+    // Foundation. WOOD underpins everything (every building, every outpost, most gear), so establish a
+    // real wood income FIRST — two lumber camps before the Barracks — or the team crashes its wood and
+    // can never afford the Barracks, tech buildings (Workshop/School/University) or outposts.
     if (planned('lumberCamp') < 1) wish.push('lumberCamp');
+    if (planned('farm') < 1) wish.push('farm');
+    if (planned('lumberCamp') < 2) wish.push('lumberCamp');   // 2nd camp BEFORE the Barracks — wood income must scale early
+    if (planned('barracks') < 1) wish.push('barracks');
     if (planned('mine') < 1) wish.push('mine');
+    if (planned('lumberCamp') < 3) wish.push('lumberCamp');   // 3rd camp — chronic wood demand (outposts + tech + gear)
     if (planned('storehouse') < 1) wish.push('storehouse'); // raise caps early so we can stockpile
     if (atCap && planned('house') < 3) wish.push('house');
     if (planned('farm') < 2) wish.push('farm');
-    if (planned('lumberCamp') < 2) wish.push('lumberCamp');
     if (planned('mine') < 2) wish.push('mine');
     // Surplus idle labour with capped gatherers → expand gathering so workers aren't wasted.
     if (p.idle >= 4) {
-      if (planned('lumberCamp') < 3) wish.push('lumberCamp');
+      if (planned('lumberCamp') < 4) wish.push('lumberCamp');
       if (planned('mine') < 3) wish.push('mine');
       if (planned('farm') < 3) wish.push('farm');
     }
@@ -323,7 +363,7 @@ function aiLord(state, team, sys, rng, persona, st) {
     // first Barracks — training is more important than a little wasted surplus).
     if (capHit && hasBarracks && planned('storehouse') < 3) wish.unshift('storehouse');
 
-    const KEY = { storehouse: 1, school: 1, stables: 1, workshop: 1, university: 1, walls: 1, barracks: 1 };
+    const KEY = { lumberCamp: 1, storehouse: 1, school: 1, stables: 1, workshop: 1, university: 1, walls: 1, barracks: 1 };
     const defaultArea = pickBuildArea(state, team);
     const wallArea = bestWallArea(state, team);
     // Honour the Steward's "conserve wood" request: once the core economy stands, defer optional
@@ -458,10 +498,10 @@ function aiSteward(state, team, sys, rng, persona, st) {
     sites.explore(state, team, unscoutedAdj[0].id);
   }
   // Claim — priority by persona + current shortage.
-  // But DON'T starve the Lord's foundation: while we still lack a Barracks (the army's home), reserve
-  // enough wood & stone for it before sinking resources into new outposts. Outposts are expensive
-  // (60🪵+40🪨); without this the Steward drains every scrap and the Lord can never build the Barracks,
-  // so the team fields no army. The military base comes before expansion.
+  // Don't starve the Lord's FOUNDATION: while we still lack a Barracks (the army's home), reserve enough
+  // wood & stone for it before sinking resources into outposts. Beyond that, the Lord's own resource
+  // RESERVATIONS (it locks wood/stone for its tech goals) gate our spending — so here we only guard the
+  // very first Barracks; the Lord decides when wood is free for expansion.
   const noBarracks = (team.buildings.barracks || 0) < 1 && team.buildQueue.every((q) => q.type !== 'barracks');
   const bWood = (B.BUILDINGS.barracks.cost.wood || 0), bStone = (B.BUILDINGS.barracks.cost.stone || 0);
   const reserveForCore = noBarracks && ((team.resources.wood || 0) < bWood + 20 || (team.resources.stone || 0) < bStone + 10);
@@ -632,7 +672,7 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
       const want = pickComposition(team, { comp: ['swordsman', 'spearman', 'archer', 'cavalry'] }, enemyComposition(state, team), army).desired;
       item = GEAR_FOR_UNIT[want] || 'spears';
       if (want === 'archer' && (team.resources.arrows || 0) < 12) item = 'arrows';     // keep archers supplied
-      else if (persona === 'siege' && team.buildings.workshop > 0 && rng.chance(0.4)) item = 'siegeParts';
+      else if (team.buildings.workshop > 0 && (team.equipment.siegeParts || 0) < 8 && state.phase !== 'EARLY' && rng.chance(persona === 'siege' ? 0.55 : 0.3)) item = 'siegeParts';   // keep siege parts stocked so the Commander can field catapults for assaults
       else if (persona === 'armorer' && (team.resources.iron || 0) > 20 && rng.chance(0.45)) item = 'armor';
       else if (rng.chance(0.25)) item = 'armor';                                       // some armour for the tier bonus
     }
@@ -650,7 +690,7 @@ function enemyComposition(state, team) { return countArmy(state.teams[S.enemyOf(
 // Smart troop selection: counter the enemy (spears vs cavalry, cavalry vs archers, archers vs slow
 // infantry), keep a diverse force, and respect what we can build/afford. Returns the unit we WANT
 // (to request gear for) and the best one we can TRAIN right now.
-function pickComposition(team, cfg, enemyComp, ownComp) {
+function pickComposition(team, cfg, enemyComp, ownComp, siegeWanted) {
   const buildable = (u) => {
     if (u === 'cavalry' && (team.buildings.stables <= 0)) return false;
     if (u === 'catapult' && team.buildings.workshop <= 0) return false;
@@ -667,7 +707,12 @@ function pickComposition(team, cfg, enemyComp, ownComp) {
     if (u === 'cavalry') s += foeShare('archer') * 6;         // run down archers
     if (u === 'archer') s += (foeShare('spearman') + foeShare('swordsman')) * 3 + 1; // soften slow infantry
     if (u === 'swordsman') s += 2;                            // reliable all-rounder
-    if (u === 'catapult') s += 0.5;                           // siege utility
+    if (u === 'catapult') { s += 0.5;                         // siege utility
+      // When a siege is on the table (we have a Workshop and the enemy Keep is walled / it's late game),
+      // PRIZE a couple of catapults — they shred walls & buildings far faster than any other unit. A few
+      // suffice (they're fragile, so we don't want a one-note siege stack).
+      if (siegeWanted && (ownComp.catapult || 0) < 3) s += 6;
+    }
     s -= ((ownComp[u] || 0) / totalOwn) * 4;                  // diversity: avoid one-note armies
     if (u === 'militia') s -= 6;                              // last resort only
     return s;
@@ -705,12 +750,18 @@ function aiCommander(state, team, sys, rng, persona, st) {
 
   // Keep a training order flowing if recruits + trainers available — building a smart, countering mix.
   if (!st.acted && p.recruits >= 1 && p.trainers > 0 && team.training.length < 2) {
-    const pick = pickComposition(team, cfg, enemyComposition(state, team), countArmy(team));
+    // A siege is "wanted" once we have a Workshop and either it's late game or the enemy Keep is walled —
+    // that's when catapults earn their keep (they raze walls 50% faster and buildings far quicker).
+    const enemyKeep = state.areas[S.homeBase(S.enemyOf(team.team))];
+    const siegeWanted = (team.buildings.workshop || 0) > 0 && (state.phase === 'LATE' || (enemyKeep.buildings.walls || 0) > 0 || (enemyKeep.buildings.watchtower || 0) > 0 && state.phase !== 'EARLY');
+    const pick = pickComposition(team, cfg, enemyComposition(state, team), countArmy(team), siegeWanted);
     const homeBar = (state.areas[S.homeBase(team.team)].buildings.barracks || 0) > 0 ? S.homeBase(team.team) : army.barracksAreasOf(state, team)[0];
     if (homeBar && army.trainUnits(state, team, homeBar, pick.trainable, Math.min(4, Math.max(1, Math.round(p.recruits)))).ok) st.acted = true;
     // Ask the Blacksmith/Steward for exactly the gear our wanted troops need.
     requestGearFor(state, team, sys, st, pick.desired);
     if (pick.trainable !== pick.desired) requestGearFor(state, team, sys, st, pick.trainable);
+    // If we want catapults but lack the siege parts to train them, nudge the Blacksmith to forge some.
+    if (siegeWanted && (countArmy(team).catapult || 0) < 2 && !gearAfford(team, 'catapult')) requestGearFor(state, team, sys, st, 'catapult');
   }
 
   // ---- Strategic command: defend by priority (Keep first, then richest owned site), press a
