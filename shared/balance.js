@@ -377,7 +377,7 @@
     swordsman: { atk: 3, def: 3, speed: 70, vsKeep: 0.8, upkeep: 1 },
     archer:    { atk: 3, def: 1, speed: 75, vsKeep: 0.5, ranged: true, upkeep: 1 },
     cavalry:   { atk: 4, def: 2, speed: 120, vsKeep: 0.6, isCav: true, upkeep: 1.5 },
-    catapult:  { atk: 5, def: 1, speed: 45, vsKeep: 8,   upkeep: 2 },
+    catapult:  { atk: 10, def: 1, speed: 45, vsKeep: 8,   upkeep: 2 },
   };
   // Composition counters: per matching enemy soldier, a counter unit gains COUNTER_BONUS_PER strength,
   // capped at COUNTER_BONUS_MAX. Cavalry count enemy non-spear/non-cav units; spearmen count enemy cavalry.
@@ -413,7 +413,7 @@
   const ARCHER_OUTPOST_BONUS = 1.25;    // archers fight +25% when stationed on their team's own outpost
   // Building razing: an unopposed enemy force destroys a location's buildings, walls first.
   const BUILDING_RAZE_HP = 60;          // base HP per building (≈ 1 archer in 60s)
-  const RAZE_STAT = { catapult: 10, cavalry: 3, militia: 2, spearman: 2, swordsman: 2, archer: 1 }; // raze HP/sec each
+  const RAZE_STAT = { catapult: 15, cavalry: 3, militia: 2, spearman: 2, swordsman: 2, archer: 1 }; // raze HP/sec each
   const WALL_RAZE_MULT = 2;             // walls take twice as long and must fall first
   const KEEP_RAZE_MULT = 2;             // buildings at the Keep take 100% longer
   const KEEP_DEFENDER_BONUS = 1.5;      // +50% combat effectiveness for defenders at their own Keep
