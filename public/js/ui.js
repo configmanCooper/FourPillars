@@ -725,6 +725,15 @@
         '<button class="btn btn-sm" ' + (disPlus ? 'disabled' : '') + ' onclick="FP.UI.wAdj(\'' + j.k + '\',1)">+</button></div></div>';
     }
     html += '<div class="opt"><div class="opt-info"><div class="opt-name">Idle (ready)</div><div class="opt-desc">available to assign now</div></div><b>' + p.idle + '</b></div>';
+    // Scouts (Steward-only): drawn from idle, they explore & keep the frontier scouted. More = faster.
+    if (role === 'STEWARD') {
+      const sc = Math.round(p.scouts || 0);
+      const disMinus = locked || sc <= 0;
+      const disPlus = locked || sc >= B.SCOUT_MAX || p.idle <= 0;
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">🔭 Scouts <span class="muted" style="font-size:10px">' + sc + '/' + B.SCOUT_MAX + '</span></div><div class="opt-desc">explore &amp; keep the frontier scouted · ' + B.SCOUT_FULL + ' = full speed, fewer take longer · soldiers fight −' + Math.round(B.UNSCOUTED_COMBAT_PENALTY * 100) + '% in unscouted areas</div></div>' +
+        '<div><button class="btn btn-sm" ' + (disMinus ? 'disabled' : '') + ' onclick="FP.UI.setScouts(-1)">−</button> <b>' + sc + '</b> ' +
+        '<button class="btn btn-sm" ' + (disPlus ? 'disabled' : '') + ' onclick="FP.UI.setScouts(1)">+</button></div></div>';
+    }
     if (cooling > 0) {
       const soonest = Math.max(0, Math.ceil(Math.min.apply(null, coolBatches.map((b) => b.until)) - State.snapshot.elapsed));
       html += '<div class="opt" style="border-color:#7a5e2c"><div class="opt-info"><div class="opt-name" style="color:#d9a441">Idle (preparing) ⏳</div><div class="opt-desc">re-settling after reassignment · next ready in ~' + soonest + 's</div></div><b style="color:#d9a441">' + cooling + '</b></div>';

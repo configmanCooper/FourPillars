@@ -799,6 +799,9 @@ function tickRaze(state, dt, rng, log) {
         // new outpost (re-claim, pay wood again) to work the site — upgrades and stored cargo are lost.
         area.owner = foe; area.claimedBy = null; area.captureProgress = 0; area._razeHp = null; area._razeTarget = null;
         area.claimFund = null; area.revealed[foe] = true;
+        // Taking raw ground does NOT scout it — scouting follows outposts & scout parties, not occupation.
+        // The captor must rebuild an outpost here (or scout it) to gain vision; until then it fights blind.
+        area.scouted[foe] = false; area.scoutedUntil[foe] = 0;
         if (area.site) { area.site.cargo = 0; area.site.worked = false; area.site.level = 1; }
         S.recomputeBuildings(state, state.teams[owner]); S.recomputeBuildings(state, state.teams[foe]);
         log(foe, C.TEAM_META[foe].name + ' razed the outpost at ' + area.name + ' and seized the ground!', 'capture');

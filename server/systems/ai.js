@@ -808,6 +808,22 @@ function aiCommander(state, team, sys, rng, persona, st) {
         return;
       }
     }
+    // Seize an UNDEFENDED enemy outpost even when we are NOT globally dominant: it's a near-free capture
+    // that strips the enemy's economy and wins us territory/score. Gated only by a decisive LOCAL win and
+    // the Keep being safe (keepThreat already recalls us above) — NOT by the overall force ratio (which
+    // was the bug: a strong enemy main army elsewhere made us ignore their wide-open rear outposts).
+    if (army.unitCount(w) >= 2) {
+      const claimedU = (decide._claimed = decide._claimed || {});
+      const freebie = undefendedCaptureTarget(state, army, team, w, claimedU);
+      if (freebie) {
+        claimedU[freebie] = true;
+        const canHold = holdChanceAt(state, army, team, w, freebie) >= holdBar && army.unitCount(w) >= 3;
+        w.postGuard = canHold ? freebie : null;
+        army.command(state, team, w.id, canHold ? 'garrison' : 'raid', freebie);
+        say(state, team, sys, st, C.ROLES.COMMANDER, 'Seizing the undefended ' + state.areas[freebie].name + '!', 16);
+        return;
+      }
+    }
     if (!vulnerable) {
       const cv = team.caravans.find((c) => { const n = c.route[c.legIndex + 1]; return !c.escort && n && sys.sites.areaIsDangerous(state, team, n); });
       if (cv) { army.command(state, team, w.id, 'escort', cv.id); return; }
@@ -1091,6 +1107,28 @@ function captureOpportunity(state, army, team, w, winBar, holdBar, claimed) {
     const value = S.buildingsAt(a) * 3 + 4 + (a.site ? a.site.level + 1 : 0);
     const score = value + take * 5 + (hold ? 4 : 0);
     if (!best || score > best.score) best = { area: id, hold, enemyOwned: true, score, take };
+  }
+  return best;
+}
+// Enemy units physically standing on an area (for spotting UNDEFENDED posts).
+function enemyUnitsOn(state, team, areaId) {
+  const foe = S.enemyOf(team.team); let n = 0;
+  for (const h of state.teams[foe].armies) { if (areaOf(h) === areaId) n += unitCountG(h); }
+  return n;
+}
+// An enemy-held outpost that is (near) UNDEFENDED and this host can decisively take — the free-capture
+// target the strength-gated branch would skip when our overall army is the weaker one.
+function undefendedCaptureTarget(state, army, team, w, claimed) {
+  const foe = S.enemyOf(team.team); const ekId = S.homeBase(foe);
+  let best = null, bestScore = -1;
+  for (const id in state.areas) { const a = state.areas[id];
+    if (a.terrain === 'base' || id === ekId) continue;
+    if (a.owner !== foe) continue;
+    if (claimed && claimed[id]) continue;
+    if (enemyUnitsOn(state, team, id) > 1.0) continue;            // only (near-)undefended posts
+    if (winChanceAt(state, army, team, w, id) < 0.7) continue;    // must be a near-certain win for us
+    const value = S.buildingsAt(a) * 3 + 4 + (a.site ? a.site.level + 1 : 0);
+    if (value > bestScore) { bestScore = value; best = id; }
   }
   return best;
 }
