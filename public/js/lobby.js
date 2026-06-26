@@ -6,7 +6,16 @@
 
   function name() { return ($('nameInput').value || '').trim() || 'Player ' + Math.floor(Math.random() * 90 + 10); }
 
-  function matchPreset() { const el = $('matchLengthSel'); return el ? el.value : 'standard'; }
+  let selectedPreset = 'standard';
+  function matchPreset() { return selectedPreset; }
+  function refreshMatchButtons() {
+    const bar = $('matchLengthBar'); if (!bar) return;
+    const hostCanPick = State.isHost && (!State.lobby || State.lobby.status === 'lobby');
+    bar.querySelectorAll('button[data-preset]').forEach((b) => {
+      b.classList.toggle('btn-gold', b.getAttribute('data-preset') === selectedPreset);
+      b.disabled = !hostCanPick;
+    });
+  }
 
   $('createBtn').onclick = () => Net.createRoom(name(), matchPreset());
   $('joinBtn').onclick = () => { const code = ($('codeInput').value || '').trim().toUpperCase(); if (code.length === 4) Net.joinRoom(code, name()); };
@@ -39,6 +48,7 @@
     State.you = d.you; State.isHost = d.isHost;
     $('lobby-entry').classList.add('hidden'); $('lobby-room').classList.remove('hidden');
     $('roomCode').textContent = d.code;
+    refreshMatchButtons();
   });
 
   Net.on(C.EV.LOBBY_UPDATE, (d) => {
@@ -49,11 +59,8 @@
     $('roomCode').textContent = d.code;
     if (d.status === 'lobby') renderSlots(d);
     $('startBtn').disabled = !State.isHost;
-    const mlSel = $('matchLengthSel');
-    if (mlSel) {
-      if (d.matchPreset && d.matchPreset !== mlSel.value && (!State.isHost || d.status !== 'lobby')) mlSel.value = d.matchPreset;
-      mlSel.disabled = !(State.isHost && d.status === 'lobby');
-    }
+    if (d.matchPreset && !State.isHost) selectedPreset = d.matchPreset;
+    refreshMatchButtons();
     const diffBar = $('diffBar');
     if (diffBar) diffBar.classList.toggle('hidden', !(State.isHost && d.status === 'lobby'));
     $('lobbyHint').textContent = State.isHost
@@ -104,5 +111,6 @@
     release(team, role) { Net.setSlot(team, role, 'ai'); },
     setDiff(team, role, difficulty) { Net.setDifficulty(team, role, difficulty); },
     allDiff(difficulty) { Net.setAllDifficulty(difficulty); },
+    setMatch(preset) { selectedPreset = preset; refreshMatchButtons(); },
   };
 })();

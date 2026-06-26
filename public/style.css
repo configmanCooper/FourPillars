@@ -77,6 +77,8 @@ input:focus { outline: none; border-color: var(--gold); }
 .room-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .code-badge { font-family: 'MedievalSharp'; color: var(--gold-bright); font-size: 22px; letter-spacing: 3px; }
 .dev-toggle { font-size: 12px; color: var(--muted); }
+.match-length { display: flex; align-items: center; gap: 6px; }
+.match-length-label { color: var(--gold); font-size: 13px; font-weight: 600; margin-right: 2px; }
 .teams-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .team-h { font-family: 'Cinzel'; font-size: 18px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--panel-edge); }
 .team-h.blue { color: var(--blue-light); }

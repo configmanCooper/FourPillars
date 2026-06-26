@@ -43,13 +43,12 @@
       <div id="lobby-room" class="hidden">
         <div class="room-head">
           <div>Realm code: <span id="roomCode" class="code-badge">----</span></div>
-          <label class="dev-toggle" for="matchLengthSel">Match length:
-            <select id="matchLengthSel">
-              <option value="quick">Quick — 15 min</option>
-              <option value="standard" selected>Standard — 45 min</option>
-              <option value="extended">Extended — 1 h 30 min</option>
-            </select>
-          </label>
+          <div class="match-length" id="matchLengthBar">
+            <span class="match-length-label">⏳ Match length:</span>
+            <button class="btn btn-sm" data-preset="quick" onclick="FP.Lobby.setMatch('quick')">Quick · 15m</button>
+            <button class="btn btn-sm" data-preset="standard" onclick="FP.Lobby.setMatch('standard')">Standard · 45m</button>
+            <button class="btn btn-sm" data-preset="extended" onclick="FP.Lobby.setMatch('extended')">Extended · 90m</button>
+          </div>
         </div>
         <div id="diffBar" class="diff-bar hidden">
           <span class="diff-bar-label">🤖 AI difficulty (action speed):</span>
