@@ -165,12 +165,16 @@
 
   function createInitialState(opts) {
     opts = opts || {};
-    const devMode = opts.devMode !== undefined ? opts.devMode : B.DEV_MODE_DEFAULT;
-    const matchLength = opts.matchSeconds || (devMode ? B.DEV_MATCH_SECONDS : B.FULL_MATCH_SECONDS);
+    const presets = B.MATCH_PRESETS || { quick: 900, standard: 2700, extended: 5400 };
+    const preset = presets[opts.matchPreset] ? opts.matchPreset : (B.DEFAULT_MATCH_PRESET || 'standard');
+    const matchLength = opts.matchSeconds || presets[preset] ||
+      (opts.devMode ? B.DEV_MATCH_SECONDS : B.FULL_MATCH_SECONDS);
+    const devMode = opts.devMode !== undefined ? opts.devMode : (preset === 'quick');
     const state = {
       roomCode: opts.roomCode || null,
       mode: opts.mode || 'coop',
       devMode,
+      matchPreset: preset,
       status: 'lobby',
       seed: opts.seed || (Math.floor(Math.random() * 1e9) >>> 0),
       tick: 0,

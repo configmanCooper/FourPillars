@@ -38,13 +38,13 @@
       try { const u = new URL(location.href); u.searchParams.delete('server'); location.replace(u.toString()); return; } catch (e) {}
       location.reload();
     },
-    createRoom(name, devMode) { socket.emit(C.EV.CREATE_ROOM, { name, devMode, clientId }); },
+    createRoom(name, matchPreset) { socket.emit(C.EV.CREATE_ROOM, { name, matchPreset, clientId }); },
     joinRoom(code, name) { socket.emit(C.EV.JOIN_ROOM, { code, name, clientId }); },
     claimSlot(team, role) { socket.emit(C.EV.CLAIM_SLOT, { team, role }); },
     setSlot(team, role, controller) { socket.emit(C.EV.SET_SLOT, { team, role, controller }); },
     setDifficulty(team, role, difficulty) { socket.emit(C.EV.SET_DIFFICULTY, { team, role, difficulty }); },
     setAllDifficulty(difficulty) { socket.emit(C.EV.SET_DIFFICULTY, { all: true, difficulty }); },
-    start(devMode) { socket.emit(C.EV.START_GAME, { devMode }); },
+    start(matchPreset) { socket.emit(C.EV.START_GAME, { matchPreset }); },
     action(action, payload) { socket.emit(C.EV.SUBMIT_ACTION, { action, payload: payload || {} }); },
     chat(text) { socket.emit(C.EV.CHAT, { text }); },
     pause() { socket.emit(C.EV.PAUSE_REQUEST); },

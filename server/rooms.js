@@ -18,7 +18,7 @@ class RoomManager {
 
   createRoom(socket, payload) {
     let code; do { code = code4(); } while (this.rooms.has(code));
-    const state = S.createInitialState({ roomCode: code, devMode: payload.devMode !== false });
+    const state = S.createInitialState({ roomCode: code, matchPreset: payload.matchPreset });
     const room = { code, hostId: payload.clientId || socket.id, state, players: new Map(), interval: null };
     this.rooms.set(code, room);
     this.joinRoom(socket, { code, name: payload.name, clientId: payload.clientId });
@@ -107,9 +107,10 @@ class RoomManager {
     const room = this.rooms.get(socket._fp && socket._fp.code); if (!room) return;
     if (room.hostId !== socket._fp.pid) { socket.emit(C.EV.ERROR_MSG, { msg: 'Only the host can start.' }); return; }
     if (room.state.status !== 'lobby') return;
-    if (payload && typeof payload.devMode === 'boolean') {
-      room.state.devMode = payload.devMode;
-      room.state.matchLength = payload.devMode ? B.DEV_MATCH_SECONDS : B.FULL_MATCH_SECONDS;
+    if (payload && payload.matchPreset && B.MATCH_PRESETS && B.MATCH_PRESETS[payload.matchPreset]) {
+      room.state.matchPreset = payload.matchPreset;
+      room.state.matchLength = B.MATCH_PRESETS[payload.matchPreset];
+      room.state.devMode = payload.matchPreset === 'quick';
     }
     // Any unclaimed slot is already AI by default. Begin.
     room.state.status = 'playing';
@@ -313,7 +314,7 @@ class RoomManager {
     }
     this.io.to(room.code).emit(C.EV.LOBBY_UPDATE, {
       code: room.code, hostId: room.hostId, status: room.state.status,
-      devMode: room.state.devMode, slots,
+      devMode: room.state.devMode, matchPreset: room.state.matchPreset, slots,
     });
   }
 }

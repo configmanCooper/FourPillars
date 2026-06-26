@@ -11,6 +11,11 @@
   const DEV_MATCH_SECONDS = 12 * 60;    // 12 min dev match
   const DEV_MODE_DEFAULT = true;        // prototype defaults to short matches
 
+  // Selectable match lengths offered in the lobby dropdown.
+  const MATCH_PRESETS = { quick: 15 * 60, standard: 45 * 60, extended: 90 * 60 };
+  const DEFAULT_MATCH_PRESET = 'standard';
+
+
   // Phase boundaries as fraction of match elapsed.
   const PHASE_BOUNDS = { MID: 0.20, LATE: 0.62 };
 
@@ -485,7 +490,7 @@
   const AI_DIFFICULTY_INTERVAL = { easy: 10, medium: 5, hard: 2 };
 
   return {
-    TICK_MS, FULL_MATCH_SECONDS, DEV_MATCH_SECONDS, DEV_MODE_DEFAULT, PHASE_BOUNDS,
+    TICK_MS, FULL_MATCH_SECONDS, DEV_MATCH_SECONDS, DEV_MODE_DEFAULT, MATCH_PRESETS, DEFAULT_MATCH_PRESET, PHASE_BOUNDS,
     START_RESOURCES, STORAGE_BASE, STORAGE_PER_STOREHOUSE, WORKERS_PER_BUILDING,
     START_POP, START_HOUSING, HOUSING_PER_HOUSE, POP_GROWTH_PER_SEC, FOOD_PER_POP, FOOD_PER_SOLDIER,
     WORKER_YIELD, TOOLS_BONUS, MINER_STONE_YIELD, MINER_IRON_YIELD, DEFAULT_MINE_FOCUS, AI_MINE_FOCUS_MIN, AI_MINE_FOCUS_MAX, TOOL_LIFETIME_SEC,

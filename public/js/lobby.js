@@ -6,10 +6,12 @@
 
   function name() { return ($('nameInput').value || '').trim() || 'Player ' + Math.floor(Math.random() * 90 + 10); }
 
-  $('createBtn').onclick = () => Net.createRoom(name(), $('devToggle') ? $('devToggle').checked : true);
+  function matchPreset() { const el = $('matchLengthSel'); return el ? el.value : 'standard'; }
+
+  $('createBtn').onclick = () => Net.createRoom(name(), matchPreset());
   $('joinBtn').onclick = () => { const code = ($('codeInput').value || '').trim().toUpperCase(); if (code.length === 4) Net.joinRoom(code, name()); };
   $('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('joinBtn').click(); });
-  $('startBtn').onclick = () => Net.start($('devToggle').checked);
+  $('startBtn').onclick = () => Net.start(matchPreset());
 
   // ---- Server connection control (lets a static / GitHub Pages client point at a hosted server) ----
   (function serverConfig() {
@@ -47,6 +49,11 @@
     $('roomCode').textContent = d.code;
     if (d.status === 'lobby') renderSlots(d);
     $('startBtn').disabled = !State.isHost;
+    const mlSel = $('matchLengthSel');
+    if (mlSel) {
+      if (d.matchPreset && d.matchPreset !== mlSel.value && (!State.isHost || d.status !== 'lobby')) mlSel.value = d.matchPreset;
+      mlSel.disabled = !(State.isHost && d.status === 'lobby');
+    }
     const diffBar = $('diffBar');
     if (diffBar) diffBar.classList.toggle('hidden', !(State.isHost && d.status === 'lobby'));
     $('lobbyHint').textContent = State.isHost
