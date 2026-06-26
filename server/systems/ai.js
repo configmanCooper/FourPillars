@@ -486,6 +486,35 @@ function aiSteward(state, team, sys, rng, persona, st) {
       if (sites.startExpedition(state, team, elig[0].id, true).ok) { st.acted = true; st.cd.expedition = state.elapsed + 40; say(state, team, sys, st, C.ROLES.STEWARD, elig[0].name + ' departs — fortune awaits!', 30); }
     }
   }
+  // ---- Stewardship: adopt a standing policy matching our greatest need, and occasionally enact a
+  //      beneficial timed action when goods can be spared. (AI ignores the human-only supervise game.)
+  if ((team.stewardPolicyCooldownUntil || 0) <= state.elapsed) {
+    const res = team.resources;
+    const scarce = ['food', 'wood', 'stone', 'iron'].sort((a, b) => (res[a] || 0) - (res[b] || 0))[0];
+    let wantPol = 'pol_' + scarce;
+    const minRes = Math.min(res.food || 0, res.wood || 0, res.stone || 0, res.iron || 0);
+    if (minRes > team.storageCap * 0.5) wantPol = 'pol_growth';   // comfortably supplied — lean into growth
+    if (team.stewardPolicy !== wantPol) eco.setStewardPolicy(state, team, wantPol);
+  }
+  if (!st.acted && (team.stewardActionCooldownUntil || 0) <= state.elapsed && (st.cd.stewardAction || 0) <= state.elapsed) {
+    const cand = [];
+    if (!team._starving && team.pop.total < team.housing) cand.push('fertility');
+    if (team.training && team.training.length) cand.push('warDrills');
+    if (team.buildQueue && team.buildQueue.length) cand.push('corvee');
+    if (team.pop.idle >= 5) cand.push('overseers');
+    if ((team.buildings.university || 0) > 0) cand.push('scholars');
+    cand.push('postRoads');
+    for (const id of cand) {
+      const a = B.STEWARD_ACTIONS_BY_ID[id];
+      if (!a) continue;
+      if (((team.stewardActionCD && team.stewardActionCD[id]) || 0) > state.elapsed) continue;
+      if (!eco.canAfford(team, a.cost)) continue;
+      if (a.workers && team.pop.idle < a.workers + 2) continue;       // keep a couple of idle workers in reserve
+      let tooPoor = false; for (const k in a.cost) if ((team.resources[k] || 0) - a.cost[k] < team.storageCap * 0.15) tooPoor = true;
+      if (tooPoor) continue;
+      if (eco.doStewardAction(state, team, id).ok) { st.acted = true; st.cd.stewardAction = state.elapsed + 60; say(state, team, sys, st, C.ROLES.STEWARD, a.glyph + ' ' + a.name + ' — for the realm!', 25); break; }
+    }
+  }
   // ---- Caravan guards: ask the Commander for guards, then station them where caravans are most
   //      valuable & most exposed (relics first, then iron/horses; weight by how dangerous the route is).
   const home = S.homeBase(team.team);

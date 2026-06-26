@@ -18,6 +18,15 @@ function canBuildAt(state, team, areaId) {
   return { ok: true, area };
 }
 
+// Effective construction cost after the Thrifty Builders Stewardship policy (−20% etc.), clamped sane.
+function effectiveBuildCost(team, type) {
+  const base = (B.BUILDINGS[type] && B.BUILDINGS[type].cost) || {};
+  const mult = Math.max(0.1, 1 + eco.stewardStat(team, 'buildCost'));
+  const out = {};
+  for (const k in base) out[k] = Math.max(0, Math.round(base[k] * mult));
+  return out;
+}
+
 function queueBuilding(state, team, areaId, type) {
   const def = B.BUILDINGS[type];
   if (!def) return { ok: false, reason: 'Unknown building.' };
@@ -33,11 +42,12 @@ function queueBuilding(state, team, areaId, type) {
   if (!areaId || !state.areas[areaId]) areaId = S.homeBase(team.team);
   const chk = canBuildAt(state, team, areaId);
   if (!chk.ok) return chk;
-  if (!eco.canAfford(team, def.cost)) return { ok: false, reason: 'Not enough resources for ' + def.name + '.' };
-  eco.spendFor(team, def.cost, 'LORD', 'building ' + def.name + ' at ' + chk.area.name);
+  const cost = effectiveBuildCost(team, type);
+  if (!eco.canAfford(team, cost)) return { ok: false, reason: 'Not enough resources for ' + def.name + '.' };
+  eco.spendFor(team, cost, 'LORD', 'building ' + def.name + ' at ' + chk.area.name);
   const pol = eco.policy(team);
-  const speed = (pol && pol.buildMult) ? pol.buildMult : 1;
-  team.buildQueue.push({ id: S.uid('bq'), type, areaId, remaining: def.buildTime / speed, total: def.buildTime / speed });
+  const speed = ((pol && pol.buildMult) ? pol.buildMult : 1) * (1 + eco.stewardStat(team, 'buildSpeed'));   // Industry policy + Corvée Labour
+  team.buildQueue.push({ id: S.uid('bq'), type, areaId, remaining: def.buildTime / speed, total: def.buildTime / speed, paidCost: cost });
   return { ok: true, msg: 'Queued ' + def.name + ' at ' + chk.area.name + '.' };
 }
 
@@ -45,7 +55,7 @@ function cancelBuilding(state, team, id) {
   const idx = team.buildQueue.findIndex((q) => q.id === id);
   if (idx < 0) return { ok: false, reason: 'Not in queue.' };
   const q = team.buildQueue[idx];
-  eco.refund(team, B.BUILDINGS[q.type].cost);
+  eco.refund(team, q.paidCost || B.BUILDINGS[q.type].cost);   // refund exactly what was paid (discounts included)
   team.buildQueue.splice(idx, 1);
   return { ok: true };
 }
@@ -76,4 +86,4 @@ function tickBuildings(state, team, dt, log) {
   }
 }
 
-module.exports = { queueBuilding, cancelBuilding, tickBuildings, applyEffect, canBuildAt };
+module.exports = { queueBuilding, cancelBuilding, tickBuildings, applyEffect, canBuildAt, effectiveBuildCost };

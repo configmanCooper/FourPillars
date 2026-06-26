@@ -43,6 +43,7 @@
   });
 
   Net.on(C.EV.ACTION_RESULT, (r) => {
+    if (r.action === 'supervise') { if (r.ok && r.data && window.FP.UI && UI.onSuperviseResult) UI.onSuperviseResult(r.data); else if (!r.ok && r.reason) { /* swallow supervise spam rejections */ } return; }
     if (!r.ok && r.reason) UI.toast(r.reason, true);
     else if (r.msg) UI.toast(r.msg, false);
   });

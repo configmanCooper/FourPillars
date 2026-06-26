@@ -150,7 +150,7 @@ function guardSkirmish(state, team, areaId, guards) {
   const army = require('./army.js');
   const enemyN = enemyTroopsAt(state, team, areaId);
   const gLoss = Math.min(guards, Math.max(1, Math.round(enemyN * B.GUARD_LOSS_PER)));
-  let eKill = Math.min(enemyN, Math.max(1, Math.round(guards * B.GUARD_KILL_PER)));
+  let eKill = Math.min(enemyN, Math.max(1, Math.round(guards * B.GUARD_KILL_PER * (1 + eco.stewardStat(team, 'guardStrength', state.elapsed)))));
   const totalKill = eKill;
   const enemy = state.teams[S.enemyOf(team.team)];
   for (const u of C.UNITS) {
@@ -208,7 +208,7 @@ function tickSites(state, team, dt, rng, log) {
     const scouts = Math.max(0, Math.round(team.pop.scouts || 0));
     if (!area) team.scoutJob = null;
     else if (scouts > 0) {
-      team.scoutJob.progress += ((scouts / B.SCOUT_FULL) / B.EXPLORE_TIME) * dt;
+      team.scoutJob.progress += ((scouts / B.SCOUT_FULL) / B.EXPLORE_TIME) * (1 + eco.stewardStat(team, 'scoutSpeed', state.elapsed)) * dt;
       if (team.scoutJob.progress >= 1) {
         area.revealed[team.team] = true; area.scouted[team.team] = true;
         area.scoutedUntil[team.team] = state.elapsed + B.SCOUT_DECAY_SEC;
@@ -234,7 +234,7 @@ function tickSites(state, team, dt, rng, log) {
     if (!y) continue;
     const wm = B.WORK_MODES[area.site.workMode] || B.WORK_MODES.standard;
     const cm = B.CARAVAN_MODES[area.site.caravanMode] || B.CARAVAN_MODES.standard;
-    const amt = (y[area.resource] || 0) * area.site.level * wm.production * cm.yield;
+    const amt = (y[area.resource] || 0) * area.site.level * wm.production * cm.yield * eco.stewardGatherMult(team, area.resource);
     area.site.cargo += amt * dt;
     // Dispatch a caravan once cargo reaches this good's threshold AND the min interval has passed.
     // Most goods ship in big loads (60); precious goods like relics ship one at a time.
@@ -265,7 +265,7 @@ function tickSites(state, team, dt, rng, log) {
     const toA = state.areas[cv.route[cv.legIndex + 1]];
     if (!toA) { deliver(state, team, cv, log); team.caravans.splice(i, 1); continue; }
     const legLen = dist(fromA, toA);
-    cv.t += (B.CARAVAN_SPEED * (cv.speedMult || 1) * dt) / Math.max(1, legLen);
+    cv.t += (B.CARAVAN_SPEED * (cv.speedMult || 1) * (1 + eco.stewardStat(team, 'caravanSpeed', state.elapsed)) * dt) / Math.max(1, legLen);
     cv.x = fromA.x + (toA.x - fromA.x) * Math.min(1, cv.t);
     cv.y = fromA.y + (toA.y - fromA.y) * Math.min(1, cv.t);
     if (cv.t >= 1) {

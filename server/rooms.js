@@ -264,7 +264,7 @@ class RoomManager {
     }
     if (!team) { socket.emit(C.EV.ERROR_MSG, { msg: 'You do not control a role.' }); return; }
     const res = sim.applyAction(room.state, team, role, payload.action, payload.payload);
-    socket.emit(C.EV.ACTION_RESULT, { action: payload.action, ok: res.ok, msg: res.msg, reason: res.reason });
+    socket.emit(C.EV.ACTION_RESULT, { action: payload.action, ok: res.ok, msg: res.msg, reason: res.reason, data: res.data });
     // Push a fresh snapshot to everyone so the action's effect appears immediately (not next tick).
     if (res.ok) this.io.to(room.code).emit(C.EV.SNAPSHOT, sim.snapshot(room.state));
   }

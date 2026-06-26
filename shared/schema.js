@@ -105,7 +105,7 @@
       // (desired = what the Steward asked for; effective = what the tool stock can currently equip),
       // and how miner labour is split between iron (mineIronFocus) and stone (the remainder).
       gather: { desired: { food: 0, wood: 0, mine: 0 }, effective: { food: 0, wood: 0, mine: 0 }, mineIronFocus: B.DEFAULT_MINE_FOCUS },
-      buildings: { house: 0, farm: 0, lumberCamp: 0, mine: 0, storehouse: 0, barracks: 0, school: 0, stables: 0, workshop: 0, university: 0, walls: 0 }, // aggregate cache (recomputed from owned areas)
+      buildings: { house: 0, farm: 0, lumberCamp: 0, mine: 0, storehouse: 0, barracks: 0, school: 0, stables: 0, workshop: 0, university: 0, marketplace: 0, walls: 0 }, // aggregate cache (recomputed from owned areas)
       buildQueue: [],
       training: [],           // Commander training jobs: [{id, area, unitType, count, progress}]
       policy: null,
@@ -138,6 +138,14 @@
       expeditionOffers: [],      // expedition ids currently on offer (EXPEDITION_OFFER_COUNT)
       expeditionOffersIn: 0,     // seconds until the offer set rotates
       scoutJob: null,            // active scouting target { areaId, progress } (Steward-driven)
+      // Stewardship: standing policy, timed action effects, and their cooldowns.
+      stewardPolicy: null,                 // active standing policy key (B.STEWARD_POLICIES) or null
+      stewardPolicyCooldownUntil: 0,       // elapsed time until the policy may be swapped again
+      stewardEffects: [],                  // active timed action effects: [{ id, until, workers }]
+      stewardActionCooldownUntil: 0,       // global gate: elapsed time until ANY next action
+      stewardActionCD: {},                 // per-action id -> elapsed time until that action may repeat
+      marketTradeUntil: 0,                 // elapsed time until the next market barter is allowed
+      superviseJob: null,                  // SERVER-ONLY secret: { resource, pos } (stripped from snapshots)
       militaryLog: [],           // last-5 Commander actions, for the Lord's Military Overview
       razeScore: 0,              // persistent score from razing enemy buildings (3 each, 6 at Keep)
       militaryPolicy: B.MILITARY_POLICY_DEFAULT, // Lord-set stance: aggressive/balanced/defensive

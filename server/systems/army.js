@@ -152,7 +152,7 @@ function tickTraining(state, team, dt) {
     const cap = Math.min(B.TRAINERS_PER_BARRACKS * area.buildings.barracks, trainersLeft);
     if (cap <= 0) continue;
     trainersLeft -= cap;
-    job.progress += (cap / B.TRAIN_SECONDS_PER_UNIT) * dt;
+    job.progress += (cap / B.TRAIN_SECONDS_PER_UNIT) * (1 + eco.stewardStat(team, 'trainSpeed')) * dt;
     let guard = 0;
     while (job.progress >= 1 && job.count > 0 && guard < 20) {
       guard++;
@@ -316,6 +316,7 @@ function hostSpeed(team, g) {
   if (g.formation === 'shieldWall') speed *= B.FORMATIONS.shieldWall.speedMult;
   const doc = team.doctrine ? B.DOCTRINES[team.doctrine] : null;
   if (doc && doc.speedMult) speed *= doc.speedMult;
+  speed *= (1 + eco.stewardStat(team, 'armySpeed'));   // Rally the Banners
   return speed;
 }
 function tickMovement(state, team, dt) {
@@ -412,6 +413,7 @@ function strength(team, g, enemyComp, wallMult, onOwnOutpost, unscouted) {
   if (doc) { if (doc.atkMult) atk *= doc.atkMult; if (doc.defMult) def *= doc.defMult; }
   const mp = team.militaryPolicy ? B.MILITARY_POLICIES[team.militaryPolicy] : null;
   if (mp) { if (mp.atkMult) atk *= mp.atkMult; if (mp.defMult) def *= mp.defMult; }
+  def *= (1 + eco.stewardStat(team, 'troopDef'));   // Muster the Levy — DEFENCE only
   atk *= B.MORALE[g.morale] || 1; def *= B.MORALE[g.morale] || 1;
   // Fighting blind: in an area this team hasn't scouted, soldiers fight at a penalty to attack AND defence.
   if (unscouted) { const m = 1 - B.UNSCOUTED_COMBAT_PENALTY; atk *= m; def *= m; }

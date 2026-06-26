@@ -20,6 +20,52 @@ function researchStat(team, stat) {
 // Max researchers a team can field (4 per University) and whether they have a University at all.
 function maxResearchers(team) { return (team.buildings.university || 0) * B.RESEARCHERS_PER_UNIVERSITY; }
 
+// ---- Stewardship: aggregate the additive bonus a stat gets from the standing policy + active actions. ----
+// Consumers apply it as `rate *= (1 + stewardStat(team, stat))`. Expired effects contribute nothing
+// (they are pruned in tickEconomy, but we also skip them here so a late prune never over-credits).
+function stewardStat(team, stat, elapsed) {
+  if (elapsed == null) elapsed = (team._elapsed || 0);
+  let v = 0;
+  const pol = team.stewardPolicy && B.STEWARD_POLICIES[team.stewardPolicy];
+  if (pol && pol.effect && pol.effect[stat] != null) v += pol.effect[stat];
+  const fx = team.stewardEffects || [];
+  for (const e of fx) {
+    if (!e || e.until <= elapsed) continue;
+    const a = B.STEWARD_ACTIONS_BY_ID[e.id];
+    if (a && a.effect && a.effect[stat] != null) v += a.effect[stat];
+  }
+  return v;
+}
+// Flat storage bonus from active Emergency Stores effects (not a multiplier).
+function stewardStorageFlat(team, elapsed) {
+  if (elapsed == null) elapsed = (team._elapsed || 0);
+  let v = 0;
+  for (const e of (team.stewardEffects || [])) {
+    if (!e || e.until <= elapsed) continue;
+    const a = B.STEWARD_ACTIONS_BY_ID[e.id];
+    if (a && a.effect && a.effect.storage) v += a.effect.storage;
+  }
+  return v;
+}
+// Combined gather multiplier (1 + per-resource policy + global gatherAll) for one resource.
+function stewardGatherMult(team, res, elapsed) {
+  return 1 + stewardStat(team, B.gatherStatKey(res), elapsed) + stewardStat(team, 'gatherAll', elapsed);
+}
+// Return any committed workers and drop effects whose timer has elapsed.
+function pruneStewardEffects(state, team) {
+  const fx = team.stewardEffects;
+  if (!fx || !fx.length) return;
+  let changed = false;
+  for (let i = fx.length - 1; i >= 0; i--) {
+    if (fx[i].until <= state.elapsed) {
+      const w = fx[i].workers || 0;
+      if (w > 0) { const back = Math.min(w, team.pop.away || 0); team.pop.away -= back; team.pop.idle += back; }
+      fx.splice(i, 1); changed = true;
+    }
+  }
+  if (changed) recomputeDerived(team);
+}
+
 
 // ---- Individual forged-gear inventory --------------------------------------------------------
 // team.gearInv[item] = array of forged item QUALITIES not yet equipped to a soldier/worker. The legacy
@@ -110,7 +156,7 @@ function recomputeDerived(team) {
   if (p.researchers > rcap) { p.idle += p.researchers - rcap; p.researchers = Math.max(0, rcap); }
   p.educated = Math.min(p.educated, workforce(team));
   p.total = workforce(team) + p.recruits + p.soldiers + (p.away || 0);
-  team.storageCap = B.STORAGE_BASE + team.buildings.storehouse * B.STORAGE_PER_STOREHOUSE + researchStat(team, 'storage');
+  team.storageCap = B.STORAGE_BASE + team.buildings.storehouse * B.STORAGE_PER_STOREHOUSE + researchStat(team, 'storage') + stewardStorageFlat(team);
   team.housing = B.START_HOUSING + team.buildings.house * (B.HOUSING_PER_HOUSE + researchStat(team, 'housing'));
 }
 
@@ -172,10 +218,10 @@ function gatherRates(team) {
   // Research productivity bonuses (Crop Rotation / Logging / Quarrying / Deep-Vein Mining) and the
   // Steward's DANGEROUS-work toggle (+50% output on that pool, paid for in worker lives elsewhere).
   const dw = team.dangerWork || {};
-  const foodRes = (1 + researchStat(team, 'food')) * (dw.food ? (1 + B.DANGER_YIELD_BONUS) : 1);
-  const woodRes = (1 + researchStat(team, 'wood')) * (dw.wood ? (1 + B.DANGER_YIELD_BONUS) : 1);
-  const stoneRes = (1 + researchStat(team, 'stone')) * (dw.mine ? (1 + B.DANGER_YIELD_BONUS) : 1);
-  const ironRes = (1 + researchStat(team, 'iron')) * (dw.mine ? (1 + B.DANGER_YIELD_BONUS) : 1);
+  const foodRes = (1 + researchStat(team, 'food')) * (dw.food ? (1 + B.DANGER_YIELD_BONUS) : 1) * stewardGatherMult(team, 'food');
+  const woodRes = (1 + researchStat(team, 'wood')) * (dw.wood ? (1 + B.DANGER_YIELD_BONUS) : 1) * stewardGatherMult(team, 'wood');
+  const stoneRes = (1 + researchStat(team, 'stone')) * (dw.mine ? (1 + B.DANGER_YIELD_BONUS) : 1) * stewardGatherMult(team, 'stone');
+  const ironRes = (1 + researchStat(team, 'iron')) * (dw.mine ? (1 + B.DANGER_YIELD_BONUS) : 1) * stewardGatherMult(team, 'iron');
   const food = eff(p.farmers, g.effective.food) * B.WORKER_YIELD.farmer.food * foodBuild * foodRes;
   const wood = eff(p.woodcutters, g.effective.wood) * B.WORKER_YIELD.woodcutter.wood * woodBuild * woodRes;
   const focus = g.mineIronFocus;
@@ -221,7 +267,7 @@ function tickEconomy(state, team, dt, log) {
 
   // Research: each Researcher at a University yields 1 RP per RESEARCH_INTERVAL seconds (Scholarship speeds it).
   if ((p.researchers || 0) > 0 && (team.buildings.university || 0) > 0) {
-    const rate = (p.researchers / B.RESEARCH_INTERVAL) * (1 + researchStat(team, 'research'));
+    const rate = (p.researchers / B.RESEARCH_INTERVAL) * (1 + researchStat(team, 'research')) * (1 + stewardStat(team, 'researchRate'));
     team.researchProgress = (team.researchProgress || 0) + rate * dt;
     while (team.researchProgress >= 1) { team.researchProgress -= 1; team.researchPoints = (team.researchPoints || 0) + 1; }
   }
@@ -241,11 +287,14 @@ function tickEconomy(state, team, dt, log) {
       if (p.cooling[i].until <= state.elapsed) { p.idle += p.cooling[i].n; p.cooling.splice(i, 1); }
     }
   }
+  // Expire finished Stewardship action effects (returning any workers they tied up).
+  pruneStewardEffects(state, team);
   recomputeDerived(team);
 
   // Food consumption & population growth.
   const foodUse = (pol && pol.foodUse ? pol.foodUse : 1);
-  const eat = (p.total * B.FOOD_PER_POP + p.soldiers * B.FOOD_PER_SOLDIER) * foodUse * dt;
+  const upkeepMult = Math.max(0.1, 1 + stewardStat(team, 'soldierUpkeep'));
+  const eat = (p.total * B.FOOD_PER_POP + p.soldiers * B.FOOD_PER_SOLDIER * upkeepMult) * foodUse * dt;
   team.resources.food -= eat;
   let starving = false;
   if (team.resources.food < 0) { team.resources.food = 0; starving = true; }
@@ -254,7 +303,7 @@ function tickEconomy(state, team, dt, log) {
   // recomputeDerived rounds the fractional growth in `idle` to 0 every tick (it never grew).
   if (!starving && p.total < team.housing) {
     const surplus = clamp(team.resources.food / Math.max(1, p.total * 6), 0, 1);
-    const popMult = ((pol && pol.popMult) ? pol.popMult : 1) * (1 + researchStat(team, 'popGrowth'));
+    const popMult = ((pol && pol.popMult) ? pol.popMult : 1) * (1 + researchStat(team, 'popGrowth')) * (1 + stewardStat(team, 'popGrowth'));
     p.growthProgress = (p.growthProgress || 0) + B.POP_GROWTH_PER_SEC * surplus * popMult * dt;
     while (p.growthProgress >= 1 && p.total < team.housing) {
       p.growthProgress -= 1; p.idle += 1; recomputeDerived(team);
@@ -515,8 +564,96 @@ module.exports = {
   grantHold, hasGrant, grantLeft,
   gatherRates, clampGather, gatherPoolWorkers, setGatherTools, setMineFocus, conserving,
   setDangerWork, setResearchers, buyResearch, maxResearchers, researchStat, researchTier, setScouts,
+  stewardStat, stewardStorageFlat, stewardGatherMult, pruneStewardEffects,
+  doStewardAction, setStewardPolicy, marketTrade, supervise,
   addGear, takeBestGear, reconcileGearInv,
 };
+
+// ---------- Stewardship: actions / standing policy / market barter / supervise minigame ----------
+function doStewardAction(state, team, id) {
+  const a = B.STEWARD_ACTIONS_BY_ID[id];
+  if (!a) return { ok: false, reason: 'Unknown stewardship action.' };
+  const e = state.elapsed;
+  if ((team.stewardActionCooldownUntil || 0) > e) return { ok: false, reason: 'The council just acted — wait ' + Math.ceil(team.stewardActionCooldownUntil - e) + 's before another action.' };
+  if (((team.stewardActionCD && team.stewardActionCD[id]) || 0) > e) return { ok: false, reason: a.name + ' is on cooldown (' + Math.ceil(team.stewardActionCD[id] - e) + 's).' };
+  const heldKey = heldCostForRole(team, 'STEWARD', a.cost);
+  if (heldKey) return { ok: false, reason: 'The Lord has reserved ' + heldKey + '.' };
+  if (!canAfford(team, a.cost)) return { ok: false, reason: 'Not enough resources for ' + a.name + '.' };
+  const workers = a.workers || 0;
+  if (workers > 0 && team.pop.idle < workers) return { ok: false, reason: a.name + ' needs ' + workers + ' idle workers (have ' + team.pop.idle + ').' };
+  spendFor(team, a.cost, 'STEWARD', a.name);
+  if (a.instant) {
+    for (const k in a.instant) {
+      if (k === 'rp') team.researchPoints = (team.researchPoints || 0) + a.instant.rp;
+      else addResource(team, k, a.instant[k]);
+    }
+  }
+  if (workers > 0) { team.pop.idle -= workers; team.pop.away = (team.pop.away || 0) + workers; recomputeDerived(team); }
+  if (workers > 0 || (a.effect && a.durationSec > 0)) {
+    team.stewardEffects = team.stewardEffects || [];
+    team.stewardEffects.push({ id: a.id, until: e + (a.durationSec || 0), workers });
+  }
+  team.stewardActionCooldownUntil = e + B.STEWARD_ACTION_GLOBAL_CD;
+  team.stewardActionCD = team.stewardActionCD || {};
+  team.stewardActionCD[id] = e + a.cooldownSec;
+  return { ok: true, msg: a.glyph + ' ' + a.name + (a.durationSec > 0 ? ' enacted (' + a.durationSec + 's).' : ' done.') };
+}
+
+function setStewardPolicy(state, team, key) {
+  if (key != null && !B.STEWARD_POLICIES[key]) return { ok: false, reason: 'Unknown policy.' };
+  const e = state.elapsed;
+  if (team.stewardPolicy === (key || null)) return { ok: false, reason: 'That policy is already in force.' };
+  if ((team.stewardPolicyCooldownUntil || 0) > e) return { ok: false, reason: 'Policy was just changed — wait ' + Math.ceil(team.stewardPolicyCooldownUntil - e) + 's.' };
+  team.stewardPolicy = key || null;
+  team.stewardPolicyCooldownUntil = e + B.STEWARD_POLICY_CD;
+  const p = key ? B.STEWARD_POLICIES[key] : null;
+  return { ok: true, msg: p ? (p.glyph + ' Policy: ' + p.name + ' — ' + p.desc) : 'Stewardship policy cleared.' };
+}
+
+function marketTrade(state, team, from, to) {
+  if ((team.buildings.marketplace || 0) <= 0) return { ok: false, reason: 'Build a Marketplace first (ask the Lord).' };
+  if (!B.MARKET_TRADE_RESOURCES.includes(from) || !B.MARKET_TRADE_RESOURCES.includes(to)) return { ok: false, reason: 'You can only barter common goods.' };
+  if (from === to) return { ok: false, reason: 'Pick two different goods.' };
+  const e = state.elapsed;
+  if ((team.marketTradeUntil || 0) > e) return { ok: false, reason: 'The market is resting — ' + Math.ceil(team.marketTradeUntil - e) + 's.' };
+  if (heldCostForRole(team, 'STEWARD', { [from]: B.MARKET_TRADE_IN })) return { ok: false, reason: 'The Lord has reserved ' + from + '.' };
+  if ((team.resources[from] || 0) < B.MARKET_TRADE_IN) return { ok: false, reason: 'Need ' + B.MARKET_TRADE_IN + ' ' + from + ' to trade.' };
+  const out = team.stewardPolicy === 'pol_trade' ? B.MARKET_TRADE_OUT_POLICY : B.MARKET_TRADE_OUT;
+  spendFor(team, { [from]: B.MARKET_TRADE_IN }, 'STEWARD', 'market trade');
+  addResource(team, to, out);
+  team.marketTradeUntil = e + B.MARKET_TRADE_COOLDOWN;
+  return { ok: true, msg: '⚖️ Traded ' + B.MARKET_TRADE_IN + ' ' + from + ' → ' + out + ' ' + to + '.' };
+}
+
+// Human-only supervise minigame. The token's grid position is kept SERVER-SIDE secret (stripped from
+// snapshots) so the client can't read it; only the per-click {hit/revealed} result is returned.
+function supervise(state, team, resource, index) {
+  if (!B.SUPERVISE_RESOURCES.includes(resource)) return { ok: false, reason: 'Cannot supervise that.' };
+  const G = B.SUPERVISE_GRID, N = G * G;
+  const now = Date.now();
+  if (team._superviseWallAt && now - team._superviseWallAt < B.SUPERVISE_MIN_INTERVAL_MS) return { ok: false, reason: 'Slow down.' };
+  team._superviseWallAt = now;
+  let job = team.superviseJob;
+  if (!job || job.resource !== resource) job = team.superviseJob = { resource, pos: Math.floor(Math.random() * N) };
+  const idx = Math.floor(Number(index));
+  if (!(idx >= 0 && idx < N)) return { ok: false, reason: 'Bad cell.' };
+  if (idx === job.pos) {
+    const w = team._superviseWindow && (now - team._superviseWindow.start) < B.SUPERVISE_WINDOW_MS ? team._superviseWindow : (team._superviseWindow = { start: now, count: 0 });
+    job.pos = Math.floor(Math.random() * N);          // re-hide regardless of cap
+    if (w.count >= B.SUPERVISE_MAX_PER_WINDOW) return { ok: true, data: { hit: true, resource: resource, reward: 0, capped: true } };
+    w.count++;
+    addResource(team, resource, B.SUPERVISE_REWARD);
+    return { ok: true, data: { hit: true, resource: resource, reward: B.SUPERVISE_REWARD } };
+  }
+  const was = job.pos, r = Math.floor(was / G), c = was % G, dirs = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    if (dr === 0 && dc === 0) continue;
+    const nr = r + dr, nc = c + dc;
+    if (nr >= 0 && nr < G && nc >= 0 && nc < G) dirs.push(nr * G + nc);
+  }
+  job.pos = dirs.length ? dirs[Math.floor(Math.random() * dirs.length)] : was;
+  return { ok: true, data: { hit: false, resource: resource, revealed: was } };
+}
 
 // ---------- Lord resource rationing (per-player holds) ----------
 // team.holds[key] = { until:number(-1=indefinite), allow:{STEWARD,BLACKSMITH,COMMANDER:bool} }

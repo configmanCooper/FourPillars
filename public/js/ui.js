@@ -405,7 +405,7 @@
       '<button class="btn" onclick="' + fn + '"><span class="ab-ico">' + ico + '</span><span>' + label + '</span><span class="ab-sub">' + sub + '</span></button>';
     let html = '';
     if (role === 'LORD') html = mk('🏗️', 'Build', 'structures', 'FP.UI.modalBuild()') + mk('👷', 'Workers', 'assign jobs', 'FP.UI.modalWorkers()') + mk('🏫', 'Research', 'University', 'FP.UI.modalResearch()') + mk('📜', 'Policy', 'kingdom tempo', 'FP.UI.modalPolicy()') + mk('⚔️', 'Stance', 'military posture', 'FP.UI.modalMilitaryPolicy()') + mk('🔒', 'Rationing', 'hold resources', 'FP.UI.modalRationing()');
-    else if (role === 'STEWARD') html = mk('⛏️', 'Labor', 'crews & tools', 'FP.UI.modalGather()') + mk('🧭', 'Sites', 'outposts', 'FP.UI.modalSites()') + mk('🐎', 'Caravans', 'shipments', 'FP.UI.modalCaravans()') + mk('🗺️', 'Expeditions', 'big ventures', 'FP.UI.modalExpeditions()') + mk('👷', 'Workers', 'assign jobs', 'FP.UI.modalWorkers()') + mk('🛡️', 'Ask Escort', 'from Commander', "FP.UI.request('ESCORT')");
+    else if (role === 'STEWARD') html = mk('⛏️', 'Labor', 'crews & tools', 'FP.UI.modalGather()') + mk('🧭', 'Sites', 'outposts', 'FP.UI.modalSites()') + mk('🐎', 'Caravans', 'shipments', 'FP.UI.modalCaravans()') + mk('🏛️', 'Stewardship', 'govern the realm', 'FP.UI.modalStewardship()') + mk('🗺️', 'Expeditions', 'big ventures', 'FP.UI.modalExpeditions()') + mk('👷', 'Workers', 'assign jobs', 'FP.UI.modalWorkers()');
     else if (role === 'BLACKSMITH') html = mk('🔨', 'Forge', 'gear & arrows', 'FP.UI.modalForge()') + mk('📋', 'Contracts', 'timed bonus', 'FP.UI.modalContracts()') + mk('⚙️', 'Specialize', 'forge path', 'FP.UI.modalSpec()');
     else if (role === 'COMMANDER') html = mk('🪖', 'Train', 'recruits→troops', 'FP.UI.modalMuster()') + mk('🚩', 'Army', 'manage & orders', 'FP.UI.modalArmyManage()') + mk('🎖️', 'Doctrine', 'army & form', 'FP.UI.modalDoctrine()');
     ab.innerHTML = html;
@@ -668,10 +668,11 @@
       const cap = B.MAX_PER_BUILDING ? B.MAX_PER_BUILDING[type] : null;
       let queuedOfType = 0; for (const q of team.buildQueue) if (q.type === type) queuedOfType++;
       const atCap = cap != null && (kingdomTotal + queuedOfType) >= cap;
-      const aff = canAfford(team, def.cost);
-      const why = atCap ? ' — at the limit of ' + cap : (free <= 0 ? ' — location full' : (!aff ? ' — need ' + missingCost(team, def.cost) : ''));
+      const bcost = stewardBuildCostClient(team, def.cost);   // Thrifty Builders policy discount, if any
+      const aff = canAfford(team, bcost);
+      const why = atCap ? ' — at the limit of ' + cap : (free <= 0 ? ' — location full' : (!aff ? ' — need ' + missingCost(team, bcost) : ''));
       const capLabel = cap != null ? '/' + cap : '';
-      html += optRow(def.name + ' <span class="muted">(kingdom total: ' + kingdomTotal + capLabel + ')</span>', effectDesc(type), costStr(def.cost) + (why ? '<span style="color:#c8553d">' + why + '</span>' : ''), 'Build here',
+      html += optRow(def.name + ' <span class="muted">(kingdom total: ' + kingdomTotal + capLabel + ')</span>', effectDesc(type), costStr(bcost) + (why ? '<span style="color:#c8553d">' + why + '</span>' : ''), 'Build here',
         () => { Net.action('build', { type, areaId: target }); }, !aff || free <= 0 || atCap); }
     if (team.buildQueue.length) html += '<div class="rp-h">Construction queue</div>' + team.buildQueue.map((q, i) => '<div class="opt"><div class="opt-info"><div class="opt-name">' + B.BUILDINGS[q.type].name + ' <span class="muted">@ ' + (snap.areas[q.areaId] ? snap.areas[q.areaId].name : '?') + (i === 0 ? '' : ' · queued') + '</span></div><div class="opt-desc">' + (i === 0 ? Math.ceil(q.remaining) + 's left' + (team.pop.builders <= 0 ? ' (no builders assigned!)' : '') : 'waiting') + '</div></div><button class="btn btn-sm" onclick="FP.UI.act(\'cancelBuild\',{id:\'' + q.id + '\'})">Cancel</button></div>').join('');
     openModal('Build — choose location, then structure', html, modalBuild);
@@ -1033,6 +1034,115 @@
         '<button class="btn btn-sm" ' + ((a.site.cargo || 0) < 1 ? 'disabled' : '') + ' onclick="FP.UI.act(\'dispatchCaravan\',{areaId:\'' + id + '\'})" title="Load up and send a caravan now">🐎 Send now</button></div>';
     }
     openModal('🐎 Caravans', html, modalCaravans);
+  }
+
+  // ===== Stewardship: government actions, standing policy, market barter, supervise minigame =====
+  let stewardTab = 'actions';
+  let mtFrom = 'wood', mtTo = 'iron';
+  let superviseResource = 'food';
+  let superviseGrid = null;     // last-result render hint: { hit, reveal, msg }
+  let superviseLastClick = -1;
+  // Client mirror of the server's stewardStat (standing policy + active timed action effects).
+  function stewardStatClient(team, stat) {
+    const e = (State.snapshot && State.snapshot.elapsed) || 0;
+    let v = 0;
+    const pol = team.stewardPolicy && B.STEWARD_POLICIES[team.stewardPolicy];
+    if (pol && pol.effect && pol.effect[stat] != null) v += pol.effect[stat];
+    for (const fx of (team.stewardEffects || [])) {
+      if (!fx || fx.until <= e) continue;
+      const a = B.STEWARD_ACTIONS_BY_ID[fx.id];
+      if (a && a.effect && a.effect[stat] != null) v += a.effect[stat];
+    }
+    return v;
+  }
+  function stewardBuildCostClient(team, baseCost) {
+    const mult = Math.max(0.1, 1 + stewardStatClient(team, 'buildCost'));
+    if (mult === 1) return baseCost;
+    const out = {}; for (const k in baseCost) out[k] = Math.max(0, Math.round(baseCost[k] * mult)); return out;
+  }
+  function stCost(cost) { return Object.keys(cost).map((k) => (C.RESOURCE_META[k] ? C.RESOURCE_META[k].glyph : '') + cost[k]).join(' '); }
+  function stAfford(team, cost) { for (const k in cost) if ((team.resources[k] || 0) < cost[k]) return false; return true; }
+  function stTabBtn(name, label) { return '<button class="btn btn-sm" style="' + (stewardTab === name ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.stTab(\'' + name + '\')">' + label + '</button>'; }
+
+  function stewardActionsHtml(snap, team, e) {
+    const gcd = Math.max(0, Math.ceil((team.stewardActionCooldownUntil || 0) - e));
+    let html = '<div class="muted">Spend goods — and sometimes idle workers — for a temporary realm-wide bonus. After any action the council needs <b>' + B.STEWARD_ACTION_GLOBAL_CD + 's</b> before the next.</div>';
+    html += '<div class="rp-h">' + (gcd > 0 ? '⏳ Council busy — ' + gcd + 's' : '✅ Ready to act') + '</div>';
+    for (const a of B.STEWARD_ACTIONS) {
+      const acd = Math.max(0, Math.ceil(((team.stewardActionCD && team.stewardActionCD[a.id]) || 0) - e));
+      const active = (team.stewardEffects || []).find((x) => x.id === a.id && x.until > e);
+      const left = active ? Math.ceil(active.until - e) : 0;
+      const afford = stAfford(team, a.cost);
+      const workersOk = !a.workers || team.pop.idle >= a.workers;
+      const disabled = gcd > 0 || acd > 0 || !afford || !workersOk;
+      const why = gcd > 0 ? 'council busy' : (acd > 0 ? acd + 's cooldown' : (!afford ? 'need ' + stCost(a.cost) : (!workersOk ? 'need ' + a.workers + ' idle' : '')));
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + a.glyph + ' ' + esc(a.name) + (active ? ' <span style="color:#6fae5f">· active ' + left + 's</span>' : '') + '</div>' +
+        '<div class="opt-desc">' + esc(a.desc) + ' <span class="muted">· ' + stCost(a.cost) + (a.workers ? ' · 👷' + a.workers : '') + (a.durationSec ? ' · ' + a.durationSec + 's' : '') + '</span>' + (why && !active ? ' <span style="color:#d9a441">(' + why + ')</span>' : '') + '</div></div>' +
+        '<button class="btn btn-sm ' + (disabled ? '' : 'btn-gold') + '" ' + (disabled ? 'disabled' : '') + ' onclick="FP.UI.doStewardAction(\'' + a.id + '\')">' + (acd > 0 ? acd + 's' : 'Enact') + '</button></div>';
+    }
+    return html;
+  }
+  function stewardPolicyHtml(snap, team, e) {
+    const cd = Math.max(0, Math.ceil((team.stewardPolicyCooldownUntil || 0) - e));
+    let html = '<div class="muted">One standing policy at a time — a permanent stance until you swap it. Changing it has a <b>' + B.STEWARD_POLICY_CD + 's</b> cooldown.' + (cd > 0 ? ' <span style="color:#d9a441">Locked ' + cd + 's.</span>' : '') + '</div>';
+    for (const key in B.STEWARD_POLICIES) {
+      const p = B.STEWARD_POLICIES[key];
+      const cur = team.stewardPolicy === key;
+      const disabled = cur || cd > 0;
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + p.glyph + ' ' + esc(p.name) + (cur ? ' <span style="color:#6fae5f">· active</span>' : '') + '</div><div class="opt-desc">' + esc(p.desc) + '</div></div>' +
+        '<button class="btn btn-sm ' + (cur ? '' : 'btn-gold') + '" ' + (disabled ? 'disabled' : '') + ' onclick="FP.UI.setStewardPolicy(\'' + key + '\')">' + (cur ? 'Active' : 'Adopt') + '</button></div>';
+    }
+    if (team.stewardPolicy) html += '<div style="margin-top:6px"><button class="btn btn-sm" ' + (cd > 0 ? 'disabled' : '') + ' onclick="FP.UI.setStewardPolicy(\'\')">Clear policy</button></div>';
+    return html;
+  }
+  function stewardTradeHtml(snap, team, e) {
+    if ((team.buildings.marketplace || 0) <= 0) {
+      return '<div class="muted">🏪 Bartering needs a <b>Marketplace</b> — only the Lord can build one.</div>' +
+        '<div class="opt" style="opacity:0.6"><div class="opt-info"><div class="opt-name">⚖️ Market barter</div><div class="opt-desc">Trade ' + B.MARKET_TRADE_IN + ' of one good for ' + B.MARKET_TRADE_OUT + ' of another, every ' + B.MARKET_TRADE_COOLDOWN + 's. <span style="color:#d9a441">Needs a Marketplace.</span></div></div>' +
+        '<button class="btn btn-sm btn-gold" onclick="FP.UI.requestMarket()">Ask Lord to build</button></div>';
+    }
+    const cd = Math.max(0, Math.ceil((team.marketTradeUntil || 0) - e));
+    const bonus = team.stewardPolicy === 'pol_trade';
+    const out = bonus ? B.MARKET_TRADE_OUT_POLICY : B.MARKET_TRADE_OUT;
+    const sel = (side, cur) => B.MARKET_TRADE_RESOURCES.map((r) => '<button class="btn btn-sm" style="' + (cur === r ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.mtSel(\'' + side + '\',\'' + r + '\')">' + (C.RESOURCE_META[r] ? C.RESOURCE_META[r].glyph : '') + r + '</button>').join(' ');
+    let html = '<div class="muted">⚖️ Every ' + B.MARKET_TRADE_COOLDOWN + 's, trade ' + B.MARKET_TRADE_IN + ' of one good for ' + out + ' of another' + (bonus ? ' <span style="color:#6fae5f">(Merchant Charter)</span>' : '') + '. Common goods only.</div>';
+    html += '<div class="rp-h">Give ' + B.MARKET_TRADE_IN + ' of <span class="muted">(you have ' + Math.round(team.resources[mtFrom] || 0) + ')</span></div><div style="display:flex;gap:4px;flex-wrap:wrap">' + sel('from', mtFrom) + '</div>';
+    html += '<div class="rp-h">Receive ' + out + ' of</div><div style="display:flex;gap:4px;flex-wrap:wrap">' + sel('to', mtTo) + '</div>';
+    const bad = mtFrom === mtTo;
+    const haveEnough = (team.resources[mtFrom] || 0) >= B.MARKET_TRADE_IN;
+    const disabled = cd > 0 || bad || !haveEnough;
+    html += '<div style="margin-top:8px"><button class="btn ' + (disabled ? '' : 'btn-gold') + '" ' + (disabled ? 'disabled' : '') + ' onclick="FP.UI.marketTrade()">' + (cd > 0 ? 'Market resting ' + cd + 's' : (bad ? 'Pick two different goods' : (!haveEnough ? 'Need ' + B.MARKET_TRADE_IN + ' ' + mtFrom : '⚖️ Trade ' + B.MARKET_TRADE_IN + ' ' + mtFrom + ' → ' + out + ' ' + mtTo))) + '</button></div>';
+    return html;
+  }
+  function stewardSuperviseHtml(snap, team, e) {
+    const G = B.SUPERVISE_GRID;
+    const resSel = B.SUPERVISE_RESOURCES.map((r) => '<button class="btn btn-sm" style="' + (superviseResource === r ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.superviseRes(\'' + r + '\')">' + (C.RESOURCE_META[r] ? C.RESOURCE_META[r].glyph : '') + r + '</button>').join(' ');
+    let html = '<div class="muted">👁️ Supervise the work-yards: a worker is hidden in the grid. <b>Click the right cell</b> to catch them and earn <b>+' + B.SUPERVISE_REWARD + ' ' + superviseResource + '</b>, then they re-hide at random. Miss and you\'ll see where they were (👷) — next round they shuffle <b>exactly one cell</b> away in any direction.</div>';
+    html += '<div class="rp-h">Resource to supervise</div><div style="display:flex;gap:4px;flex-wrap:wrap">' + resSel + '</div>';
+    html += '<div class="rp-h">' + (superviseGrid && superviseGrid.msg ? superviseGrid.msg : 'Find the worker') + '</div>';
+    html += '<div id="superviseGrid" style="display:grid;grid-template-columns:repeat(' + G + ',1fr);gap:6px;max-width:280px;margin:6px auto 0">';
+    for (let i = 0; i < G * G; i++) {
+      let bg = '#2a2a33', label = '';
+      if (superviseGrid) {
+        if (superviseGrid.hit === i) { bg = '#3f7a3f'; label = '✓'; }
+        else if (superviseGrid.reveal === i) { bg = '#7a5a3f'; label = '👷'; }
+      }
+      html += '<button class="btn" style="aspect-ratio:1;min-height:54px;background:' + bg + ';font-size:20px;padding:0" onclick="FP.UI.supervise(' + i + ')"> ' + label + '</button>';
+    }
+    html += '</div>';
+    return html;
+  }
+  function modalStewardship() {
+    const snap = State.snapshot, team = State.teamState();
+    if (!team) return;
+    const e = snap.elapsed;
+    let html = '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">' +
+      stTabBtn('actions', '📜 Actions') + stTabBtn('policy', '⚖️ Policy') + stTabBtn('trade', '🏪 Trade') + stTabBtn('supervise', '👁️ Supervise') + '</div>';
+    if (stewardTab === 'actions') html += stewardActionsHtml(snap, team, e);
+    else if (stewardTab === 'policy') html += stewardPolicyHtml(snap, team, e);
+    else if (stewardTab === 'trade') html += stewardTradeHtml(snap, team, e);
+    else html += stewardSuperviseHtml(snap, team, e);
+    openModal('🏛️ Stewardship', html, modalStewardship);
   }
   function expeditionEligibleClient(snap, team, e) {
     if (e.requires.building && (team.buildings[e.requires.building] || 0) <= 0) return false;
@@ -1856,11 +1966,26 @@
     reequip(gid) { Net.action('reequip', { groupId: gid }); },
     commandSel(mission, area) { const team = State.teamState(); const gid = State.selectedGroupId || garrisonId(team); if (!gid) return toast('No host to command.', true); Net.action('command', { groupId: gid, mission, targetArea: area }); },
     cmd(gid, mission) { Net.action('command', { groupId: gid, mission }); closeModal(); },
-    modalBuild, modalWorkers, modalPolicy, modalMilitaryPolicy, modalSites, modalCaravans, modalExpeditions, modalForge, modalContracts, modalSpec, modalMuster, modalOrders, modalArmyManage, modalDoctrine, modalNeed, modalMilitary, modalGather, modalResearch, modalSpectatorMilitary,
+    modalBuild, modalWorkers, modalPolicy, modalMilitaryPolicy, modalSites, modalCaravans, modalStewardship, modalExpeditions, modalForge, modalContracts, modalSpec, modalMuster, modalOrders, modalArmyManage, modalDoctrine, modalNeed, modalMilitary, modalGather, modalResearch, modalSpectatorMilitary,
     gatherTools(pool, delta) { Net.action('setGatherTools', { pool, delta }); },
     toggleDanger(pool) { const t = State.teamState(); const on = !(t && t.dangerWork && t.dangerWork[pool]); Net.action('setDangerWork', { pool, on }); },
     setScouts(delta) { Net.action('setScouts', { delta }); },
     toggleExpeditionTools() { expeditionUseTools = !expeditionUseTools; modalExpeditions(); },
+    // Stewardship menu.
+    stTab(name) { stewardTab = name; modalStewardship(); },
+    doStewardAction(id) { Net.action('doStewardAction', { id }); },
+    setStewardPolicy(key) { Net.action('setStewardPolicy', { key: key || null }); },
+    mtSel(side, res) { if (side === 'from') mtFrom = res; else mtTo = res; modalStewardship(); },
+    marketTrade() { Net.action('marketTrade', { from: mtFrom, to: mtTo }); },
+    requestMarket() { Net.action('request', { type: 'BUILD', payload: { type: 'marketplace' } }); toast('Asked the Lord to build a Marketplace.'); },
+    superviseRes(r) { superviseResource = r; superviseGrid = null; modalStewardship(); },
+    supervise(index) { superviseLastClick = index; Net.action('supervise', { resource: superviseResource, index }); },
+    onSuperviseResult(data) {
+      if (!data) return;
+      if (data.hit) superviseGrid = { hit: superviseLastClick, reveal: null, msg: data.capped ? '✓ Caught them — but the yard\'s quota is met for now; come back shortly.' : '✓ Caught them! +' + data.reward + ' ' + data.resource + ' — they\'ve scurried off, find them again.' };
+      else superviseGrid = { hit: null, reveal: data.revealed, msg: '✗ Missed — there they were (👷). Next round they shuffle one cell over.' };
+      if (document.getElementById('superviseGrid')) modalStewardship();
+    },
     mineFocus(v) { Net.action('setMineFocus', { value: v }); },
     mineFocusStep(d) { const t = State.teamState(); const cur = (t && t.gather && typeof t.gather.mineIronFocus === 'number') ? t.gather.mineIronFocus : B.DEFAULT_MINE_FOCUS; Net.action('setMineFocus', { value: Math.max(0, Math.min(1, cur + d)) }); },
     askToolsFromSmith() { Net.action('request', { type: 'EQUIPMENT', payload: { item: 'tools' } }); toast('Asked the Blacksmith to forge Tools.'); },

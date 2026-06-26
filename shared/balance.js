@@ -101,13 +101,14 @@
     stables:    { name: 'Stables',     cost: { wood: 90, stone: 50, iron: 20 }, buildTime: 24, effect: { unlock: 'cavalry' } },
     workshop:   { name: 'Workshop',    cost: { wood: 90, iron: 40 },   buildTime: 24, effect: { unlock: 'siege' } },
     university: { name: 'University',   cost: { wood: 30, stone: 90, iron: 30 }, buildTime: 26, effect: { unlock: 'research' } },
+    marketplace:{ name: 'Marketplace',  cost: { wood: 80, stone: 60 },  buildTime: 22, effect: { unlock: 'trade' } },
     walls:      { name: 'Walls',       cost: { stone: 120 },           buildTime: 26, effect: { keepDef: 60, keepHp: 120 } },
     // The Keep's core. Always present, occupies a build slot, can't be built or demolished. It is the
     // LAST thing razed in a siege (only after every other building falls) and its fall = total defeat.
     // It looses arrows like a lone militia at besiegers.
     watchtower: { name: 'Watchtower',   cost: {}, buildTime: 0, fixed: true, effect: {} },
   };
-  const MAX_PER_BUILDING = { house: 6, farm: 4, lumberCamp: 3, mine: 3, storehouse: 3, barracks: 2, school: 2, stables: 2, workshop: 2, university: 1, walls: 3, watchtower: 1 };
+  const MAX_PER_BUILDING = { house: 6, farm: 4, lumberCamp: 3, mine: 3, storehouse: 3, barracks: 2, school: 2, stables: 2, workshop: 2, university: 1, marketplace: 1, walls: 3, watchtower: 1 };
 
   // Per-location build slots: your Keep is roomy; outposts are small, so expansion matters.
   const BUILD_SLOTS_BASE = 7;
@@ -166,6 +167,66 @@
     maxProduction: { name: 'Maximum Production',  production: 1.25, razeMult: 0.67, desc: '+25% production; buildings here are razed 50% faster.' },
   };
   const MODE_CHANGE_COOLDOWN = 180;     // seconds before an outpost's work/caravan mode may change again
+
+  // ===== STEWARDSHIP =====
+  // The Steward governs the realm through three levers: timed ACTIONS (spend goods/workers for a
+  // temporary realm-wide bonus), a single standing POLICY (one permanent stance, swapped on a cooldown),
+  // and — once the Lord builds a Marketplace — bartering goods. All bonuses stack ADDITIVELY into the
+  // same multiplier pipeline as research: a consumer applies `rate *= (1 + stewardStat(team, stat))`.
+  const STEWARD_ACTION_GLOBAL_CD = 60;  // after ANY action, this long before the Steward may take another
+  const STEWARD_POLICY_CD = 180;        // seconds before the standing Stewardship policy may be swapped
+  // Market barter (needs a Marketplace): every MARKET_TRADE_COOLDOWN seconds, swap IN of one commodity
+  // for OUT of another (OUT_POLICY with the Merchant Charter policy). Commodities only — no relics/arrows.
+  const MARKET_TRADE_COOLDOWN = 30;
+  const MARKET_TRADE_IN = 20;
+  const MARKET_TRADE_OUT = 10;
+  const MARKET_TRADE_OUT_POLICY = 15;
+  const MARKET_TRADE_RESOURCES = ['food', 'wood', 'stone', 'iron', 'horses'];
+  // Supervise minigame (human Steward): a hidden token sits in a 4×4 grid; a correct click yields a small
+  // bounty and re-hides it; a miss reveals it, then it shifts exactly one cell (any direction) and hides.
+  const SUPERVISE_RESOURCES = ['food', 'wood', 'stone', 'iron'];
+  const SUPERVISE_GRID = 4;
+  const SUPERVISE_REWARD = 2;
+  const SUPERVISE_MIN_INTERVAL_MS = 150; // wall-clock anti-spam (this minigame is human-only, off the sim clock)
+  // Soft anti-farm cap: at most SUPERVISE_MAX_PER_WINDOW correct catches pay out per rolling window, so an
+  // autoclicker can't turn the yard into an endless faucet — a human still earns a steady trickle.
+  const SUPERVISE_WINDOW_MS = 60000;
+  const SUPERVISE_MAX_PER_WINDOW = 20;
+
+  const STEWARD_ACTIONS = [
+    { id: 'fertility',       name: 'Fertility Decree',     glyph: '👶', cost: { food: 20 },           workers: 0, durationSec: 90,  cooldownSec: 240, effect: { popGrowth: 0.25 },                 desc: 'Population grows +25% faster.' },
+    { id: 'postRoads',       name: 'Post Roads',           glyph: '🐎', cost: { wood: 40 },           workers: 0, durationSec: 210, cooldownSec: 360, effect: { caravanSpeed: 0.35 },             desc: 'All caravans move +35% faster.' },
+    { id: 'forgeBellows',    name: 'Forge Bellows',        glyph: '🔥', cost: { iron: 25 },           workers: 0, durationSec: 120, cooldownSec: 300, effect: { forgeSpeed: 0.30 },               desc: 'The forge works +30% faster.' },
+    { id: 'overseers',       name: "Overseers' Push",      glyph: '⛏️', cost: { food: 30 },           workers: 3, durationSec: 150, cooldownSec: 360, effect: { gatherAll: 0.25 },                desc: 'All gathering +25% (ties up 3 workers).' },
+    { id: 'warDrills',       name: 'War Drills',           glyph: '⚔️', cost: { iron: 35 },           workers: 0, durationSec: 120, cooldownSec: 360, effect: { trainSpeed: 0.40 },               desc: 'Unit training markedly faster.' },
+    { id: 'scholars',        name: "Scholars' Stipend",    glyph: '📜', cost: { food: 20, stone: 15 },workers: 0, durationSec: 150, cooldownSec: 360, effect: { researchRate: 0.50 },             desc: 'Research Points +50%.' },
+    { id: 'pathfinders',     name: 'Pathfinders',          glyph: '🔭', cost: { wood: 25 },           workers: 2, durationSec: 120, cooldownSec: 300, effect: { scoutSpeed: 1.0 },                desc: 'Scouting twice as fast (ties up 2 workers).' },
+    { id: 'musterLevy',      name: 'Muster the Levy',      glyph: '🛡️', cost: { food: 30, iron: 20 }, workers: 0, durationSec: 120, cooldownSec: 480, effect: { troopDef: 0.15 },                 desc: 'All troops +15% defence.' },
+    { id: 'emergencyStores', name: 'Emergency Stores',     glyph: '📦', cost: { wood: 40, stone: 40 },workers: 0, durationSec: 200, cooldownSec: 400, effect: { storage: 75 },                    desc: 'Every storage cap +75.' },
+    { id: 'rationing',       name: 'Rationing Edict',      glyph: '🍞', cost: { wood: 30 },           workers: 0, durationSec: 180, cooldownSec: 360, effect: { soldierUpkeep: -0.40 },           desc: 'Soldier food upkeep −40%.' },
+    { id: 'rally',           name: 'Rally the Banners',    glyph: '🎺', cost: { food: 25, iron: 15 }, workers: 0, durationSec: 90,  cooldownSec: 400, effect: { armySpeed: 0.25 },                desc: 'Armies march +25% faster.' },
+    { id: 'corvee',          name: 'Corvée Labour',        glyph: '🏗️', cost: { stone: 35 },          workers: 2, durationSec: 150, cooldownSec: 360, effect: { buildSpeed: 1.0 },                desc: 'Construction ~50% faster (ties up 2 workers).' },
+    { id: 'grainLevy',       name: 'Grain Levy',           glyph: '🔄', cost: { food: 60 },           workers: 0, durationSec: 0,   cooldownSec: 480, instant: { wood: 30, stone: 30, iron: 20 }, desc: 'Trade 60 food for 30 wood + 30 stone + 20 iron, now.' },
+    { id: 'learnRelics',     name: 'Learn from the Relics',glyph: '✨', cost: { relics: 1 },          workers: 0, durationSec: 180, cooldownSec: 600, instant: { rp: 50 }, effect: { popGrowth: 0.20, gatherAll: 0.20 }, desc: 'Gain 50 Research Points now, plus +20% growth & gathering.' },
+  ];
+  const STEWARD_ACTIONS_BY_ID = {};
+  for (const a of STEWARD_ACTIONS) STEWARD_ACTIONS_BY_ID[a.id] = a;
+
+  const STEWARD_POLICIES = {
+    pol_food:     { name: 'Bountiful Fields', glyph: '🌾', effect: { gatherFood: 0.20 },   desc: '+20% food gathering & production.' },
+    pol_wood:     { name: 'Forestry Charter', glyph: '🌲', effect: { gatherWood: 0.20 },   desc: '+20% wood gathering & production.' },
+    pol_stone:    { name: 'Quarry Rights',    glyph: '⛰️', effect: { gatherStone: 0.20 },  desc: '+20% stone gathering & production.' },
+    pol_iron:     { name: 'Mining Decree',    glyph: '⚒️', effect: { gatherIron: 0.20 },   desc: '+20% iron gathering & production.' },
+    pol_horses:   { name: 'Horse Breeding',   glyph: '🐴', effect: { gatherHorses: 0.20 }, desc: '+20% horse production.' },
+    pol_guard:    { name: 'Caravan Wardens',  glyph: '🛡️', effect: { guardStrength: 1.0 },  desc: 'Caravan guards fight twice as hard.' },
+    pol_caravan:  { name: 'Swift Roads',      glyph: '💨', effect: { caravanSpeed: 0.50 },  desc: '+50% caravan speed.' },
+    pol_growth:   { name: 'Welfare Doctrine', glyph: '👶', effect: { popGrowth: 0.25 },     desc: '+25% population growth.' },
+    pol_buildcost:{ name: 'Thrifty Builders', glyph: '🏚️', effect: { buildCost: -0.20 },    desc: '−20% building resource costs.' },
+    pol_trade:    { name: 'Merchant Charter', glyph: '⚖️', effect: { marketBonus: 1 },      desc: 'Market trades return 15 instead of 10.' },
+  };
+  // Map a resource name to its per-resource gather stat key (e.g. 'food' -> 'gatherFood').
+  function gatherStatKey(res) { return 'gather' + res.charAt(0).toUpperCase() + res.slice(1); }
+  // ===== /STEWARDSHIP =====
 
   // Dangerous home labour (Steward): a gather pool may be worked dangerously for +50% output, but each
   // such worker has a per-second chance to die. A tool mitigates it (Standard ≈1%, Legendary ≈0.3%,
@@ -429,6 +490,9 @@
     SITE_YIELD, SITE_UPGRADE_COST, SITE_UPGRADE_MULT, EXPLORE_TIME, CLAIM_TIME, CLAIM_COST, CLAIM_MIN_INSTALMENT,
     SCOUT_MAX, SCOUT_FULL, SCOUT_DECAY_SEC, UNSCOUTED_COMBAT_PENALTY,
     WORK_MODES, CARAVAN_MODES, MODE_CHANGE_COOLDOWN, POP_FLOOR, EXPEDITIONS, EXPEDITION_COOLDOWN, EXPEDITION_OFFER_COUNT, EXPEDITION_ROTATE_SEC, EXPEDITION_TOOL_RISK_REDUCTION, EXPEDITION_TOOL_REDUCTION_MAX,
+    STEWARD_ACTION_GLOBAL_CD, STEWARD_POLICY_CD, MARKET_TRADE_COOLDOWN, MARKET_TRADE_IN, MARKET_TRADE_OUT, MARKET_TRADE_OUT_POLICY, MARKET_TRADE_RESOURCES,
+    SUPERVISE_RESOURCES, SUPERVISE_GRID, SUPERVISE_REWARD, SUPERVISE_MIN_INTERVAL_MS, SUPERVISE_WINDOW_MS, SUPERVISE_MAX_PER_WINDOW,
+    STEWARD_ACTIONS, STEWARD_ACTIONS_BY_ID, STEWARD_POLICIES, gatherStatKey,
     CARAVAN_DISPATCH_CARGO, CARAVAN_DISPATCH_BY_RESOURCE, CARAVAN_WARN_SECONDS, CARAVAN_MIN_INTERVAL, CARAVAN_SPEED, ESCORT_PROTECT,
     GUARD_LEND_DEFAULT, GUARD_KILL_PER, GUARD_LOSS_PER, GUARD_PIN_SECONDS,
     HOST_SPEED_MULT, CAVALRY_SPEED_MULT, PURSUIT_CATCH_RADIUS, PURSUIT_TIMEOUT,

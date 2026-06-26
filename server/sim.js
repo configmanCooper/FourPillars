@@ -224,6 +224,10 @@ function applyAction(state, team, role, action, payload) {
     case 'dispatchCaravan': return sites.dispatchCaravan(state, T, payload.areaId, log);
     case 'setGuards': return sites.setGuards(state, T, payload.areaId, payload.count);
     case 'startExpedition': return sites.startExpedition(state, T, payload.id, payload.useTools);
+    case 'doStewardAction': { const r = economy.doStewardAction(state, T, payload.id); if (r.ok) comms.postChat(state, T, 'STEWARD', r.msg, 'request'); return r; }
+    case 'setStewardPolicy': { const r = economy.setStewardPolicy(state, T, payload.key || null); if (r.ok) comms.postChat(state, T, 'STEWARD', r.msg, 'request'); return r; }
+    case 'marketTrade': return economy.marketTrade(state, T, payload.from, payload.to);
+    case 'supervise': return economy.supervise(state, T, payload.resource, payload.index);
     case 'requestConserve': {
       const res = payload.resource;
       if (!C.RESOURCES.includes(res)) return { ok: false, reason: 'Unknown resource.' };
@@ -288,7 +292,7 @@ function applyAction(state, team, role, action, payload) {
 
 const ACTION_ROLE = {
   setWorkers: 'LORD', assignWorker: 'LORD', levy: 'LORD', build: 'LORD', cancelBuild: 'LORD', setPolicy: 'LORD', setMilitaryPolicy: 'LORD', setHold: 'LORD', setResourceAccess: 'LORD', releaseHold: 'LORD', setWorkerLock: 'LORD', setResearchers: 'LORD', buyResearch: 'LORD',
-  explore: 'STEWARD', claim: 'STEWARD', upgradeSite: 'STEWARD', abandon: 'STEWARD', setGatherTools: 'STEWARD', setMineFocus: 'STEWARD', requestConserve: 'STEWARD', setWorkMode: 'STEWARD', setCaravanMode: 'STEWARD', dispatchCaravan: 'STEWARD', setGuards: 'STEWARD', startExpedition: 'STEWARD', setDangerWork: 'STEWARD', setScouts: 'STEWARD',
+  explore: 'STEWARD', claim: 'STEWARD', upgradeSite: 'STEWARD', abandon: 'STEWARD', setGatherTools: 'STEWARD', setMineFocus: 'STEWARD', requestConserve: 'STEWARD', setWorkMode: 'STEWARD', setCaravanMode: 'STEWARD', dispatchCaravan: 'STEWARD', setGuards: 'STEWARD', startExpedition: 'STEWARD', setDangerWork: 'STEWARD', setScouts: 'STEWARD', doStewardAction: 'STEWARD', setStewardPolicy: 'STEWARD', marketTrade: 'STEWARD', supervise: 'STEWARD',
   produce: 'BLACKSMITH', cancelProduce: 'BLACKSMITH', startContract: 'BLACKSMITH', setSpec: 'BLACKSMITH',
   formUnits: 'COMMANDER', trainUnits: 'COMMANDER', upgradeUnits: 'COMMANDER', reequip: 'COMMANDER', cancelTraining: 'COMMANDER', rally: 'COMMANDER', transferUnits: 'COMMANDER', command: 'COMMANDER', setFormation: 'COMMANDER', setStance: 'COMMANDER', setDoctrine: 'COMMANDER',
 };
@@ -300,6 +304,8 @@ function spendKeysFor(action, payload) {
   if (action === 'produce') return [];
   if (action === 'claim') return Object.keys(B.CLAIM_COST);
   if (action === 'upgradeSite') return Object.keys(B.SITE_UPGRADE_COST);
+  if (action === 'doStewardAction') { const a = B.STEWARD_ACTIONS_BY_ID[payload && payload.id]; return a ? Object.keys(a.cost || {}) : []; }
+  if (action === 'marketTrade') return (payload && payload.from) ? [payload.from] : [];
   if (action === 'formUnits' || action === 'trainUnits') {
     const needs = (C.UNIT_META[payload.unitType] && C.UNIT_META[payload.unitType].needs) || {};
     return Object.keys(needs).filter((k) => C.RESOURCES.includes(k));
@@ -320,7 +326,7 @@ function broadcastText(type, p) {
 function snapshot(state) {
   const t = state.teams;
   const clean = (team) => {
-    const c = Object.assign({}, team); delete c.aiState;
+    const c = Object.assign({}, team); delete c.aiState; delete c.superviseJob; delete c._superviseWallAt; delete c._superviseWindow;
     // Attach a baseline attack/defence readout to each host (display only).
     c.armies = (team.armies || []).map((g) => Object.assign({}, g, { power: army.hostPower(team, g) }));
     return c;
