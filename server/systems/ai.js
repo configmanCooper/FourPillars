@@ -932,6 +932,23 @@ function aiCommander(state, team, sys, rng, persona, st) {
           else { reinforceHost(h); decide(h); }
         }
       }
+      // Relieve owned outposts under active RAID: rush a relief host from the home reserve to drive the
+      // enemy off any of OUR posts they're razing where we have a decent chance to win — prioritised ABOVE
+      // offence and frontier-garrisoning, and weighted toward posts with the most buildings to save.
+      if (!keepThreat) {
+        for (const rid of ownedRaidedPosts(state, team)) {
+          if (team.armies.some((h) => !h.isGarrison && army.unitCount(h) >= 1 && (areaOf(h) === rid || (h.mission && h.mission.targetArea === rid)))) continue; // already answering
+          if (army.currentArea(g) !== home || g.moving || army.unitCount(g) < 3) break;
+          if (winChanceAt(state, army, team, g, rid) < retreatBar) continue;   // no decent chance — don't feed troops in
+          const keepGuard = clampI(2 + Math.round(kt.adj * 0.5), 2, 6);        // leave a little to hold the Keep
+          const take = Math.min(army.unitCount(g) - keepGuard, B.MAX_UNITS_PER_AREA);
+          if (take < 2) break;
+          const det = army.rally(state, team, allUnits(g, Math.min(0.95, take / army.unitCount(g))), 'Relief');
+          if (!det.ok || army.unitCount(det.group) < 0.5) break;
+          det.group.postGuard = rid; army.command(state, team, det.group.id, 'garrison', rid);
+          say(state, team, sys, st, C.ROLES.COMMANDER, 'Relieving ' + state.areas[rid].name + ' — drive them off!', 14);
+        }
+      }
       // Snatch UNDEFENDED enemy outposts: when the enemy leaves posts wide open, peel a small raiding
       // party off the home reserve and go take them NOW — don't wait for a grand host (that passivity is
       // exactly why open enemy posts sat un-taken). Prioritised ABOVE garrisoning our own frontier.
@@ -1154,6 +1171,20 @@ function hasUndefendedEnemyPost(state, team) {
     if (enemyUnitsOn(state, team, id) <= 1.0) return true;
   }
   return false;
+}
+// OUR non-base outposts the enemy is physically ON (actively raiding) and that are worth saving (have
+// buildings or a working site). Sorted by building count — the most-built posts are defended first.
+function ownedRaidedPosts(state, team) {
+  const out = [];
+  for (const id in state.areas) { const a = state.areas[id];
+    if (a.owner !== team.team || a.terrain === 'base') continue;
+    const buildings = S.buildingsAt(a);
+    if (buildings <= 0 && !a.site) continue;
+    if (enemyUnitsOn(state, team, id) < 0.5) continue;   // enemy actually on it (raiding)
+    out.push({ id, buildings });
+  }
+  out.sort((x, y) => y.buildings - x.buildings);
+  return out.map((o) => o.id);
 }
 // Where a losing host should fall back to: a STRONGER friendly host at/adjacent to it (to combine
 // strength), else the Keep. Returns an areaId.
