@@ -766,6 +766,13 @@
     openModal('Military Stance', html, modalMilitaryPolicy);
   }
 
+  // Client mirror of the server's researchStat (cumulative tier value for a stat).
+  function researchStatClient(team, stat) {
+    for (const key in B.RESEARCH) { if (B.RESEARCH[key].stat !== stat) continue; const t = (team.research && team.research[key]) || 0; return t > 0 ? B.RESEARCH[key].tiers[t - 1].val : 0; }
+    return 0;
+  }
+  function stewardGatherMultClient(team, res) { return 1 + stewardStatClient(team, B.gatherStatKey(res)) + stewardStatClient(team, 'gatherAll'); }
+
   // Client-side mirror of the server's gather yield math, for live previews in the Steward UI.
   function gatherCalc(team) {
     const g = team.gather || { desired: { food: 0, wood: 0, mine: 0 }, effective: { food: 0, wood: 0, mine: 0 }, mineIronFocus: B.DEFAULT_MINE_FOCUS };
@@ -779,11 +786,17 @@
     const woodBuild = 1 + team.buildings.lumberCamp * B.BUILDINGS.lumberCamp.effect.woodMult;
     const mineBuild = 1 + team.buildings.mine * B.BUILDINGS.mine.effect.mineMult;
     const focus = g.mineIronFocus;
-    const food = eff(p.farmers, g.effective.food, 'food') * B.WORKER_YIELD.farmer.food * foodBuild;
-    const wood = eff(p.woodcutters, g.effective.wood, 'wood') * B.WORKER_YIELD.woodcutter.wood * woodBuild;
+    // Match the server: research bonuses, the Steward's DANGEROUS-work +50%, and Stewardship gather buffs.
+    const dw = team.dangerWork || {};
+    const foodRes = (1 + researchStatClient(team, 'food')) * (dw.food ? (1 + B.DANGER_YIELD_BONUS) : 1) * stewardGatherMultClient(team, 'food');
+    const woodRes = (1 + researchStatClient(team, 'wood')) * (dw.wood ? (1 + B.DANGER_YIELD_BONUS) : 1) * stewardGatherMultClient(team, 'wood');
+    const stoneRes = (1 + researchStatClient(team, 'stone')) * (dw.mine ? (1 + B.DANGER_YIELD_BONUS) : 1) * stewardGatherMultClient(team, 'stone');
+    const ironRes = (1 + researchStatClient(team, 'iron')) * (dw.mine ? (1 + B.DANGER_YIELD_BONUS) : 1) * stewardGatherMultClient(team, 'iron');
+    const food = eff(p.farmers, g.effective.food, 'food') * B.WORKER_YIELD.farmer.food * foodBuild * foodRes;
+    const wood = eff(p.woodcutters, g.effective.wood, 'wood') * B.WORKER_YIELD.woodcutter.wood * woodBuild * woodRes;
     const mineUnits = eff(p.miners, g.effective.mine, 'mine');
-    const stone = mineUnits * (1 - focus) * B.MINER_STONE_YIELD * mineBuild;
-    const iron = mineUnits * focus * B.MINER_IRON_YIELD * mineBuild;
+    const stone = mineUnits * (1 - focus) * B.MINER_STONE_YIELD * mineBuild * stoneRes;
+    const iron = mineUnits * focus * B.MINER_IRON_YIELD * mineBuild * ironRes;
     const q = (team.equipQuality && team.equipQuality.tools) || 1;
     const boost = tooledAll > 0 ? boostSumAll / tooledAll : (1 + B.TOOLS_BONUS * 1 * tp);
     return { g, q, boost, food, wood, stone, iron, focus, usedQ };
