@@ -932,6 +932,20 @@ function aiCommander(state, team, sys, rng, persona, st) {
           else { reinforceHost(h); decide(h); }
         }
       }
+      // Snatch UNDEFENDED enemy outposts: when the enemy leaves posts wide open, peel a small raiding
+      // party off the home reserve and go take them NOW — don't wait for a grand host (that passivity is
+      // exactly why open enemy posts sat un-taken). Prioritised ABOVE garrisoning our own frontier.
+      if (!keepThreat && hasUndefendedEnemyPost(state, team)) {
+        let grabs = 0;
+        while (fhs().filter((h) => !h.harasser && !h.postGuard).length < maxHosts &&
+               army.currentArea(g) === home && !g.moving && (army.unitCount(g) - reserve) >= 3 && grabs++ < 2) {
+          const det = army.rally(state, team, smallGarrisonUnits(g, clampI(5 + aggr, 4, 7)), 'Raiders');
+          if (!det.ok || army.unitCount(det.group) < 0.5) break;
+          decide(det.group);                                  // routes it to the best undefended capture
+          const m = det.group.mission && det.group.mission.type;
+          if (!m || m === 'idle' || m === 'defend') { break; } // nothing worth taking — stop peeling troops
+        }
+      }
       // Keep a small standing garrison on each FRONTIER outpost (owned post bordering the enemy) so it
       // isn't snatched the moment the field army is elsewhere — drawn from spare home strength.
       let gpGuard = 0;
@@ -1131,6 +1145,15 @@ function undefendedCaptureTarget(state, army, team, w, claimed) {
     if (value > bestScore) { bestScore = value; best = id; }
   }
   return best;
+}
+// Does the enemy hold ANY (near-)undefended outpost worth peeling a small raiding party to go take?
+function hasUndefendedEnemyPost(state, team) {
+  const foe = S.enemyOf(team.team); const ekId = S.homeBase(foe);
+  for (const id in state.areas) { const a = state.areas[id];
+    if (a.terrain === 'base' || id === ekId || a.owner !== foe) continue;
+    if (enemyUnitsOn(state, team, id) <= 1.0) return true;
+  }
+  return false;
 }
 // Where a losing host should fall back to: a STRONGER friendly host at/adjacent to it (to combine
 // strength), else the Keep. Returns an areaId.
