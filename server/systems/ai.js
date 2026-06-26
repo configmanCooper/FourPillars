@@ -72,7 +72,9 @@ function handleRequests(state, team, sys) {
     if (r.status !== 'open') continue;
     if (r.targetRole === C.ROLES.LORD) continue;
     const slot = team.slots[r.targetRole];
-    if (slot && slot.controller === C.CONTROLLER.AI) sys.comms.resolveRequest(state, team, r.id, true, sys);
+    // Only a genuine AI seat answers automatically — never one a HUMAN has claimed (playerId set), even
+    // during a brief disconnect when the seat momentarily reverts to AI control.
+    if (slot && slot.controller === C.CONTROLLER.AI && !slot.playerId) sys.comms.resolveRequest(state, team, r.id, true, sys);
   }
 }
 
@@ -478,7 +480,7 @@ function aiSteward(state, team, sys, rng, persona, st) {
     if (sites.areaUnderAttack(state, team, id)) continue;
     const danger = sites.areaIsDangerous(state, team, id);
     const wantWork = danger ? 'defensive' : 'maxProduction';
-    const wantCaravan = danger ? 'cautious' : 'push';
+    const wantCaravan = danger ? 'cautious' : 'fast';
     if (a.site.workMode !== wantWork && (a.site.workModeUntil || 0) <= state.elapsed) sites.setWorkMode(state, team, id, wantWork);
     if (a.site.caravanMode !== wantCaravan && (a.site.caravanModeUntil || 0) <= state.elapsed) sites.setCaravanMode(state, team, id, wantCaravan);
   }

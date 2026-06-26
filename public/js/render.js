@@ -225,7 +225,7 @@
       // Your own outposts: flag ~5s before a caravan departs, and show stationed guards.
       if (owner === st.myTeam && a.site && a.terrain !== 'base') {
         const B = window.FP.Balance;
-        const rate = ((B.SITE_YIELD[a.terrain] || {})[a.resource] || 0) * (a.site.level || 1) * ((B.WORK_MODES[a.site.workMode] || B.WORK_MODES.standard).yield);
+        const rate = ((B.SITE_YIELD[a.terrain] || {})[a.resource] || 0) * (a.site.level || 1) * ((B.WORK_MODES[a.site.workMode] || B.WORK_MODES.standard).production || 1);
         const thr = (B.CARAVAN_DISPATCH_BY_RESOURCE && B.CARAVAN_DISPATCH_BY_RESOURCE[a.resource]) || B.CARAVAN_DISPATCH_CARGO;
         const eta = rate > 0 ? (thr - a.site.cargo) / rate : Infinity;
         if (eta > 0 && eta <= (B.CARAVAN_WARN_SECONDS || 5)) {

@@ -37,42 +37,52 @@ function claim(state, team, areaId) {
   const area = state.areas[areaId];
   if (!area) return { ok: false, reason: 'No such area.' };
   if (!area.revealed[team.team]) return { ok: false, reason: 'Explore it first.' };
+  if (!isScouted(area, team.team)) return { ok: false, reason: 'Scout it first — you can\'t build an outpost on unscouted ground.' };
   if (!area.site) return { ok: false, reason: 'Nothing to claim here.' };
   if (area.owner && area.owner !== team.team) return { ok: false, reason: 'Enemy-held — take it by force.' };
   if (area.claimedBy === team.team) return { ok: false, reason: 'Already yours.' };
   if (team._busyJob && team._busyJob.kind === 'claim' && team._busyJob.areaId === areaId) return { ok: false, reason: 'Already building here.' };
-  // Partial funding: an outpost can be paid for in instalments. A stale fund from the other team is dropped.
+  // Partial funding: an outpost is paid in instalments of EACH resource (wood + stone). A stale fund
+  // from the other team is dropped.
   if (area.claimFund && area.claimFund.team !== team.team) area.claimFund = null;
-  const need = B.CLAIM_COST.wood;
-  let paid = (area.claimFund && area.claimFund.wood) || 0;
-  if (paid >= need) {
-    // Already fully funded (e.g. while the Steward was busy) — start the build now.
+  const COST = B.CLAIM_COST;   // { wood, stone }
+  const fund = (area.claimFund && area.claimFund.team === team.team) ? area.claimFund : { team: team.team };
+  const m = C.RESOURCE_META;
+  const fullyPaid = () => Object.keys(COST).every((k) => (fund[k] || 0) >= COST[k]);
+  if (fullyPaid()) {
     if (team._busyJob) return { ok: false, reason: 'Finish your current task, then claim to start building.' };
     area.claimFund = null;
     team._busyJob = { kind: 'claim', areaId, remaining: B.CLAIM_TIME };
     return { ok: true, msg: 'Building outpost at ' + area.name + '...' };
   }
-  // Enforce the Lord's rationing HERE too (not only upstream in applyAction): the AI Steward calls
-  // claim() directly, so without this check it would fund outposts with wood the Lord reserved away
-  // from the Steward (e.g. reserved for the Blacksmith). A one-time access grant lifts the block.
-  const held = eco.heldCostForRole(team, 'STEWARD', B.CLAIM_COST);
-  if (held) return { ok: false, reason: (C.RESOURCE_META[held] ? C.RESOURCE_META[held].name : held) + ' is reserved by the Lord — ask to access it.' };
-  const have = team.resources.wood || 0;
-  // Minimum commitment: the Steward must put at least CLAIM_MIN_INSTALMENT wood toward an outpost at a
-  // time (or the remainder, if less than that is left to pay) — no dribbling 1 wood at a time.
-  const remaining = need - paid;
-  const minPay = Math.min(B.CLAIM_MIN_INSTALMENT, remaining);
-  if (have < minPay) return { ok: false, reason: 'You must commit at least ' + minPay + ' 🪵 wood toward the outpost — gather more first.' };
-  const pay = Math.min(have, remaining);
-  eco.spendFor(team, { wood: pay }, 'STEWARD', 'funding outpost at ' + area.name);
-  paid += pay;
-  if (paid >= need) {
+  // Enforce the Lord's rationing on EVERY required resource (the AI Steward calls claim() directly).
+  const held = eco.heldCostForRole(team, 'STEWARD', COST);
+  if (held) return { ok: false, reason: (m[held] ? m[held].name : held) + ' is reserved by the Lord — ask to access it.' };
+  // Pay an instalment toward each still-owed resource (at least CLAIM_MIN_INSTALMENT each, or the remainder).
+  let paidAny = false;
+  for (const k of Object.keys(COST)) {
+    const remaining = COST[k] - (fund[k] || 0);
+    if (remaining <= 0) continue;
+    const have = team.resources[k] || 0;
+    const minPay = Math.min(B.CLAIM_MIN_INSTALMENT, remaining);
+    if (have < minPay) continue;                       // can't make the minimum instalment of this resource yet
+    const pay = Math.min(have, remaining);
+    eco.spendFor(team, { [k]: pay }, 'STEWARD', 'funding outpost at ' + area.name);
+    fund[k] = (fund[k] || 0) + pay; paidAny = true;
+  }
+  if (!paidAny) {
+    const needTxt = Object.keys(COST).filter((k) => (fund[k] || 0) < COST[k])
+      .map((k) => Math.min(B.CLAIM_MIN_INSTALMENT, COST[k] - (fund[k] || 0)) + ' ' + ((m[k] && m[k].glyph) || '') + k).join(' + ');
+    return { ok: false, reason: 'Commit at least ' + needTxt + ' toward the outpost — gather more first.' };
+  }
+  if (fullyPaid()) {
     area.claimFund = null;
-    if (!team._busyJob) { team._busyJob = { kind: 'claim', areaId, remaining: B.CLAIM_TIME }; return { ok: true, msg: 'Outpost fully funded (' + need + ' 🪵) — building at ' + area.name + '…' }; }
+    if (!team._busyJob) { team._busyJob = { kind: 'claim', areaId, remaining: B.CLAIM_TIME }; return { ok: true, msg: 'Outpost fully funded — building at ' + area.name + '…' }; }
     return { ok: true, msg: area.name + ' fully funded — finish your current task to start building.' };
   }
-  area.claimFund = { team: team.team, wood: paid };
-  return { ok: true, msg: 'Put ' + Math.round(pay) + ' 🪵 toward ' + area.name + ' (' + Math.round(paid) + '/' + need + '). Add more wood to finish.' };
+  area.claimFund = fund;
+  const status = Object.keys(COST).map((k) => Math.round(fund[k] || 0) + '/' + COST[k] + ((m[k] && m[k].glyph) || k)).join(' ');
+  return { ok: true, msg: 'Funding ' + area.name + ' — ' + status + '. Add more to finish.' };
 }
 
 function upgradeSite(state, team, areaId) {
@@ -108,8 +118,9 @@ function spawnCaravan(state, team, area, log) {
     id: S.uid('cv'), from: area.id, route, legIndex: 0, t: 0,
     x: area.x, y: area.y, cargo, escort: false, escortGroupId: null,
     resource: area.resource, guards, guardPost: area.id, fleeing: false,
-    speedMult: mode.speedMult || 1,   // Push caravans roll at half speed
-    sneak: mode.sneak || 0,           // Cautious caravans may slip past enemy troops
+    speedMult: mode.speedMult || 1,                                                   // Fast = 1.5×, Cautious = 0.5×
+    sneak: mode.sneak || 0,                                                           // Cautious: chance to slip past
+    dropChance: (area.resource === 'relics' ? mode.relicDropChance : mode.dropChance) || 0,  // Fast: chance/s to spill cargo
     mode: area.site.caravanMode || 'standard',
   });
   if (log) log(team.team, 'Caravan of ' + Math.round(amt) + ' ' + area.resource + ' departs ' + area.name + (guards ? ' (🛡 ' + guards + ' guards)' : '') + '.', 'caravan');
@@ -231,15 +242,14 @@ function tickSites(state, team, dt, rng, log) {
     else if ((a.scoutedUntil[team.team] || 0) <= state.elapsed) { a.scouted[team.team] = false; if (log) log(team.team, a.name + ' has slipped back into the fog — re-scout it.', 'scout'); }
   }
 
-  // Claimed outposts accrue cargo (scaled by work mode + caravan mode) and dispatch caravans home.
+  // Claimed outposts accrue cargo (scaled by work mode) and dispatch caravans home.
   for (const id in state.areas) {
     const area = state.areas[id];
     if (!area.site || area.claimedBy !== team.team || area.terrain === 'base') continue;
     const y = B.SITE_YIELD[area.terrain];
     if (!y) continue;
     const wm = B.WORK_MODES[area.site.workMode] || B.WORK_MODES.standard;
-    const cm = B.CARAVAN_MODES[area.site.caravanMode] || B.CARAVAN_MODES.standard;
-    const amt = (y[area.resource] || 0) * area.site.level * wm.production * cm.yield * eco.stewardGatherMult(team, area.resource);
+    const amt = (y[area.resource] || 0) * area.site.level * wm.production * eco.stewardGatherMult(team, area.resource);
     area.site.cargo += amt * dt;
     // Dispatch a caravan once cargo reaches this good's threshold AND the min interval has passed.
     // Most goods ship in big loads (60); precious goods like relics ship one at a time.
@@ -269,6 +279,11 @@ function tickSites(state, team, dt, rng, log) {
     const fromA = state.areas[cv.route[cv.legIndex]];
     const toA = state.areas[cv.route[cv.legIndex + 1]];
     if (!toA) { deliver(state, team, cv, log); team.caravans.splice(i, 1); continue; }
+    // Fast caravans are rickety — each second on the road they may spill 1 cargo (rarely for relics).
+    if ((cv.dropChance || 0) > 0 && rng.chance(cv.dropChance)) {
+      const cur = cv.cargo[cv.resource] || 0;
+      if (cur > 0) { cv.cargo[cv.resource] = Math.max(0, cur - 1); if (log && rng.chance(0.4)) log(team.team, '📦 A fast caravan spilled 1 ' + cv.resource + ' on the rough road.', 'caravan'); }
+    }
     const legLen = dist(fromA, toA);
     cv.t += (B.CARAVAN_SPEED * (cv.speedMult || 1) * (1 + eco.stewardStat(team, 'caravanSpeed', state.elapsed)) * dt) / Math.max(1, legLen);
     cv.x = fromA.x + (toA.x - fromA.x) * Math.min(1, cv.t);

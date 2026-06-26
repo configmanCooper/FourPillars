@@ -143,18 +143,18 @@
   const SCOUT_FULL = 8;                 // scouts that scout at EXPLORE_TIME speed (the old single-scout speed)
   const SCOUT_DECAY_SEC = 300;          // an unowned scouted area lapses to unscouted after this long
   const UNSCOUTED_COMBAT_PENALTY = 0.2; // -20% attack AND defence for soldiers fighting in an unscouted area
-  const CLAIM_TIME = 8;                 // seconds to claim a revealed neutral site
-  const CLAIM_COST = { wood: 40 };
-  const CLAIM_MIN_INSTALMENT = 10;      // the Steward must commit at least this much wood per instalment
+  const CLAIM_TIME = 8;                 // seconds to claim a SCOUTED neutral site (you must scout it first)
+  const CLAIM_COST = { wood: 60, stone: 40 };
+  const CLAIM_MIN_INSTALMENT = 10;      // the Steward must commit at least this much of each resource per instalment
 
   // CARAVAN MODES (Steward, per outpost): govern caravans LEAVING this outpost.
-  //  • Cautious — 30% smaller loads, but each caravan has a 50% chance to slip past enemy troops.
   //  • Standard — balanced.
-  //  • Push — +25% load, but caravans move at half speed (easier to intercept).
+  //  • Fast — +50% speed, but ~20%/s chance to spill 1 cargo on the road (only 5%/s for precious relics).
+  //  • Cautious — −50% speed, but a 25% chance to slip past enemy soldiers that catch it.
   const CARAVAN_MODES = {
-    cautious: { name: 'Cautious', yield: 0.7,  sneak: 0.5, speedMult: 1.0, desc: '30% smaller loads, but caravans have a 50% chance to slip past enemy troops.' },
-    standard: { name: 'Standard', yield: 1.0,  sneak: 0,   speedMult: 1.0, desc: 'Balanced caravans.' },
-    push:     { name: 'Push',     yield: 1.25, sneak: 0,   speedMult: 0.5, desc: '+25% load, but caravans move at HALF speed.' },
+    standard: { name: 'Standard', speedMult: 1.0,                                          desc: 'Balanced caravans.' },
+    fast:     { name: 'Fast',     speedMult: 1.5, dropChance: 0.2, relicDropChance: 0.05,  desc: '+50% speed, but ~20%/s chance to spill 1 cargo on the road (5%/s for relics).' },
+    cautious: { name: 'Cautious', speedMult: 0.5, sneak: 0.25,                             desc: '−50% speed, but a 25% chance to slip past enemy soldiers that catch it.' },
   };
   // WORK MODES (Steward, per outpost): trade the location's production against how fast its buildings
   // can be razed by a besieger.
@@ -250,7 +250,7 @@
   // caravans). Unguarded caravans that meet enemy troops are DESTROYED; guards fight to save them.
   // Guards are a ONE-WAY commitment — once lent they never return to the Commander's army.
   const GUARD_LEND_DEFAULT = 4;         // guards the Commander lends per GUARDS request
-  const GUARD_KILL_PER = 0.5;           // enemy units a committed guard can cut down (militia-grade)
+  const GUARD_KILL_PER = 0.25;          // enemy units a committed guard can cut down (militia-grade; deliberately weak)
   const GUARD_LOSS_PER = 0.7;           // guards lost per enemy unit faced in a caravan skirmish
   const GUARD_PIN_SECONDS = 4;          // attackers must STOP this long to fight a caravan's guards (buys the caravan time)
   // Hosts march at a multiple of caravan speed, so they can run down a fleeing caravan after breaking its
@@ -425,6 +425,12 @@
   const COMBAT_ROUND_LOSS = 0.12;       // (legacy) fraction of losing-side power converted to casualties per round
   // Per-second discrete combat: each engaged side rolls 0/1/2/3 kills/sec based on the strength share.
   const COMBAT_INTENSITY = 1.1;         // scales kill chance; even fight (~0.5 share) ≈ 0.8 kills/sec
+  // Speed → attack cadence: a host's AVERAGE unit speed scales how often it lands blows. Faster troops
+  // (cavalry, speed 120) strike more often; slow ones (catapults, speed 45) less. Bounded so it tilts a
+  // fight without dominating it. The factor multiplies a side's ATTACK contribution (not its defence).
+  const SPEED_COMBAT_REF = 70;          // reference speed (infantry) = no change
+  const SPEED_COMBAT_MIN = 0.8;         // slowest hosts attack at 80% cadence
+  const SPEED_COMBAT_MAX = 1.3;         // fastest hosts attack at 130% cadence
   const ARMOR_SAVE_BASE = 0.10;         // armoured host saves a soldier 10% of the time at standard quality…
   const ARMOR_SAVE_MAX = 0.4;           // …scaling with armour quality (Legendary ×3 ≈ 30%), capped here
   const MORALE = { high: 1.1, normal: 1.0, low: 0.85 };
@@ -500,7 +506,7 @@
     UNIT_STATS, EQUIP_TIER_MULT, ARMOR_DEF_BONUS, COUNTER_BONUS_PER, COUNTER_BONUS_MAX, ARCHER_OUTPOST_BONUS, FORMATIONS, STANCES, DOCTRINES, MILITARY_POLICIES, MILITARY_POLICY_DEFAULT, WALL_TROOP_BONUS, WALL_ARCHER_BONUS,
     BUILDING_RAZE_HP, RAZE_STAT, WALL_RAZE_MULT, KEEP_RAZE_MULT, KEEP_DEFENDER_BONUS, MAX_UNITS_PER_AREA, RAZE_POINTS, KEEP_RAZE_POINTS, CAPTURE_AFTER_RAZE,
     QUALITY_TIERS, FORGE_ZONES, AI_QUALITY_DIST, UNIT_WEAPON, qualityTier, qualityById, rollQuality,
-    ARCHER_ARROW_USE, COMBAT_ROUND_LOSS, COMBAT_INTENSITY, ARMOR_SAVE_BASE, ARMOR_SAVE_MAX, MORALE,
+    ARCHER_ARROW_USE, COMBAT_ROUND_LOSS, COMBAT_INTENSITY, SPEED_COMBAT_REF, SPEED_COMBAT_MIN, SPEED_COMBAT_MAX, ARMOR_SAVE_BASE, ARMOR_SAVE_MAX, MORALE,
     KEEP_HP, KEEP_DEF, SCORE_WEIGHTS, RECRUITS_PER_UNIT, START_RECRUITS,
     EVENT_INTERVAL, AI_THINK_INTERVAL, AI_DIFFICULTY_INTERVAL,
   };

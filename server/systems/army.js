@@ -552,8 +552,13 @@ function battleRound(state, areaId, blueM, redM, blueT, redT, dt, rng, log, blue
   const isBase = area && area.terrain === 'base';
   const bKeep = (isBase && area.owner === 'BLUE') ? B.KEEP_DEFENDER_BONUS : 1;
   const rKeep = (isBase && area.owner === 'RED') ? B.KEEP_DEFENDER_BONUS : 1;
-  const bPow = (bS.atk * 0.6 + bS.def * 0.4) * bCap * bKeep + 1;
-  const rPow = (rS.atk * 0.6 + rS.def * 0.4) * rCap * rKeep + 1;
+  // Speed → attack cadence: a host's average unit speed scales how OFTEN it lands blows (its attack
+  // contribution). Fast hosts (cavalry) strike more; slow ones (catapults) less. Bounded so it tilts,
+  // not dominates. Defence is unaffected.
+  const spMult = (m) => { let tot = 0, sp = 0; for (const u of C.UNITS) { const n = m.units[u] || 0; if (n > 0) { tot += n; sp += (B.UNIT_STATS[u].speed || B.SPEED_COMBAT_REF) * n; } } const avg = tot > 0 ? sp / tot : B.SPEED_COMBAT_REF; return Math.max(B.SPEED_COMBAT_MIN, Math.min(B.SPEED_COMBAT_MAX, avg / B.SPEED_COMBAT_REF)); };
+  const bSpd = spMult(blueM), rSpd = spMult(redM);
+  const bPow = (bS.atk * 0.6 * bSpd + bS.def * 0.4) * bCap * bKeep + 1;
+  const rPow = (rS.atk * 0.6 * rSpd + rS.def * 0.4) * rCap * rKeep + 1;
   // Per-second discrete combat: each side rolls 0/1/2/3 kills based on the strength comparison (stronger
   // = more kills; killing more is rarer). A stance's lossMult makes it more/less vulnerable. Then the
   // target host's ARMOUR may save each soldier from dying.

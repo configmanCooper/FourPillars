@@ -372,7 +372,9 @@
       const scoutingElse = team && team.scoutJob && team.scoutJob.areaId !== a.id;   // only one scout job at a time
       if (!revealed) btns += btn(scoutingElse ? 'Scout (busy)' : 'Scout', "FP.UI.act('explore',{areaId:'" + a.id + "'})", !adj || scoutingElse);
       else {
-        if (a.site && (!a.owner || (a.owner === State.myTeam && a.claimedBy !== State.myTeam))) btns += btn(claimLabel(a), "FP.UI.act('claim',{areaId:'" + a.id + "'})");
+        const scoutedHere = !!(a.scouted && a.scouted[State.myTeam]);
+        if (a.site && !scoutedHere && (!a.owner || a.owner === State.myTeam)) btns += btn('Scout to build', "FP.UI.act('explore',{areaId:'" + a.id + "'})", !adj || scoutingElse);
+        else if (a.site && scoutedHere && (!a.owner || (a.owner === State.myTeam && a.claimedBy !== State.myTeam))) btns += btn(claimLabel(a), "FP.UI.act('claim',{areaId:'" + a.id + "'})");
         if (a.site && a.claimedBy === State.myTeam) { btns += btn('Upgrade', "FP.UI.act('upgradeSite',{areaId:'" + a.id + "'})"); btns += btn('Abandon', "FP.UI.act('abandon',{areaId:'" + a.id + "'})"); }
       }
     }
@@ -929,9 +931,14 @@
 
   // Label for a claim/fund button that reflects partial wood funding toward an outpost.
   function claimLabel(a) {
-    const need = B.CLAIM_COST.wood;
-    const paid = (a.claimFund && a.claimFund.team === State.myTeam) ? Math.round(a.claimFund.wood) : 0;
-    return paid > 0 ? 'Fund (' + Math.max(0, need - paid) + ' 🪵 left · ' + paid + '/' + need + ')' : 'Claim (' + need + ' 🪵)';
+    const COST = B.CLAIM_COST; const m = C.RESOURCE_META;
+    const fund = (a.claimFund && a.claimFund.team === State.myTeam) ? a.claimFund : null;
+    const anyPaid = fund && Object.keys(COST).some((k) => (fund[k] || 0) > 0);
+    if (anyPaid) {
+      const left = Object.keys(COST).map((k) => (m[k] ? m[k].glyph : k) + Math.max(0, COST[k] - Math.round(fund[k] || 0))).join(' ');
+      return 'Fund (' + left + ' left)';
+    }
+    return 'Claim (' + Object.keys(COST).map((k) => (m[k] ? m[k].glyph : k) + COST[k]).join(' ') + ')';
   }
 
   // Contested = enemy owns this area or an enemy host is on it (mirrors server areaIsDangerous).
@@ -948,13 +955,12 @@
   function siteYieldPerSec(a) {
     const y = B.SITE_YIELD[a.terrain]; if (!y || !a.site) return 0;
     const wm = B.WORK_MODES[a.site.workMode || 'standard'] || B.WORK_MODES.standard;
-    const cm = B.CARAVAN_MODES[a.site.caravanMode || 'standard'] || B.CARAVAN_MODES.standard;
-    return (y[a.resource] || 0) * a.site.level * wm.production * cm.yield;
+    return (y[a.resource] || 0) * a.site.level * wm.production;
   }
   function modalSites() {
     const snap = State.snapshot, team = State.teamState();
     const pool = Math.round(team.guards || 0);
-    let html = '<div class="muted">🏚️ <b>Outposts</b> turn claimed sites into income — each ships its goods home by 🐎 <b>caravan</b>. Claim costs <b>' + B.CLAIM_COST.wood + ' 🪵</b> (instalments). <b>Cautious</b> caravans may slip past the enemy; <b>Push</b> carries more but rolls at half speed.</div>' +
+    let html = '<div class="muted">🏚️ <b>Outposts</b> turn claimed sites into income — each ships its goods home by 🐎 <b>caravan</b>. You must <b>scout</b> a site before building. Claim costs <b>' + B.CLAIM_COST.wood + ' 🪵 + ' + B.CLAIM_COST.stone + ' 🪨</b> (instalments). Caravan modes: <b>Fast</b> (+50% speed, may spill cargo), <b>Cautious</b> (−50% speed, may evade the enemy).</div>' +
       '<div class="muted" style="font-size:11px;margin-top:2px">🛡 <b>Guards</b> protect a post\'s caravans: an <u>unguarded</u> caravan that meets enemy troops is <b style="color:#d46a5a">destroyed</b>. Guards stop the attackers and fight (and can <b>die</b>); if overwhelmed they still buy the caravan time to flee — but faster soldiers may run it down. <b>Guards are a one-way commitment</b> — once lent they never return to the army.</div>';
     // Guard pool + ask the Commander for more.
     html += '<div class="opt"><div class="opt-info"><div class="opt-name">🛡 Guard pool: <b>' + pool + '</b> unassigned</div><div class="opt-desc">militia/recruits the Commander lent you (permanently)</div></div><button class="btn btn-sm" onclick="FP.UI.askGuards()">Ask Commander for guards</button></div>';
@@ -971,13 +977,13 @@
         const cCd = Math.max(0, Math.ceil(((a.site && a.site.caravanModeUntil) || 0) - snap.elapsed));
         const modeRow = (label, keys, cur, modes, action, cd, tag) => {
           const btns = keys.map((k) => { const wm = modes[k]; const lock = (cur !== k) && (cd > 0 || underAttack);
-            const hint = action === 'setCaravanMode' ? (wm.sneak ? ' 🌙' : (wm.speedMult < 1 ? ' 🐢' : '')) : (wm.production > 1 ? ' ⚒️' : (wm.razeMult > 1 ? ' 🛡' : ''));
+            const hint = action === 'setCaravanMode' ? (wm.sneak ? ' 🌙' : (wm.speedMult > 1 ? ' ⚡' : '')) : (wm.production > 1 ? ' ⚒️' : (wm.razeMult > 1 ? ' 🛡' : ''));
             return '<button class="btn btn-sm" ' + (lock ? 'disabled' : '') + ' title="' + esc(wm.desc) + '" style="' + (cur === k ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.act(\'' + action + '\',{areaId:\'' + id + '\',mode:\'' + k + '\'});FP.UI.modalSites()">' + wm.name + '<span style="font-size:9px">' + hint + '</span></button>'; }).join('');
           const note = underAttack ? ' <span style="color:#d46a5a;font-size:10px">⚔ locked (under attack)</span>' : (cd > 0 ? ' <span class="muted" style="font-size:10px">⏳' + cd + 's</span>' : '');
           return '<div style="font-size:10px;margin-top:3px">' + tag + note + '</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px">' + btns + '</div>';
         };
         const modeBtns = modeRow('Work', ['standard', 'defensive', 'maxProduction'], wMode, B.WORK_MODES, 'setWorkMode', wCd, '⚙️ Work mode') +
-          modeRow('Caravan', ['cautious', 'standard', 'push'], cMode, B.CARAVAN_MODES, 'setCaravanMode', cCd, '🐎 Caravan mode');
+          modeRow('Caravan', ['standard', 'fast', 'cautious'], cMode, B.CARAVAN_MODES, 'setCaravanMode', cCd, '🐎 Caravan mode');
         const thr = (B.CARAVAN_DISPATCH_BY_RESOURCE && B.CARAVAN_DISPATCH_BY_RESOURCE[a.resource]) || B.CARAVAN_DISPATCH_CARGO;
         // Caravan ETA: warn ~5s before a caravan departs this post.
         const remain = thr - a.site.cargo; const eta = yld > 0 ? remain / yld : Infinity;
@@ -1009,7 +1015,8 @@
         act = rev ? 'Re-scout' : 'Scout'; fn = "FP.UI.act('explore',{areaId:'" + id + "'})";
         desc = rev ? '🌫 lapsed into fog — re-scout (−' + Math.round(B.UNSCOUTED_COMBAT_PENALTY * 100) + '% combat here)' : 'unscouted — scout to reveal';
         if (scoutBusy) desc += ' <span style="color:#d9a441">· scouting elsewhere — one at a time</span>';
-      } else if (rev && a.site && (!a.owner || (a.owner === State.myTeam && a.claimedBy !== State.myTeam))) { act = claimLabel(a); fn = "FP.UI.act('claim',{areaId:'" + id + "'})"; keepOpen = true; const m = C.RESOURCE_META[a.resource]; const yld = (B.SITE_YIELD[a.terrain] || {})[a.resource] || 0; desc = (a.owner === State.myTeam ? 'your ground · outpost destroyed — rebuild · ' : 'neutral · ') + (m ? m.glyph + ' ' + a.resource : a.resource) + ' (~' + yld.toFixed(2) + '/s at Lv1)' + (!scouted ? ' · 🌫 unscouted' : ''); }
+      } else if (rev && a.site && scouted && (!a.owner || (a.owner === State.myTeam && a.claimedBy !== State.myTeam))) { act = claimLabel(a); fn = "FP.UI.act('claim',{areaId:'" + id + "'})"; keepOpen = true; const m = C.RESOURCE_META[a.resource]; const yld = (B.SITE_YIELD[a.terrain] || {})[a.resource] || 0; desc = (a.owner === State.myTeam ? 'your ground · outpost destroyed — rebuild · ' : 'neutral · ') + (m ? m.glyph + ' ' + a.resource : a.resource) + ' (~' + yld.toFixed(2) + '/s at Lv1)'; }
+      else if (rev && a.site && !scouted && (!a.owner || a.owner === State.myTeam)) { desc = '🌫 unscouted — you must scout it (from an adjacent area) before you can build an outpost here.'; }
       else if (rev && a.owner && a.owner !== State.myTeam) { desc = 'enemy-held' + (!scouted ? ' · 🌫 unscouted (−combat)' : ''); }
       else continue;
       if (act) any = true;
@@ -1053,7 +1060,7 @@
       const cMode = a.site.caravanMode || 'standard';
       const cCd = Math.max(0, Math.ceil((a.site.caravanModeUntil || 0) - snap.elapsed));
       const underAttack = areaUnderAttackClient(snap, id);
-      const cmBtns = ['cautious', 'standard', 'push'].map((k) => { const wm = B.CARAVAN_MODES[k]; const lock = cMode !== k && (cCd > 0 || underAttack); const hint = wm.sneak ? '🌙' : (wm.speedMult < 1 ? '🐢' : ''); return '<button class="btn btn-sm" ' + (lock ? 'disabled' : '') + ' title="' + esc(wm.desc) + '" style="' + (cMode === k ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.act(\'setCaravanMode\',{areaId:\'' + id + '\',mode:\'' + k + '\'});FP.UI.modalCaravans()">' + wm.name + ' ' + hint + '</button>'; }).join('');
+      const cmBtns = ['standard', 'fast', 'cautious'].map((k) => { const wm = B.CARAVAN_MODES[k]; const lock = cMode !== k && (cCd > 0 || underAttack); const hint = wm.sneak ? '🌙' : (wm.speedMult > 1 ? '⚡' : ''); return '<button class="btn btn-sm" ' + (lock ? 'disabled' : '') + ' title="' + esc(wm.desc) + '" style="' + (cMode === k ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.act(\'setCaravanMode\',{areaId:\'' + id + '\',mode:\'' + k + '\'});FP.UI.modalCaravans()">' + wm.name + ' ' + hint + '</button>'; }).join('');
       const cdNote = underAttack ? ' <span style="color:#d46a5a;font-size:10px">⚔ locked</span>' : (cCd > 0 ? ' <span class="muted" style="font-size:10px">⏳' + cCd + 's</span>' : '');
       html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + (m ? m.glyph + ' ' : '') + esc(a.name) + ' <span class="muted">' + Math.round(a.site.cargo) + '/' + thr + ' cargo</span></div>' +
         '<div style="font-size:10px;margin-top:2px">🐎 Caravan mode' + cdNote + '</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px">' + cmBtns + '</div>' +
