@@ -23,6 +23,11 @@ function explore(state, team, areaId) {
   const adj = area.connections.some((n) => state.areas[n].scouted[team.team] || state.areas[n].owner === team.team);
   if (!adj && !area.revealed[team.team]) return { ok: false, reason: 'Too far to scout yet.' };
   if (team.scoutJob && team.scoutJob.areaId === areaId) return { ok: false, reason: 'Already scouting there.' };
+  // Only ONE location may be scouted at a time — finish (or it lapses) before starting another.
+  if (team.scoutJob && team.scoutJob.areaId !== areaId) {
+    const cur = state.areas[team.scoutJob.areaId];
+    return { ok: false, reason: 'Already scouting ' + (cur ? cur.name : 'another area') + ' — finish that first.' };
+  }
   if ((team.pop.scouts || 0) <= 0) return { ok: false, reason: 'Assign Scouts first (Labor screen).' };
   team.scoutJob = { areaId, progress: 0 };
   return { ok: true, msg: 'Scouting ' + area.name + '...' };

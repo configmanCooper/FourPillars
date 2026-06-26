@@ -369,7 +369,8 @@
     const btn = (label, fn, dis) => '<button class="btn btn-sm" ' + (dis ? 'disabled' : '') + ' onclick="' + fn + '">' + label + '</button>';
     if (role === 'STEWARD') {
       const adj = a.connections.some((n) => snap.areas[n].revealed && snap.areas[n].revealed[State.myTeam]);
-      if (!revealed) btns += btn('Scout', "FP.UI.act('explore',{areaId:'" + a.id + "'})", !adj);
+      const scoutingElse = team && team.scoutJob && team.scoutJob.areaId !== a.id;   // only one scout job at a time
+      if (!revealed) btns += btn(scoutingElse ? 'Scout (busy)' : 'Scout', "FP.UI.act('explore',{areaId:'" + a.id + "'})", !adj || scoutingElse);
       else {
         if (a.site && (!a.owner || (a.owner === State.myTeam && a.claimedBy !== State.myTeam))) btns += btn(claimLabel(a), "FP.UI.act('claim',{areaId:'" + a.id + "'})");
         if (a.site && a.claimedBy === State.myTeam) { btns += btn('Upgrade', "FP.UI.act('upgradeSite',{areaId:'" + a.id + "'})"); btns += btn('Abandon', "FP.UI.act('abandon',{areaId:'" + a.id + "'})"); }
@@ -997,6 +998,7 @@
       const scouted = !!(a.scouted && a.scouted[State.myTeam]);
       const adj = a.connections.some((n) => (snap.areas[n].scouted && snap.areas[n].scouted[State.myTeam]) || snap.areas[n].owner === State.myTeam);
       const scoutingHere = team.scoutJob && team.scoutJob.areaId === id;
+      const scoutBusy = team.scoutJob && team.scoutJob.areaId !== id;   // only one location may be scouted at a time
       let act = '', fn = '', keepOpen = false, desc = '', extra = '';
       if (scoutingHere) {
         const pct = Math.round(Math.max(0, Math.min(1, team.scoutJob.progress || 0)) * 100);
@@ -1006,11 +1008,14 @@
       } else if (!scouted && adj) {
         act = rev ? 'Re-scout' : 'Scout'; fn = "FP.UI.act('explore',{areaId:'" + id + "'})";
         desc = rev ? '🌫 lapsed into fog — re-scout (−' + Math.round(B.UNSCOUTED_COMBAT_PENALTY * 100) + '% combat here)' : 'unscouted — scout to reveal';
+        if (scoutBusy) desc += ' <span style="color:#d9a441">· scouting elsewhere — one at a time</span>';
       } else if (rev && a.site && (!a.owner || (a.owner === State.myTeam && a.claimedBy !== State.myTeam))) { act = claimLabel(a); fn = "FP.UI.act('claim',{areaId:'" + id + "'})"; keepOpen = true; const m = C.RESOURCE_META[a.resource]; const yld = (B.SITE_YIELD[a.terrain] || {})[a.resource] || 0; desc = (a.owner === State.myTeam ? 'your ground · outpost destroyed — rebuild · ' : 'neutral · ') + (m ? m.glyph + ' ' + a.resource : a.resource) + ' (~' + yld.toFixed(2) + '/s at Lv1)' + (!scouted ? ' · 🌫 unscouted' : ''); }
       else if (rev && a.owner && a.owner !== State.myTeam) { desc = 'enemy-held' + (!scouted ? ' · 🌫 unscouted (−combat)' : ''); }
       else continue;
       if (act) any = true;
-      html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + a.name + ' <span class="muted">' + (a.resource || '') + '</span></div><div class="opt-desc">' + desc + '</div>' + extra + '</div>' + (act ? '<button class="btn btn-sm" ' + ((team.pop.scouts || 0) <= 0 && (act === 'Scout' || act === 'Re-scout') ? 'title="Assign Scouts in the Labor screen first"' : '') + ' onclick="' + fn + (keepOpen ? '' : ';FP.UI.closeModal()') + '">' + act + '</button>' : '') + '</div>';
+      const isScoutAct = act === 'Scout' || act === 'Re-scout';
+      const scoutDis = isScoutAct && (scoutBusy || (team.pop.scouts || 0) <= 0);
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + a.name + ' <span class="muted">' + (a.resource || '') + '</span></div><div class="opt-desc">' + desc + '</div>' + extra + '</div>' + (act ? '<button class="btn btn-sm" ' + (scoutDis ? 'disabled ' : '') + (isScoutAct && (team.pop.scouts || 0) <= 0 ? 'title="Assign Scouts in the Labor screen first"' : (scoutBusy && isScoutAct ? 'title="Already scouting another area — finish it first"' : '')) + ' onclick="' + fn + (keepOpen ? '' : ';FP.UI.closeModal()') + '">' + act + '</button>' : '') + '</div>';
     }
     if (!any && !owned.length) html += '<div class="muted">Assign 🔭 Scouts (Labor), then scout neighbouring areas and claim their sites.</div>';
     openModal('🏚️ Outposts & Sites', html, modalSites);
