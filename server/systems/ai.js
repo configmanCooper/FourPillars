@@ -470,6 +470,21 @@ function aiSteward(state, team, sys, rng, persona, st) {
   else if (wantStone && !wantIron) target = B.AI_MINE_FOCUS_MIN;
   if (Math.abs(target - g.mineIronFocus) > 0.01) { const step = Math.sign(target - g.mineIronFocus) * Math.min(0.1, Math.abs(target - g.mineIronFocus)); eco.setMineFocus(state, team, g.mineIronFocus + step); if (dem && (st.cd.mineSay || 0) <= state.elapsed) { say(state, team, sys, st, C.ROLES.STEWARD, 'Shifting the mines toward ' + dem + ' as asked.', 12); st.cd.mineSay = state.elapsed + 30; } }
 
+  // Dangerous home labour: when a good is critically short AND we have population to spare (comfortably
+  // above the floor and not in a famine), push that crew hard for +50% output at the risk of losing a
+  // worker. Stand them down the moment the shortage eases or the population thins — never gamble lives
+  // in a famine. This is free (like the Lord's worker tuning), so it isn't gated by st.acted.
+  {
+    const dres = team.resources, dcap = team.storageCap || 100, dp = team.pop;
+    const dwSafe = !team._starving && (dp.total || 0) > B.POP_FLOOR + 6;
+    const dw = team.dangerWork || {};
+    // Hysteresis (switch on below 18% of cap, only stand down once back above 28%) avoids flip-flopping
+    // the crew between safe and dangerous each second while a good hovers near the threshold.
+    const dwWantPool = (pool, keys) => { if (!dwSafe) return false; const v = Math.min.apply(null, keys.map((k) => (dres[k] || 0) / dcap)); return dw[pool] ? v < 0.28 : v < 0.18; };
+    const dwWant = { food: dwWantPool('food', ['food']), wood: dwWantPool('wood', ['wood']), mine: dwWantPool('mine', ['iron', 'stone']) };
+    for (const pool of ['food', 'wood', 'mine']) if (!!dw[pool] !== !!dwWant[pool]) eco.setDangerWork(state, team, pool, dwWant[pool]);
+  }
+
   // When wood is scarce and there's land worth claiming, ask the council to conserve wood (throttled).
   if ((team.resources.wood || 0) < 20 && (st.cd.conserve || 0) <= state.elapsed) {
     let claimable = false;
@@ -547,18 +562,42 @@ function aiSteward(state, team, sys, rng, persona, st) {
   if ((team.stewardPolicyCooldownUntil || 0) <= state.elapsed) {
     const res = team.resources;
     const scarce = ['food', 'wood', 'stone', 'iron'].sort((a, b) => (res[a] || 0) - (res[b] || 0))[0];
-    let wantPol = 'pol_' + scarce;
     const minRes = Math.min(res.food || 0, res.wood || 0, res.stone || 0, res.iron || 0);
-    if (minRes > team.storageCap * 0.5) wantPol = 'pol_growth';   // comfortably supplied — lean into growth
+    const heavyBuild = (team.buildQueue || []).length >= 2;
+    // Logistics-bound? Owned posts whose haul-route runs through danger benefit from faster caravans.
+    const logisticsBound = (function () { let n = 0; for (const id in state.areas) { const a = state.areas[id]; if (a.claimedBy === team.team && a.terrain !== 'base' && a.site) { const route = S.findPath(state.areas, id, S.homeBase(team.team)) || []; for (let i = 1; i < route.length; i++) if (sites.areaIsDangerous(state, team, route[i])) { n++; break; } } } return n >= 2; })();
+    let wantPol = 'pol_' + scarce;                                  // default: shore up our scarcest good
+    if (minRes > team.storageCap * 0.5) {
+      // Comfortably supplied — spend the slot on a force multiplier instead of another resource trickle.
+      wantPol = heavyBuild ? 'pol_buildcost' : (logisticsBound ? 'pol_caravan' : 'pol_growth');
+    } else if (heavyBuild && minRes > team.storageCap * 0.3) {
+      wantPol = 'pol_buildcost';                                    // mid-supply but building hard: cheaper builds win
+    }
     if (team.stewardPolicy !== wantPol) eco.setStewardPolicy(state, team, wantPol);
   }
   if (!st.acted && (team.stewardActionCooldownUntil || 0) <= state.elapsed && (st.cd.stewardAction || 0) <= state.elapsed) {
+    const res = team.resources, cap = team.storageCap || 100;
     const cand = [];
+    // ---- Crisis responders first ----
+    // Larder thinning with many mouths under arms → cut soldier upkeep before a famine bites.
+    if ((res.food || 0) < cap * 0.35 && (team.pop.soldiers || 0) >= 4) cand.push('rationing');
+    // A storehouse brimming on any good → raise every cap so the surplus isn't wasted (the late-game stall).
+    if (['food', 'wood', 'stone', 'iron'].some((k) => (res[k] || 0) >= cap - 8)) cand.push('emergencyStores');
+    // An enemy host on or beside our ground → stiffen every troop's defence for the coming fight.
+    if (homeUnderThreat(state, team)) cand.push('musterLevy');
+    // A host marching to strike → speed the columns so the blow lands before the foe can ready.
+    if (team.armies.some((h) => h.moving && h.mission && ['attack', 'raid', 'siege'].includes(h.mission.type))) cand.push('rally');
+    // ---- Steady-state boosters ----
     if (!team._starving && team.pop.total < team.housing) cand.push('fertility');
-    if (team.training && team.training.length) cand.push('warDrills');
-    if (team.buildQueue && team.buildQueue.length) cand.push('corvee');
+    if (team.production && team.production.length) cand.push('forgeBellows');     // forge busy → speed it
+    if (team.training && team.training.length) cand.push('warDrills');            // training troops → speed it
+    if (team.buildQueue && team.buildQueue.length) cand.push('corvee');           // building → speed it
+    if (team.scoutJob || unscoutedAdj.length >= 2) cand.push('pathfinders');      // frontier to map → scout faster
     if (team.pop.idle >= 5) cand.push('overseers');
     if ((team.buildings.university || 0) > 0) cand.push('scholars');
+    // ---- Instant conversions / relic learning (only when the inputs can truly be spared) ----
+    if ((res.food || 0) > cap * 0.6 && ['wood', 'stone', 'iron'].some((k) => (res[k] || 0) < 25)) cand.push('grainLevy');
+    if ((res.relics || 0) >= 1 && !team._starving) cand.push('learnRelics');
     cand.push('postRoads');
     for (const id of cand) {
       const a = B.STEWARD_ACTIONS_BY_ID[id];
@@ -566,10 +605,19 @@ function aiSteward(state, team, sys, rng, persona, st) {
       if (((team.stewardActionCD && team.stewardActionCD[id]) || 0) > state.elapsed) continue;
       if (!eco.canAfford(team, a.cost)) continue;
       if (a.workers && team.pop.idle < a.workers + 2) continue;       // keep a couple of idle workers in reserve
-      let tooPoor = false; for (const k in a.cost) if ((team.resources[k] || 0) - a.cost[k] < team.storageCap * 0.15) tooPoor = true;
-      if (tooPoor) continue;
+      // Don't bleed a good down into scarcity for an ordinary buff — but the instant conversions
+      // (grainLevy/learnRelics) ARE the point, so they ride on affordability + their own trigger above.
+      if (!a.instant) { let tooPoor = false; for (const k in a.cost) if ((team.resources[k] || 0) - a.cost[k] < team.storageCap * 0.15) tooPoor = true; if (tooPoor) continue; }
       if (eco.doStewardAction(state, team, id).ok) { st.acted = true; st.cd.stewardAction = state.elapsed + 60; say(state, team, sys, st, C.ROLES.STEWARD, a.glyph + ' ' + a.name + ' — for the realm!', 25); break; }
     }
+  }
+  // ---- Market barter: with a Marketplace, convert a commodity glutted at the cap (being wasted) into
+  //      one we're critically short of. marketTrade self-rejects on the Lord's reserved goods. ----
+  if ((team.buildings.marketplace || 0) > 0 && (team.marketTradeUntil || 0) <= state.elapsed) {
+    const res = team.resources, cap = team.storageCap || 100, goods = B.MARKET_TRADE_RESOURCES;
+    const glut = goods.filter((k) => (res[k] || 0) >= cap - 5).sort((a, b) => (res[b] || 0) - (res[a] || 0))[0];
+    const need = goods.filter((k) => (res[k] || 0) < B.MARKET_TRADE_IN).sort((a, b) => (res[a] || 0) - (res[b] || 0))[0];
+    if (glut && need && glut !== need && eco.marketTrade(state, team, glut, need).ok) say(state, team, sys, st, C.ROLES.STEWARD, '⚖️ Bartering surplus ' + glut + ' for ' + need + '.', 25);
   }
   // ---- Caravan guards: ask the Commander for guards, then station them where caravans are most
   //      valuable & most exposed (relics first, then iron/horses; weight by how dangerous the route is).
@@ -609,6 +657,18 @@ function scoutPrio(state, team, a) {
   if (a.connections.some((n) => state.areas[n] && state.areas[n].owner === foe)) s += 3; // borders the enemy
   if (enemyAt(state, team, a.id)) s += 2;                      // an enemy host is here — see what we face
   return s;
+}
+// True if an enemy host sits on, or directly adjacent to, our base or any owned outpost — i.e. a fight is
+// imminent on home soil. Used to trigger the Steward's Muster the Levy (a defensive buff for all troops).
+function homeUnderThreat(state, team) {
+  const home = S.homeBase(team.team);
+  const ours = [home];
+  for (const id in state.areas) { const a = state.areas[id]; if (a.claimedBy === team.team && a.terrain !== 'base' && a.site) ours.push(id); }
+  for (const id of ours) {
+    if (enemyAt(state, team, id)) return true;
+    const a = state.areas[id]; if (a && a.connections.some((n) => enemyAt(state, team, n))) return true;
+  }
+  return false;
 }
 // Find a nearby enemy caravan a host can intercept: aim at the soonest-reachable point on its remaining
 // route. Prefers high-value cargo (relics) and skips caravans that out-gun the host.
