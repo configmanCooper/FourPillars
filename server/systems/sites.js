@@ -299,15 +299,6 @@ function setWorkMode(state, team, areaId, mode) {
   return { ok: true, msg: area.name + ': ' + B.WORK_MODES[mode].name + ' work.' };
 }
 
-// Lose one worker (idle first, then the largest pool) — capped by the population floor.
-function loseWorker(team, area, log) {
-  const p = team.pop;
-  if (p.total <= B.POP_FLOOR) return;
-  for (const k of ['idle', 'woodcutters', 'miners', 'farmers', 'builders', 'students']) {
-    if ((p[k] || 0) >= 1) { p[k] -= 1; eco.recomputeDerived(team); if (log) log(team.team, 'A crew was lost at ' + area.name + ' (working a contested outpost hard).', 'ambush'); return; }
-  }
-}
-
 // ---- Steward expeditions: commit workers (idle, or preparing if unlocked) for a timed payout. ----
 function expeditionEligible(state, team, def) {
   if (def.requires && def.requires.building && (team.buildings[def.requires.building] || 0) <= 0) return false;
