@@ -220,6 +220,8 @@ function applyAction(state, team, role, action, payload) {
     case 'setDangerWork': return economy.setDangerWork(state, T, payload.pool, payload.on);
     case 'setScouts': return economy.setScouts(state, T, payload.delta);
     case 'setWorkMode': return sites.setWorkMode(state, T, payload.areaId, payload.mode);
+    case 'setCaravanMode': return sites.setCaravanMode(state, T, payload.areaId, payload.mode);
+    case 'dispatchCaravan': return sites.dispatchCaravan(state, T, payload.areaId, log);
     case 'setGuards': return sites.setGuards(state, T, payload.areaId, payload.count);
     case 'startExpedition': return sites.startExpedition(state, T, payload.id, payload.useTools);
     case 'requestConserve': {
@@ -286,7 +288,7 @@ function applyAction(state, team, role, action, payload) {
 
 const ACTION_ROLE = {
   setWorkers: 'LORD', assignWorker: 'LORD', levy: 'LORD', build: 'LORD', cancelBuild: 'LORD', setPolicy: 'LORD', setMilitaryPolicy: 'LORD', setHold: 'LORD', setResourceAccess: 'LORD', releaseHold: 'LORD', setWorkerLock: 'LORD', setResearchers: 'LORD', buyResearch: 'LORD',
-  explore: 'STEWARD', claim: 'STEWARD', upgradeSite: 'STEWARD', abandon: 'STEWARD', setGatherTools: 'STEWARD', setMineFocus: 'STEWARD', requestConserve: 'STEWARD', setWorkMode: 'STEWARD', setGuards: 'STEWARD', startExpedition: 'STEWARD', setDangerWork: 'STEWARD', setScouts: 'STEWARD',
+  explore: 'STEWARD', claim: 'STEWARD', upgradeSite: 'STEWARD', abandon: 'STEWARD', setGatherTools: 'STEWARD', setMineFocus: 'STEWARD', requestConserve: 'STEWARD', setWorkMode: 'STEWARD', setCaravanMode: 'STEWARD', dispatchCaravan: 'STEWARD', setGuards: 'STEWARD', startExpedition: 'STEWARD', setDangerWork: 'STEWARD', setScouts: 'STEWARD',
   produce: 'BLACKSMITH', cancelProduce: 'BLACKSMITH', startContract: 'BLACKSMITH', setSpec: 'BLACKSMITH',
   formUnits: 'COMMANDER', trainUnits: 'COMMANDER', upgradeUnits: 'COMMANDER', reequip: 'COMMANDER', cancelTraining: 'COMMANDER', rally: 'COMMANDER', transferUnits: 'COMMANDER', command: 'COMMANDER', setFormation: 'COMMANDER', setStance: 'COMMANDER', setDoctrine: 'COMMANDER',
 };

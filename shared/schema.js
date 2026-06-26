@@ -51,7 +51,7 @@
         scouted: { BLUE: !!a.owner, RED: !!a.owner },      // CURRENTLY scouted (combat: unscouted = penalty)
         scoutedUntil: { BLUE: B.SCOUT_DECAY_SEC, RED: B.SCOUT_DECAY_SEC }, // elapsed time a non-owned scout lapses
         claimedBy: a.owner || null,       // team that has built a site here
-        site: a.resource ? { level: 1, cargo: 0, worked: false, workMode: 'standard', lastCaravanAt: -999, guards: 0 } : null,
+        site: a.resource ? { level: 1, cargo: 0, worked: false, workMode: 'standard', caravanMode: 'standard', workModeUntil: 0, caravanModeUntil: 0, lastCaravanAt: -999, guards: 0 } : null,
         threat: 0,
         buildings: {},                    // per-location buildings: { type: count }
         maxBuildings: a.terrain === 'base' ? B.BUILD_SLOTS_BASE : B.BUILD_SLOTS_SITE,

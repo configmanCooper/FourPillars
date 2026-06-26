@@ -98,14 +98,14 @@ function spawnCaravan(state, team, area, log) {
   const cargo = {}; cargo[area.resource] = amt;
   area.site.cargo = 0;
   const guards = Math.round(area.site.guards || 0);   // the post's stationed guards ride along to protect it
-  const mode = B.WORK_MODES[area.site.workMode] || B.WORK_MODES.standard;
+  const mode = B.CARAVAN_MODES[area.site.caravanMode] || B.CARAVAN_MODES.standard;
   team.caravans.push({
     id: S.uid('cv'), from: area.id, route, legIndex: 0, t: 0,
     x: area.x, y: area.y, cargo, escort: false, escortGroupId: null,
     resource: area.resource, guards, guardPost: area.id, fleeing: false,
     speedMult: mode.speedMult || 1,   // Push caravans roll at half speed
     sneak: mode.sneak || 0,           // Cautious caravans may slip past enemy troops
-    mode: area.site.workMode || 'standard',
+    mode: area.site.caravanMode || 'standard',
   });
   if (log) log(team.team, 'Caravan of ' + Math.round(amt) + ' ' + area.resource + ' departs ' + area.name + (guards ? ' (🛡 ' + guards + ' guards)' : '') + '.', 'caravan');
 }
@@ -226,14 +226,15 @@ function tickSites(state, team, dt, rng, log) {
     else if ((a.scoutedUntil[team.team] || 0) <= state.elapsed) { a.scouted[team.team] = false; if (log) log(team.team, a.name + ' has slipped back into the fog — re-scout it.', 'scout'); }
   }
 
-  // Claimed outposts accrue cargo (scaled by their work mode) and dispatch caravans home.
+  // Claimed outposts accrue cargo (scaled by work mode + caravan mode) and dispatch caravans home.
   for (const id in state.areas) {
     const area = state.areas[id];
     if (!area.site || area.claimedBy !== team.team || area.terrain === 'base') continue;
     const y = B.SITE_YIELD[area.terrain];
     if (!y) continue;
-    const mode = B.WORK_MODES[area.site.workMode] || B.WORK_MODES.standard;
-    const amt = (y[area.resource] || 0) * area.site.level * mode.yield;
+    const wm = B.WORK_MODES[area.site.workMode] || B.WORK_MODES.standard;
+    const cm = B.CARAVAN_MODES[area.site.caravanMode] || B.CARAVAN_MODES.standard;
+    const amt = (y[area.resource] || 0) * area.site.level * wm.production * cm.yield;
     area.site.cargo += amt * dt;
     // Dispatch a caravan once cargo reaches this good's threshold AND the min interval has passed.
     // Most goods ship in big loads (60); precious goods like relics ship one at a time.
@@ -322,12 +323,42 @@ function freeEscort(team, groupId) {
 }
 
 // Steward sets an outpost's work intensity (Cautious / Standard / Push).
+// Is an enemy host present ON this area (the outpost is under attack)?
+function areaUnderAttack(state, team, areaId) {
+  const foe = state.teams[S.enemyOf(team.team)];
+  return foe.armies.some((g) => currentArea(g) === areaId && (function () { let n = 0; for (const u of C.UNITS) n += g.units[u] || 0; return n >= 0.5; })());
+}
 function setWorkMode(state, team, areaId, mode) {
   if (!B.WORK_MODES[mode]) return { ok: false, reason: 'Unknown work mode.' };
   const area = state.areas[areaId];
   if (!area || area.claimedBy !== team.team || !area.site) return { ok: false, reason: 'Not your outpost.' };
+  if (area.site.workMode === mode) return { ok: false, reason: 'Already on that work mode.' };
+  if (areaUnderAttack(state, team, areaId)) return { ok: false, reason: 'Cannot change work mode while ' + area.name + ' is under attack.' };
+  if ((area.site.workModeUntil || 0) > state.elapsed) return { ok: false, reason: 'Work mode on cooldown (' + Math.ceil(area.site.workModeUntil - state.elapsed) + 's).' };
   area.site.workMode = mode;
-  return { ok: true, msg: area.name + ': ' + B.WORK_MODES[mode].name + ' work.' };
+  area.site.workModeUntil = state.elapsed + B.MODE_CHANGE_COOLDOWN;
+  return { ok: true, msg: area.name + ': ' + B.WORK_MODES[mode].name + ' work mode.' };
+}
+function setCaravanMode(state, team, areaId, mode) {
+  if (!B.CARAVAN_MODES[mode]) return { ok: false, reason: 'Unknown caravan mode.' };
+  const area = state.areas[areaId];
+  if (!area || area.claimedBy !== team.team || !area.site) return { ok: false, reason: 'Not your outpost.' };
+  if (area.site.caravanMode === mode) return { ok: false, reason: 'Already on that caravan mode.' };
+  if (areaUnderAttack(state, team, areaId)) return { ok: false, reason: 'Cannot change caravan mode while ' + area.name + ' is under attack.' };
+  if ((area.site.caravanModeUntil || 0) > state.elapsed) return { ok: false, reason: 'Caravan mode on cooldown (' + Math.ceil(area.site.caravanModeUntil - state.elapsed) + 's).' };
+  area.site.caravanMode = mode;
+  area.site.caravanModeUntil = state.elapsed + B.MODE_CHANGE_COOLDOWN;
+  return { ok: true, msg: area.name + ': ' + B.CARAVAN_MODES[mode].name + ' caravans.' };
+}
+// Dispatch a caravan from an outpost RIGHT NOW (load up whatever cargo it has and send it).
+function dispatchCaravan(state, team, areaId, log) {
+  const area = state.areas[areaId];
+  if (!area || area.claimedBy !== team.team || !area.site) return { ok: false, reason: 'Not your outpost.' };
+  if ((area.site.cargo || 0) < 1) return { ok: false, reason: 'Nothing to ship yet.' };
+  if ((state.elapsed - (area.site.lastCaravanAt || -999)) < 2) return { ok: false, reason: 'A caravan just left — give it a moment.' };
+  area.site.lastCaravanAt = state.elapsed;
+  spawnCaravan(state, team, area, log);
+  return { ok: true, msg: 'Caravan dispatched from ' + area.name + '.' };
 }
 
 // ---- Steward expeditions: commit workers (idle, or preparing if unlocked) for a timed payout. ----
@@ -413,4 +444,4 @@ function tickExpedition(state, team, dt, rng, log) {
   }
 }
 
-module.exports = { explore, claim, upgradeSite, abandon, tickSites, currentArea, areaIsDangerous, enemyTroopsAt, spawnCaravan, setWorkMode, setGuards, startExpedition, expeditionEligible, isScouted, refreshExpeditionOffers };
+module.exports = { explore, claim, upgradeSite, abandon, tickSites, currentArea, areaIsDangerous, areaUnderAttack, enemyTroopsAt, spawnCaravan, setWorkMode, setCaravanMode, dispatchCaravan, setGuards, startExpedition, expeditionEligible, isScouted, refreshExpeditionOffers };

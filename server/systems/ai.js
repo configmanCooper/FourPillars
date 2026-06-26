@@ -464,11 +464,17 @@ function aiSteward(state, team, sys, rng, persona, st) {
   }
   // Upgrade owned strategic sites.
   if (!st.acted && rng.chance(0.3)) { for (const id in state.areas) { const a = state.areas[id]; if (a.claimedBy === team.team && a.terrain !== 'base' && ['mountain', 'hills'].includes(a.terrain)) { if (sites.upgradeSite(state, team, id).ok) { st.acted = true; break; } } } }
-  // Work modes (free): push SAFE rear outposts hard; play it safe at CONTESTED ones (no needless deaths).
+  // Work & caravan modes (free, but on a 3-min cooldown each and locked while under attack): a SAFE rear
+  // outpost runs Maximum Production with Push caravans; a CONTESTED one digs in Defensive with Cautious
+  // caravans. setWorkMode/setCaravanMode self-reject if on cooldown or under attack — harmless.
   for (const id in state.areas) { const a = state.areas[id];
     if (a.claimedBy !== team.team || a.terrain === 'base' || !a.site) continue;
-    const want = sites.areaIsDangerous(state, team, id) ? 'cautious' : 'push';
-    if (a.site.workMode !== want) sites.setWorkMode(state, team, id, want);
+    if (sites.areaUnderAttack(state, team, id)) continue;
+    const danger = sites.areaIsDangerous(state, team, id);
+    const wantWork = danger ? 'defensive' : 'maxProduction';
+    const wantCaravan = danger ? 'cautious' : 'push';
+    if (a.site.workMode !== wantWork && (a.site.workModeUntil || 0) <= state.elapsed) sites.setWorkMode(state, team, id, wantWork);
+    if (a.site.caravanMode !== wantCaravan && (a.site.caravanModeUntil || 0) <= state.elapsed) sites.setCaravanMode(state, team, id, wantCaravan);
   }
   // Expeditions: launch one from the CURRENT OFFERS when idle labour is plentiful and we're not in
   // crisis (prefer scarce goods). Bring tools along (if any) to lower the crew-loss risk.

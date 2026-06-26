@@ -916,10 +916,16 @@
     const foe = State.enemyTeam();
     return snap.teams[foe].armies.some((g) => (g.moving ? g.moving.route[g.moving.legIndex] : g.area) === id);
   }
+  // Under attack = an enemy host is actually ON this location (mode changes are locked).
+  function areaUnderAttackClient(snap, id) {
+    const foe = State.enemyTeam();
+    return snap.teams[foe].armies.some((g) => { const at = g.moving ? g.moving.route[g.moving.legIndex] : g.area; if (at !== id) return false; let n = 0; for (const u of C.UNITS) n += g.units[u] || 0; return n >= 0.5; });
+  }
   function siteYieldPerSec(a) {
     const y = B.SITE_YIELD[a.terrain]; if (!y || !a.site) return 0;
-    const mode = B.WORK_MODES[a.site.workMode || 'standard'] || B.WORK_MODES.standard;
-    return (y[a.resource] || 0) * a.site.level * mode.yield;
+    const wm = B.WORK_MODES[a.site.workMode || 'standard'] || B.WORK_MODES.standard;
+    const cm = B.CARAVAN_MODES[a.site.caravanMode || 'standard'] || B.CARAVAN_MODES.standard;
+    return (y[a.resource] || 0) * a.site.level * wm.production * cm.yield;
   }
   function modalSites() {
     const snap = State.snapshot, team = State.teamState();
@@ -934,20 +940,31 @@
       html += '<div class="rp-h">Your outposts (' + owned.length + ')</div>';
       for (const [id, a] of owned) {
         const m = C.RESOURCE_META[a.resource]; const yld = siteYieldPerSec(a); const danger = areaContested(snap, id);
-        const mode = (a.site && a.site.workMode) || 'standard';
-        const modeBtns = ['cautious', 'standard', 'push'].map((k) => { const wm = B.WORK_MODES[k]; const yl = '×' + wm.yield.toFixed(2); const hint = wm.sneak ? ' 🌙' : (wm.speedMult < 1 ? ' 🐢' : ''); return '<button class="btn btn-sm" title="' + esc(wm.desc) + '" style="' + (mode === k ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.setWorkModeSafe(\'' + id + '\',\'' + k + '\',' + (danger ? 'true' : 'false') + ')">' + wm.name + ' <span style="font-size:9px">' + yl + hint + '</span></button>'; }).join('');
-        const riskNote = mode === 'cautious' ? '<div style="color:#8fb8e8;font-size:10px;margin-top:2px">🌙 Cautious caravans have a 50% chance to slip past enemy troops.</div>' : (mode === 'push' ? '<div style="color:#d9a441;font-size:10px;margin-top:2px">🐢 Push caravans carry +25% but move at half speed.</div>' : '');
+        const underAttack = areaUnderAttackClient(snap, id);
+        const wMode = (a.site && a.site.workMode) || 'standard';
+        const cMode = (a.site && a.site.caravanMode) || 'standard';
+        const wCd = Math.max(0, Math.ceil(((a.site && a.site.workModeUntil) || 0) - snap.elapsed));
+        const cCd = Math.max(0, Math.ceil(((a.site && a.site.caravanModeUntil) || 0) - snap.elapsed));
+        const modeRow = (label, keys, cur, modes, action, cd, tag) => {
+          const btns = keys.map((k) => { const wm = modes[k]; const lock = (cur !== k) && (cd > 0 || underAttack);
+            const hint = action === 'setCaravanMode' ? (wm.sneak ? ' 🌙' : (wm.speedMult < 1 ? ' 🐢' : '')) : (wm.production > 1 ? ' ⚒️' : (wm.razeMult > 1 ? ' 🛡' : ''));
+            return '<button class="btn btn-sm" ' + (lock ? 'disabled' : '') + ' title="' + esc(wm.desc) + '" style="' + (cur === k ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.act(\'' + action + '\',{areaId:\'' + id + '\',mode:\'' + k + '\'});FP.UI.modalSites()">' + wm.name + '<span style="font-size:9px">' + hint + '</span></button>'; }).join('');
+          const note = underAttack ? ' <span style="color:#d46a5a;font-size:10px">⚔ locked (under attack)</span>' : (cd > 0 ? ' <span class="muted" style="font-size:10px">⏳' + cd + 's</span>' : '');
+          return '<div style="font-size:10px;margin-top:3px">' + tag + note + '</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px">' + btns + '</div>';
+        };
+        const modeBtns = modeRow('Work', ['standard', 'defensive', 'maxProduction'], wMode, B.WORK_MODES, 'setWorkMode', wCd, '⚙️ Work mode') +
+          modeRow('Caravan', ['cautious', 'standard', 'push'], cMode, B.CARAVAN_MODES, 'setCaravanMode', cCd, '🐎 Caravan mode');
         const thr = (B.CARAVAN_DISPATCH_BY_RESOURCE && B.CARAVAN_DISPATCH_BY_RESOURCE[a.resource]) || B.CARAVAN_DISPATCH_CARGO;
         // Caravan ETA: warn ~5s before a caravan departs this post.
         const remain = thr - a.site.cargo; const eta = yld > 0 ? remain / yld : Infinity;
         const warn = (B.CARAVAN_WARN_SECONDS || 5);
         const cargoStr = (eta <= warn && eta > 0) ? '<b style="color:#e3c578">🐎 caravan departs in ~' + Math.ceil(eta) + 's</b>' : (thr <= 1 ? a.site.cargo.toFixed(2) + '/' + thr + ' · ships 1 at a time' : Math.round(a.site.cargo) + '/' + thr + ' cargo');
         const guards = Math.round(a.site.guards || 0);
-        const guardRow = '<div style="display:flex;align-items:center;gap:4px;margin-top:3px;font-size:11px">🛡 guards <button class="btn btn-sm" ' + (guards <= 0 ? 'disabled' : '') + ' onclick="FP.UI.setGuards(\'' + id + '\',' + (guards - 1) + ')">−</button> <b>' + guards + '</b> <button class="btn btn-sm" ' + (pool <= 0 ? 'disabled' : '') + ' onclick="FP.UI.setGuards(\'' + id + '\',' + (guards + 1) + ')">+</button>' + (danger && guards <= 0 ? ' <span style="color:#d46a5a">⚠ caravans exposed</span>' : '') + '</div>';
+        const guardRow = '<div style="display:flex;align-items:center;gap:4px;margin-top:3px;font-size:11px">🛡 guards <button class="btn btn-sm" ' + (guards <= 0 ? 'disabled' : '') + ' onclick="FP.UI.setGuards(\'' + id + '\',' + (guards - 1) + ')">−</button> <b>' + guards + '</b> <button class="btn btn-sm" ' + (pool <= 0 ? 'disabled' : '') + ' onclick="FP.UI.setGuards(\'' + id + '\',' + (guards + 1) + ')">+</button>' + (danger && guards <= 0 ? ' <span style="color:#d46a5a">⚠ caravans exposed</span>' : '') + ' <button class="btn btn-sm" ' + ((a.site.cargo || 0) < 1 ? 'disabled' : '') + ' onclick="FP.UI.act(\'dispatchCaravan\',{areaId:\'' + id + '\'})" title="Load up and send a caravan now">🐎 Send now</button></div>';
         html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + (m ? m.glyph + ' ' : '') + a.name + ' <span class="muted">Lv' + a.site.level + '</span>' + (danger ? ' <span style="color:#d46a5a">⚠ contested</span>' : '') + '</div>' +
           '<div class="opt-desc">' + yld.toFixed(2) + ' ' + a.resource + '/s · ' + cargoStr + '</div>' +
-          '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">' + modeBtns + '</div>' + guardRow + riskNote + '</div>' +
-          '<button class="btn btn-sm" onclick="FP.UI.act(\'upgradeSite\',{areaId:\'' + id + '\'})">⬆ Upgrade<br><span style="font-size:9px">' + B.SITE_UPGRADE_COST.wood + '🪵 ' + B.SITE_UPGRADE_COST.stone + '🪨</span></button></div>';
+          modeBtns + guardRow + '</div>' +
+          '<button class="btn btn-sm" onclick="FP.UI.act(\'upgradeSite\',{areaId:\'' + id + '\'})">⬆ Upgrade<br><span style="font-size:9px">' + B.SITE_UPGRADE_COST.wood + '🪵 ' + B.SITE_UPGRADE_COST.stone + '🪨 · +1 slot</span></button></div>';
       }
     }
     html += '<div class="rp-h">Expand &amp; Scout</div>';
@@ -977,19 +994,43 @@
   }
   function modalCaravans() {
     const snap = State.snapshot, team = State.teamState();
+    const pool = Math.round(team.guards || 0);
     let html = '<div class="muted">🐎 Caravans carry your outposts\' goods home. If a caravan meets <b>enemy troops</b> with <b>no guards</b> it is <b style="color:#d46a5a">destroyed</b>. 🛡 <b>Guards</b> stop the attackers and fight; if overwhelmed they buy time and the caravan <b>flees</b> — but faster enemy soldiers may run it down. An <b>escort</b> host shields it fully.</div>';
-    if (!team.caravans.length) html += '<div class="muted" style="padding:8px">No caravans en route. Outposts dispatch one once they reach ' + B.CARAVAN_DISPATCH_CARGO + ' cargo (relics ship 1 at a time).</div>';
+    html += '<div class="opt"><div class="opt-info"><div class="opt-name">🛡 Guard pool: <b>' + pool + '</b> unassigned</div><div class="opt-desc">militia/recruits the Commander lent you (permanently)</div></div><button class="btn btn-sm" onclick="FP.UI.askGuards()">Ask Commander</button></div>';
+    // In-flight caravans: where they are, cargo, protection, ETA.
+    html += '<div class="rp-h">In transit (' + team.caravans.length + ')</div>';
+    if (!team.caravans.length) html += '<div class="muted" style="padding:4px">No caravans en route.</div>';
     for (const cv of team.caravans) {
       const m = C.RESOURCE_META[cv.resource]; const amt = Math.round(Object.values(cv.cargo).reduce((s, v) => s + v, 0));
       const legsLeft = cv.route.length - 1 - cv.legIndex;
       let danger = false; for (let i = cv.legIndex + 1; i < cv.route.length; i++) { if (areaContested(snap, cv.route[i])) { danger = true; break; } }
       const from = snap.areas[cv.from] ? snap.areas[cv.from].name : '?';
+      const atArea = snap.areas[cv.route[cv.legIndex]] ? snap.areas[cv.route[cv.legIndex]].name : '?';
       const guards = Math.round(cv.guards || 0);
       const protect = cv.fleeing ? '<b style="color:#d9a441">🏃 fleeing — pursuers chasing!</b>' : (cv.escort ? '🛡 escorted' : (guards > 0 ? '🛡 ' + guards + ' guards' : '<span style="color:#d46a5a">unguarded</span>'));
       const exposed = danger && !cv.escort && guards <= 0 && !cv.fleeing;
-      html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + (m ? m.glyph : '') + ' ' + amt + ' ' + cv.resource + ' <span class="muted">from ' + esc(from) + '</span></div>' +
-        '<div class="opt-desc">' + protect + ' · ' + (danger ? '<span style="color:#d46a5a">⚠ contested route</span>' : '<span style="color:#6fae5f">safe route</span>') + ' · ~' + legsLeft + ' leg' + (legsLeft === 1 ? '' : 's') + ' to home' + (exposed ? ' <b style="color:#d46a5a">— at risk!</b>' : '') + '</div></div>' +
+      const modeTag = cv.mode && cv.mode !== 'standard' ? ' · ' + (B.CARAVAN_MODES[cv.mode] ? B.CARAVAN_MODES[cv.mode].name : cv.mode) : '';
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + (m ? m.glyph : '') + ' ' + amt + ' ' + cv.resource + ' <span class="muted">from ' + esc(from) + modeTag + '</span></div>' +
+        '<div class="opt-desc">📍 near ' + esc(atArea) + ' · ' + protect + ' · ' + (danger ? '<span style="color:#d46a5a">⚠ contested route</span>' : '<span style="color:#6fae5f">safe route</span>') + ' · ~' + legsLeft + ' leg' + (legsLeft === 1 ? '' : 's') + ' to home' + (exposed ? ' <b style="color:#d46a5a">— at risk!</b>' : '') + '</div></div>' +
         (!cv.escort ? '<button class="btn btn-sm" onclick="FP.UI.askEscort(\'' + cv.id + '\')">Ask Escort</button>' : '') + '</div>';
+    }
+    // Per-outpost dispatch hub: guards, caravan mode, and load-&-send-now.
+    const posts = [];
+    for (const id in snap.areas) { const a = snap.areas[id]; if (a.terrain !== 'base' && a.claimedBy === State.myTeam && a.site) posts.push([id, a]); }
+    html += '<div class="rp-h">Your outposts (' + posts.length + ')</div>';
+    if (!posts.length) html += '<div class="muted" style="padding:4px">No outposts yet — claim some in the 🏚️ Sites screen.</div>';
+    for (const [id, a] of posts) {
+      const m = C.RESOURCE_META[a.resource]; const guards = Math.round(a.site.guards || 0);
+      const thr = (B.CARAVAN_DISPATCH_BY_RESOURCE && B.CARAVAN_DISPATCH_BY_RESOURCE[a.resource]) || B.CARAVAN_DISPATCH_CARGO;
+      const cMode = a.site.caravanMode || 'standard';
+      const cCd = Math.max(0, Math.ceil((a.site.caravanModeUntil || 0) - snap.elapsed));
+      const underAttack = areaUnderAttackClient(snap, id);
+      const cmBtns = ['cautious', 'standard', 'push'].map((k) => { const wm = B.CARAVAN_MODES[k]; const lock = cMode !== k && (cCd > 0 || underAttack); const hint = wm.sneak ? '🌙' : (wm.speedMult < 1 ? '🐢' : ''); return '<button class="btn btn-sm" ' + (lock ? 'disabled' : '') + ' title="' + esc(wm.desc) + '" style="' + (cMode === k ? 'border-color:#c4a35a;color:#e3c578;' : '') + '" onclick="FP.UI.act(\'setCaravanMode\',{areaId:\'' + id + '\',mode:\'' + k + '\'});FP.UI.modalCaravans()">' + wm.name + ' ' + hint + '</button>'; }).join('');
+      const cdNote = underAttack ? ' <span style="color:#d46a5a;font-size:10px">⚔ locked</span>' : (cCd > 0 ? ' <span class="muted" style="font-size:10px">⏳' + cCd + 's</span>' : '');
+      html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + (m ? m.glyph + ' ' : '') + esc(a.name) + ' <span class="muted">' + Math.round(a.site.cargo) + '/' + thr + ' cargo</span></div>' +
+        '<div style="font-size:10px;margin-top:2px">🐎 Caravan mode' + cdNote + '</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px">' + cmBtns + '</div>' +
+        '<div style="display:flex;align-items:center;gap:4px;margin-top:3px;font-size:11px">🛡 guards <button class="btn btn-sm" ' + (guards <= 0 ? 'disabled' : '') + ' onclick="FP.UI.setGuards(\'' + id + '\',' + (guards - 1) + ');FP.UI.modalCaravans()">−</button> <b>' + guards + '</b> <button class="btn btn-sm" ' + (pool <= 0 ? 'disabled' : '') + ' onclick="FP.UI.setGuards(\'' + id + '\',' + (guards + 1) + ');FP.UI.modalCaravans()">+</button></div></div>' +
+        '<button class="btn btn-sm" ' + ((a.site.cargo || 0) < 1 ? 'disabled' : '') + ' onclick="FP.UI.act(\'dispatchCaravan\',{areaId:\'' + id + '\'})" title="Load up and send a caravan now">🐎 Send now</button></div>';
     }
     openModal('🐎 Caravans', html, modalCaravans);
   }

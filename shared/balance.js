@@ -146,15 +146,27 @@
   const CLAIM_COST = { wood: 40 };
   const CLAIM_MIN_INSTALMENT = 10;      // the Steward must commit at least this much wood per instalment
 
-  // Outpost work modes (Steward): trade cargo for safety/speed.
-  //  • Cautious — 30% less cargo, but each caravan has a 50% chance to slip past enemy troops untouched.
+  // CARAVAN MODES (Steward, per outpost): govern caravans LEAVING this outpost.
+  //  • Cautious — 30% smaller loads, but each caravan has a 50% chance to slip past enemy troops.
   //  • Standard — balanced.
-  //  • Push — +25% cargo, but caravans move at half speed (easier to intercept).
-  const WORK_MODES = {
-    cautious: { name: 'Cautious', yield: 0.7,  sneak: 0.5, speedMult: 1.0, desc: '30% less cargo, but caravans have a 50% chance to slip past enemy troops.' },
-    standard: { name: 'Standard', yield: 1.0,  sneak: 0,   speedMult: 1.0, desc: 'Balanced output.' },
-    push:     { name: 'Push',     yield: 1.25, sneak: 0,   speedMult: 0.5, desc: '+25% cargo, but caravans move at HALF speed.' },
+  //  • Push — +25% load, but caravans move at half speed (easier to intercept).
+  const CARAVAN_MODES = {
+    cautious: { name: 'Cautious', yield: 0.7,  sneak: 0.5, speedMult: 1.0, desc: '30% smaller loads, but caravans have a 50% chance to slip past enemy troops.' },
+    standard: { name: 'Standard', yield: 1.0,  sneak: 0,   speedMult: 1.0, desc: 'Balanced caravans.' },
+    push:     { name: 'Push',     yield: 1.25, sneak: 0,   speedMult: 0.5, desc: '+25% load, but caravans move at HALF speed.' },
   };
+  // WORK MODES (Steward, per outpost): trade the location's production against how fast its buildings
+  // can be razed by a besieger.
+  //  • Standard — balanced.
+  //  • Defensive — −25% production, but buildings & the outpost here take 50% LONGER to raze.
+  //  • Maximum Production — +25% production, but buildings here are razed 50% FASTER.
+  const WORK_MODES = {
+    standard:      { name: 'Standard',           production: 1.0,  razeMult: 1.0,  desc: 'Balanced output and defences.' },
+    defensive:     { name: 'Defensive',          production: 0.75, razeMult: 1.5,  desc: '−25% production; buildings here take 50% longer to raze.' },
+    maxProduction: { name: 'Maximum Production',  production: 1.25, razeMult: 0.67, desc: '+25% production; buildings here are razed 50% faster.' },
+  };
+  const MODE_CHANGE_COOLDOWN = 180;     // seconds before an outpost's work/caravan mode may change again
+
   // Dangerous home labour (Steward): a gather pool may be worked dangerously for +50% output, but each
   // such worker has a per-second chance to die. A tool mitigates it (Standard ≈1%, Legendary ≈0.3%,
   // untooled/awful = the full base) and tools used by dangerous crews wear out twice as fast.
@@ -416,7 +428,7 @@
     BUILD_SLOTS_BASE, BUILD_SLOTS_SITE, SITE_WALL_RESIST, CAPTURE_TIME_BASE, CAPTURE_DECAY,
     SITE_YIELD, SITE_UPGRADE_COST, SITE_UPGRADE_MULT, EXPLORE_TIME, CLAIM_TIME, CLAIM_COST, CLAIM_MIN_INSTALMENT,
     SCOUT_MAX, SCOUT_FULL, SCOUT_DECAY_SEC, UNSCOUTED_COMBAT_PENALTY,
-    WORK_MODES, POP_FLOOR, EXPEDITIONS, EXPEDITION_COOLDOWN, EXPEDITION_OFFER_COUNT, EXPEDITION_ROTATE_SEC, EXPEDITION_TOOL_RISK_REDUCTION, EXPEDITION_TOOL_REDUCTION_MAX,
+    WORK_MODES, CARAVAN_MODES, MODE_CHANGE_COOLDOWN, POP_FLOOR, EXPEDITIONS, EXPEDITION_COOLDOWN, EXPEDITION_OFFER_COUNT, EXPEDITION_ROTATE_SEC, EXPEDITION_TOOL_RISK_REDUCTION, EXPEDITION_TOOL_REDUCTION_MAX,
     CARAVAN_DISPATCH_CARGO, CARAVAN_DISPATCH_BY_RESOURCE, CARAVAN_WARN_SECONDS, CARAVAN_MIN_INTERVAL, CARAVAN_SPEED, ESCORT_PROTECT,
     GUARD_LEND_DEFAULT, GUARD_KILL_PER, GUARD_LOSS_PER, GUARD_PIN_SECONDS,
     HOST_SPEED_MULT, CAVALRY_SPEED_MULT, PURSUIT_CATCH_RADIUS, PURSUIT_TIMEOUT,
