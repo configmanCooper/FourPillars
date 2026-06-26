@@ -396,6 +396,12 @@ function pickBuildArea(state, team) {
 
 // ---------------- STEWARD ----------------
 function aiSteward(state, team, sys, rng, persona, st) {
+  // If a human has CLAIMED this seat (playerId set), the AI must never act for it — not even during a
+  // brief disconnect/reload when the seat momentarily reverts to AI control. The Steward's caravan/work
+  // modes, guards, policy and actions are the player's alone; the AI hijacking them is exactly the
+  // "things keep getting set for me" complaint. (An intentional lobby switch to AI clears playerId.)
+  const seat = team.slots[C.ROLES.STEWARD];
+  if (seat && seat.playerId) return;
   const sites = sys.sites;
   const eco = sys.economy;
   // ---- Gathering management (free, like the Lord's worker tuning): equip the Blacksmith's tools to
