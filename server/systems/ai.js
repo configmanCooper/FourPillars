@@ -28,6 +28,9 @@ const RESEARCH_PRIORITY = {
   default:   ['agriculture', 'logging', 'mining', 'weapons', 'foundry', 'armour', 'growth', 'quarrying', 'architecture', 'granaries', 'tower', 'siege', 'scholarship'],
 };
 
+function isHard(team, role) { const s = team.slots && team.slots[role]; return !!(s && s.difficulty === 'hard'); }
+function smartHard(team, role) { return isHard(team, role) && team._hardVariant !== 'old'; }
+
 function aiTick(state, team, dt, sys, rng) {
   team.aiState = team.aiState || {};
   team.aiPersona = team.aiPersona || {};
@@ -720,6 +723,9 @@ function sitePrio(team, persona, a) {
   if (persona === 'iron' && (a.terrain === 'mountain' || a.terrain === 'hills')) base += 4;
   if (persona === 'relic' && a.terrain === 'ruins') base += 6;
   if (persona === 'expansionist') base += 1;
+  // Smart Hard prizes a WOOD (forest) outpost while wood is the bottleneck — same claim cost as any
+  // other site, but it ships home the exact resource that gates the whole economy.
+  if (smartHard(team, 'STEWARD') && a.terrain === 'forest' && (team.resources.wood || 0) < 40) base += 6;
   return base;
 }
 
@@ -755,6 +761,14 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
     // Honour the Steward's "conserve wood": defer wood-costing forges (prefer iron-only Swords/Armour).
     if (sys.economy.conserving(team, 'wood', state.elapsed) && B.RECIPES[item] && (B.RECIPES[item].cost.wood || 0) > 0) {
       item = (team.resources.iron || 0) >= ((B.RECIPES.swords && B.RECIPES.swords.cost.iron) || 99) ? 'swords' : null;
+    }
+    // Smart Hard never burns the BOTTLENECK wood on gear while wood is scarce — it forges iron-only
+    // Swords/Armour (or waits), leaving the wood for the Lord's buildings. This is the single biggest
+    // wood-trap leak (tools 8w, spears 6w, bows 10w, arrows 4w, siegeParts 20w all drain wood).
+    if (smartHard(team, 'BLACKSMITH') && (team.resources.wood || 0) < 60 && B.RECIPES[item] && (B.RECIPES[item].cost.wood || 0) > 0) {
+      if ((team.resources.iron || 0) >= (B.RECIPES.swords.cost.iron || 8)) item = 'swords';
+      else if ((team.resources.iron || 0) >= (B.RECIPES.armor.cost.iron || 12)) item = 'armor';
+      else item = null;
     }
     if (item && forge(item, 8).ok) st.acted = true;
   }
