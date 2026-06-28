@@ -349,6 +349,12 @@ function aiLord(state, team, sys, rng, persona, st) {
       if (planned('school') >= 1 && planned('university') < 1) wish.push('university');  // unlocks Research
       if (hasBarracks && planned('workshop') < 1) wish.push('workshop');
       if (hasBarracks && planned('stables') < 1) wish.push('stables');
+      // Marketplace: lets the Steward barter a glut into a shortage. Build it when we have a real
+      // imbalance to trade away (a tradable good near its cap while another runs dry), or to round out
+      // the tech tree once the University stands.
+      const tradeGlut = ['food', 'wood', 'stone', 'iron', 'horses'].some((k) => (team.resources[k] || 0) >= team.storageCap * 0.85);
+      const tradeDef = ['wood', 'stone', 'iron', 'horses'].some((k) => (team.resources[k] || 0) <= team.storageCap * 0.15);
+      if (hasBarracks && planned('marketplace') < 1 && ((tradeGlut && tradeDef) || planned('university') >= 1)) wish.push('marketplace');
       if (planned('storehouse') < 2) wish.push('storehouse'); // higher cap unlocks Walls (120 stone)
       if (planned('walls') < (persona === 'turtler' ? 2 : 1)) wish.push('walls');
     }
@@ -363,7 +369,7 @@ function aiLord(state, team, sys, rng, persona, st) {
     // first Barracks — training is more important than a little wasted surplus).
     if (capHit && hasBarracks && planned('storehouse') < 3) wish.unshift('storehouse');
 
-    const KEY = { lumberCamp: 1, storehouse: 1, school: 1, stables: 1, workshop: 1, university: 1, walls: 1, barracks: 1 };
+    const KEY = { lumberCamp: 1, storehouse: 1, school: 1, stables: 1, workshop: 1, university: 1, walls: 1, barracks: 1, marketplace: 1 };
     const defaultArea = pickBuildArea(state, team);
     const wallArea = bestWallArea(state, team);
     // Honour the Steward's "conserve wood" request: once the core economy stands, defer optional
@@ -618,6 +624,16 @@ function aiSteward(state, team, sys, rng, persona, st) {
     const glut = goods.filter((k) => (res[k] || 0) >= cap - 5).sort((a, b) => (res[b] || 0) - (res[a] || 0))[0];
     const need = goods.filter((k) => (res[k] || 0) < B.MARKET_TRADE_IN).sort((a, b) => (res[a] || 0) - (res[b] || 0))[0];
     if (glut && need && glut !== need && eco.marketTrade(state, team, glut, need).ok) say(state, team, sys, st, C.ROLES.STEWARD, '⚖️ Bartering surplus ' + glut + ' for ' + need + '.', 25);
+  }
+  // ---- No Marketplace yet but we clearly need one (a tradable good wasting at the cap while another
+  //      we rely on runs dry)? Ask the Lord to raise one so we CAN barter the imbalance away. ----
+  if ((team.buildings.marketplace || 0) <= 0 && !team.buildQueue.some((q) => q.type === 'marketplace')) {
+    const res = team.resources, cap = team.storageCap || 100;
+    const glut = ['food', 'wood', 'stone', 'iron', 'horses'].some((k) => (res[k] || 0) >= cap * 0.85);
+    const need = ['wood', 'stone', 'iron', 'horses'].some((k) => (res[k] || 0) <= cap * 0.15);
+    if (glut && need && req(state, team, sys, st, C.ROLES.STEWARD, C.ROLES.LORD, 'BUILD', { type: 'marketplace' }, 150)) {
+      say(state, team, sys, st, C.ROLES.STEWARD, 'Our stores are lopsided — Lord, a Marketplace would let us trade the surplus.', 20);
+    }
   }
   // ---- Caravan guards: ask the Commander for guards, then station them where caravans are most
   //      valuable & most exposed (relics first, then iron/horses; weight by how dangerous the route is).

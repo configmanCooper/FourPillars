@@ -12,7 +12,7 @@
   const MAP_AREAS = [
     { id: 'blue_base',   name: 'Blue Keep',     terrain: 'base',     x: 140,  y: 500, resource: null,    owner: 'BLUE' },
     { id: 'north_forest',name: 'North Forest',  terrain: 'forest',   x: 420,  y: 235, resource: 'wood' },
-    { id: 'south_forest',name: 'South Forest',  terrain: 'forest',   x: 420,  y: 765, resource: 'wood' },
+    { id: 'south_forest',name: 'South Farmland', terrain: 'farmland', x: 420,  y: 765, resource: 'food' },
     { id: 'west_quarry', name: 'West Quarry',   terrain: 'hills',    x: 430,  y: 500, resource: 'stone' },
     { id: 'north_farm',  name: 'East Farmland', terrain: 'farmland', x: 1170, y: 500, resource: 'food' },
     { id: 'central_mine',name: 'Central Mine',  terrain: 'mountain', x: 800,  y: 500, resource: 'iron' },
