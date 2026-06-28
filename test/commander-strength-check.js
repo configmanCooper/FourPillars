@@ -21,7 +21,7 @@ function host(state, team, area, u, name, extra) { const ar = state.areas[area];
   army.garrison(st, B).units = units({ militia: 8 });
   const scout = host(st, 'BLUE', 'central_mine', { militia: 2 }, 'Scout'); B.armies.push(scout);
   R.armies = R.armies.filter((h) => h.isGarrison);
-  R.armies.push(host(st, 'RED', 'north_farm', { militia: 16 }, 'Horde'));   // huge force one tile from the Scout
+  R.armies.push(host(st, 'RED', 'east_quarry', { militia: 16 }, 'Horde'));   // huge force one tile from the Scout
   army.garrison(st, R).units = units({ militia: 4 });
   const rng = makeRng(3); const SYS = sim.SYSTEMS;
   let retreated = false, attacked = false;
@@ -32,7 +32,7 @@ function host(state, team, area, u, name, extra) { const ar = state.areas[area];
     const m = s.mission && s.mission.type;
     if (m === 'raid' || m === 'siege') attacked = true;
     // Retreating = ordered home (defend) or to a friendly area that is NOT the enemy's tile.
-    if (m === 'defend' || (m === 'garrison' && s.mission.targetArea !== 'north_farm')) retreated = true;
+    if (m === 'defend' || (m === 'garrison' && s.mission.targetArea !== 'east_quarry')) retreated = true;
   }
   assert(!attacked, 'outmatched Scout never threw itself at the enemy (no raid/siege)');
   assert(retreated, 'outmatched Scout pulled back to regroup');

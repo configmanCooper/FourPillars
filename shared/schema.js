@@ -14,12 +14,12 @@
     { id: 'north_forest',name: 'North Forest',  terrain: 'forest',   x: 420,  y: 235, resource: 'wood' },
     { id: 'south_forest',name: 'South Farmland', terrain: 'farmland', x: 420,  y: 765, resource: 'food' },
     { id: 'west_quarry', name: 'West Quarry',   terrain: 'hills',    x: 430,  y: 500, resource: 'stone' },
-    { id: 'north_farm',  name: 'East Farmland', terrain: 'farmland', x: 1170, y: 500, resource: 'food' },
+    { id: 'east_quarry', name: 'East Quarry',   terrain: 'hills',    x: 1170, y: 500, resource: 'stone' },
     { id: 'central_mine',name: 'Central Mine',  terrain: 'mountain', x: 800,  y: 500, resource: 'iron' },
     { id: 'horse_plains',name: 'Horse Plains',  terrain: 'plains',   x: 800,  y: 770, resource: 'horses' },
-    { id: 'east_hills',  name: 'East Hills',    terrain: 'hills',    x: 1170, y: 235, resource: 'stone' },
+    { id: 'east_woods',  name: 'East Woods',    terrain: 'forest',   x: 1180, y: 235, resource: 'wood' },
     { id: 'ancient_ruins',name:'Ancient Ruins', terrain: 'ruins',    x: 800,  y: 230, resource: 'relics' },
-    { id: 'east_forest', name: 'East Forest',   terrain: 'forest',   x: 1170, y: 765, resource: 'wood' },
+    { id: 'east_fields', name: 'East Farmland', terrain: 'farmland', x: 1180, y: 765, resource: 'food' },
     { id: 'red_base',    name: 'Red Keep',      terrain: 'base',     x: 1460, y: 500, resource: null,    owner: 'RED' },
   ];
 
@@ -28,13 +28,13 @@
     north_forest:['blue_base', 'west_quarry', 'ancient_ruins', 'south_forest'],
     south_forest:['blue_base', 'west_quarry', 'horse_plains', 'north_forest'],
     west_quarry: ['blue_base', 'north_forest', 'south_forest', 'central_mine', 'ancient_ruins', 'horse_plains'],
-    ancient_ruins:['north_forest', 'central_mine', 'east_hills', 'north_farm', 'west_quarry'],
-    central_mine:['west_quarry', 'north_farm', 'horse_plains', 'ancient_ruins'],
-    horse_plains:['south_forest', 'central_mine', 'east_forest', 'north_farm', 'west_quarry'],
-    east_hills:  ['ancient_ruins', 'north_farm', 'east_forest', 'red_base'],
-    north_farm:  ['central_mine', 'ancient_ruins', 'horse_plains', 'east_hills', 'east_forest', 'red_base'],
-    east_forest: ['horse_plains', 'north_farm', 'east_hills', 'red_base'],
-    red_base:    ['north_farm', 'east_hills', 'east_forest'],
+    ancient_ruins:['north_forest', 'central_mine', 'east_woods', 'east_quarry', 'west_quarry'],
+    central_mine:['west_quarry', 'east_quarry', 'horse_plains', 'ancient_ruins'],
+    horse_plains:['south_forest', 'central_mine', 'east_fields', 'east_quarry', 'west_quarry'],
+    east_woods:  ['ancient_ruins', 'east_quarry', 'east_fields', 'red_base'],
+    east_quarry: ['central_mine', 'ancient_ruins', 'horse_plains', 'east_woods', 'east_fields', 'red_base'],
+    east_fields: ['horse_plains', 'east_quarry', 'east_woods', 'red_base'],
+    red_base:    ['east_quarry', 'east_woods', 'east_fields'],
   };
 
   function uid(prefix) { return (prefix || 'id') + '_' + Math.random().toString(36).slice(2, 9); }
