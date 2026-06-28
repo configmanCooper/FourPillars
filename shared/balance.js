@@ -30,8 +30,9 @@
   const START_HOUSING = 20;
   const HOUSING_PER_HOUSE = 8;
   const POP_GROWTH_PER_SEC = 0.10;      // base, scaled by food surplus & policy (~1 person / 10s at full surplus)
-  const FOOD_PER_POP = 0.04;            // food eaten per person per sec
-  const FOOD_PER_SOLDIER = 0.03;        // upkeep per soldier per sec
+  const FOOD_PER_POP = 0.048;           // food eaten per person per sec (demand raised 20% — food matters)
+  const FOOD_PER_SOLDIER = 0.036;       // upkeep per soldier per sec (demand raised 20%)
+  const STARVE_DEATH_INTERVAL = 15;     // seconds of sustained starvation per famine death (1 random person)
 
   // Per-worker production per second (before tools/policy/building multipliers).
   const WORKER_YIELD = {
@@ -492,7 +493,7 @@
   return {
     TICK_MS, FULL_MATCH_SECONDS, DEV_MATCH_SECONDS, DEV_MODE_DEFAULT, MATCH_PRESETS, DEFAULT_MATCH_PRESET, PHASE_BOUNDS,
     START_RESOURCES, STORAGE_BASE, STORAGE_PER_STOREHOUSE, WORKERS_PER_BUILDING,
-    START_POP, START_HOUSING, HOUSING_PER_HOUSE, POP_GROWTH_PER_SEC, FOOD_PER_POP, FOOD_PER_SOLDIER,
+    START_POP, START_HOUSING, HOUSING_PER_HOUSE, POP_GROWTH_PER_SEC, FOOD_PER_POP, FOOD_PER_SOLDIER, STARVE_DEATH_INTERVAL,
     WORKER_YIELD, TOOLS_BONUS, MINER_STONE_YIELD, MINER_IRON_YIELD, DEFAULT_MINE_FOCUS, AI_MINE_FOCUS_MIN, AI_MINE_FOCUS_MAX, TOOL_LIFETIME_SEC,
     TRAINERS_PER_BARRACKS, TRAIN_SECONDS_PER_UNIT, EDU_SECONDS, COOLDOWN_ORDINARY, COOLDOWN_EDUCATED,
     RESEARCHERS_PER_UNIVERSITY, RESEARCH_INTERVAL, RESEARCH,

@@ -162,6 +162,36 @@ function recomputeDerived(team) {
 
 function policy(team) { return team.policy ? B.POLICIES[team.policy] : null; }
 
+// Famine death: remove one random person — a civilian worker, a recruit, or a soldier — weighted by how
+// many of each the team currently has. A soldier is pulled from a host (its gear record goes too; the
+// next reconcile keeps gear/counts consistent). Sets _starveSoldierTick so the sim-audit knows an army
+// drop this tick was famine, not a bug.
+function starvePerson(state, team, log) {
+  const p = team.pop;
+  const pools = ['idle', 'farmers', 'woodcutters', 'miners', 'builders', 'students', 'trainers', 'researchers', 'scouts'];
+  let workers = 0; for (const k of pools) workers += Math.max(0, Math.round(p[k] || 0));
+  const recruits = Math.max(0, Math.round(p.recruits || 0));
+  let soldiers = 0; for (const g of team.armies) for (const u of C.UNITS) soldiers += Math.max(0, Math.round(g.units[u] || 0));
+  const total = workers + recruits + soldiers;
+  if (total < 1) return;
+  let pick = Math.floor(Math.random() * total), kind = 'worker';
+  if (pick < workers) {
+    let acc = 0; for (const k of pools) { acc += Math.max(0, Math.round(p[k] || 0)); if (pick < acc) { p[k] = Math.max(0, Math.round(p[k] || 0) - 1); break; } }
+  } else if (pick < workers + recruits) {
+    p.recruits = Math.max(0, recruits - 1); kind = 'recruit';
+  } else {
+    kind = 'soldier';
+    let s = pick - workers - recruits;
+    let done = false;
+    for (const g of team.armies) { if (done) break; for (const u of C.UNITS) { const n = Math.max(0, Math.round(g.units[u] || 0)); if (s < n) { g.units[u] = Math.max(0, (g.units[u] || 0) - 1); if (g.gear && g.gear[u] && g.gear[u].length) g.gear[u].pop(); done = true; break; } s -= n; } }
+    let cnt = 0; for (const g of team.armies) for (const u of C.UNITS) cnt += g.units[u] || 0;
+    p.soldiers = Math.round(cnt);
+    team._starveSoldierTick = state.tick;
+  }
+  recomputeDerived(team);
+  if (log) log(team.team, 'Famine! A ' + kind + ' starved to death.', 'starve');
+}
+
 // ---- Steward gathering: tool distribution + mine focus ----
 function gatherPoolWorkers(team, pool) {
   if (pool === 'food') return team.pop.farmers;
@@ -294,10 +324,19 @@ function tickEconomy(state, team, dt, log) {
   // Food consumption & population growth.
   const foodUse = (pol && pol.foodUse ? pol.foodUse : 1);
   const upkeepMult = Math.max(0.1, 1 + stewardStat(team, 'soldierUpkeep'));
-  const eat = (p.total * B.FOOD_PER_POP + p.soldiers * B.FOOD_PER_SOLDIER * upkeepMult) * foodUse * dt;
-  team.resources.food -= eat;
-  let starving = false;
-  if (team.resources.food < 0) { team.resources.food = 0; starving = true; }
+  const foodPerSec = (p.total * B.FOOD_PER_POP + p.soldiers * B.FOOD_PER_SOLDIER * upkeepMult) * foodUse;
+  team.resources.food -= foodPerSec * dt;
+  if (team.resources.food < 0) team.resources.food = 0;
+  // A team is STARVING the moment its larder can't even cover one second of consumption — not only when
+  // it hits zero. While starving, population growth halts AND, every STARVE_DEATH_INTERVAL seconds of
+  // sustained famine, one random person (worker, recruit, or soldier) dies.
+  const starving = foodPerSec > 0 && team.resources.food < foodPerSec;
+  if (starving) {
+    team._starveAccum = (team._starveAccum || 0) + dt;
+    while (team._starveAccum >= B.STARVE_DEATH_INTERVAL) { team._starveAccum -= B.STARVE_DEATH_INTERVAL; starvePerson(state, team, log); }
+  } else {
+    team._starveAccum = 0;
+  }
 
   // Population growth. Accumulate in an unrounded field, then add whole people — otherwise
   // recomputeDerived rounds the fractional growth in `idle` to 0 every tick (it never grew).

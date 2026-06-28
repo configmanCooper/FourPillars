@@ -93,7 +93,7 @@ for (let m = 0; m < MATCHES; m++) {
       const anyFighting = after.BLUE.fighting || after.RED.fighting;
       // Lending militia to the caravan-guard pool is a conversion, not a loss (army falls, guards rise).
       const lending = (after[tk].guards - before[tk].guards) >= drop - 0.5;
-      if (drop > 0.05 && fxLoss[tk] <= 0 && !lending && !enemyNear(state, tk, before, after) && !anyFighting && before[tk].food > 0.5 && !freshCombatLog) flag('unexplained_army_loss', { m, tick: state.tick, tk, lost: +drop.toFixed(2), from: +before[tk].total.toFixed(1), to: +after[tk].total.toFixed(1) });
+      if (drop > 0.05 && fxLoss[tk] <= 0 && !lending && !enemyNear(state, tk, before, after) && !anyFighting && before[tk].food > 0.5 && !freshCombatLog && state.teams[tk]._starveSoldierTick !== state.tick) flag('unexplained_army_loss', { m, tick: state.tick, tk, lost: +drop.toFixed(2), from: +before[tk].total.toFixed(1), to: +after[tk].total.toFixed(1) });
       // Population over housing is only a BUG if pop rose past the cap — not when housing itself dropped
       // (a House razed in a siege legitimately leaves you temporarily overcrowded).
       const t = state.teams[tk];
