@@ -603,8 +603,8 @@
   }
 
   // Per-resource view: sources & rate, usage log, and rationing (Lord) or access requests (others).
-  function modalResource(key) {
-    const snap = State.snapshot, team = State.teamState(); const role = State.myRole;
+  function modalResource(key, tm) {
+    const snap = State.snapshot; const ro = State.isSpectator; const team = ro ? snap.teams[tm || 'BLUE'] : State.teamState(); const role = ro ? null : State.myRole;
     const m = C.RESOURCE_META[key];
     const stats = (team.resourceStats && team.resourceStats[key]) || { rate: 0, sources: [] };
     const log = (team.resourceLog && team.resourceLog[key]) || [];
@@ -613,12 +613,14 @@
     const rateCol = stats.rate >= 0 ? '#6fae5f' : '#c8553d';
     const allowList = hold ? ['STEWARD', 'BLACKSMITH', 'COMMANDER'].filter((r) => hold.allow[r]) : [];
     const whoLabel = hold ? ('Lord' + (allowList.length ? ' + ' + allowList.map((r) => C.ROLE_META[r].name).join(', ') : ' only')) : 'everyone';
-    let html = '<div class="muted">You have <b>' + m.glyph + ' ' + have + '</b> · net <b style="color:' + rateCol + '">' + (stats.rate >= 0 ? '+' : '') + (stats.rate || 0).toFixed(2) + '/s</b>' +
+    let html = (ro ? '<div class="muted" style="color:' + (tm === 'BLUE' ? '#8fb8e8' : '#d46a5a') + '">' + esc(C.TEAM_META[tm].name) + '</div>' : '') +
+      '<div class="muted">' + (ro ? 'They have' : 'You have') + ' <b>' + m.glyph + ' ' + have + '</b> · net <b style="color:' + rateCol + '">' + (stats.rate >= 0 ? '+' : '') + (stats.rate || 0).toFixed(2) + '/s</b>' +
       (hold ? ' · <span style="color:#d9a441">🔒 reserved for ' + whoLabel + (hold.left == null ? '' : ' (' + hold.left + 's)') + '</span>' : '') + '</div>';
     html += '<div class="rp-h">Contributing (per second)</div>';
     html += stats.sources.length ? stats.sources.map((s) => '<div class="sel-row"><span>' + esc(s.label) + '</span><span style="color:' + (s.v >= 0 ? '#6fae5f' : '#c8553d') + '">' + (s.v >= 0 ? '+' : '') + s.v + '/s</span></div>').join('') : '<div class="muted">Nothing is producing this right now.</div>';
     html += '<div class="rp-h">Recent usage (last 5)</div>';
     html += log.length ? log.slice().reverse().map((u) => '<div class="sel-row"><span>' + (u.ai ? '🤖' : '👤') + ' ' + esc(u.name) + ' <span class="muted">' + esc(u.purpose) + '</span></span><span style="color:#c8553d">−' + u.amount + '</span></div>').join('') : '<div class="muted">No recent spends of this resource.</div>';
+    if (ro) { openModal(m.glyph + ' ' + m.name + ' — ' + esc(C.TEAM_META[tm].name), html, () => modalResource(key, tm)); return; }
     if (role === 'LORD') {
       const ROLES = [['STEWARD', '🧭'], ['BLACKSMITH', '🔨'], ['COMMANDER', '⚔️']];
       html += '<div class="rp-h">🔒 Who may spend ' + m.name + '</div>';
@@ -1773,7 +1775,7 @@
     const order = ['food', 'wood', 'stone', 'iron', 'horses', 'arrows', 'relics'];
     const col = tm === 'BLUE' ? '#2f5f9f' : '#8b2500';
     const lab = '<div class="res-chip" style="cursor:default;border-color:' + col + '"><span class="rg">' + (tm === 'BLUE' ? '🟦' : '🟥') + '</span><span>' + esc(C.TEAM_META[tm].name.split(' ')[0]) + '</span></div>';
-    const chips = order.map((k) => { const m = C.RESOURCE_META[k]; const v = Math.round(team.resources[k] || 0); return '<div class="res-chip" title="' + k + ' — click for details" onclick="FP.UI.modalSpectatorResources(\'' + tm + '\')"><span class="rg">' + m.glyph + '</span><span>' + v + '</span></div>'; }).join('');
+    const chips = order.map((k) => { const m = C.RESOURCE_META[k]; const v = Math.round(team.resources[k] || 0); return '<div class="res-chip" title="' + k + ' — click for income/spend" onclick="FP.UI.modalResource(\'' + k + '\',\'' + tm + '\')"><span class="rg">' + m.glyph + '</span><span>' + v + '</span></div>'; }).join('');
     const pop = '<div class="res-chip" title="Population / housing — click for details" onclick="FP.UI.modalSpectatorResources(\'' + tm + '\')"><span class="rg">👤</span><span>' + team.pop.total + '/' + team.housing + '</span></div>';
     const army = '<div class="res-chip" title="Soldiers — click for both armies" onclick="FP.UI.modalSpectatorMilitary()"><span class="rg">⚔️</span><span>' + team.pop.soldiers + '</span></div>';
     return lab + chips + pop + army;
