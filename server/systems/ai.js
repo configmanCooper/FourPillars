@@ -357,6 +357,14 @@ function aiLord(state, team, sys, rng, persona, st) {
     // Food sits at its cap from turn 1 (it regrows) — only treat wood/stone/iron as "wasting".
     const capHit = ['wood', 'stone', 'iron'].some((k) => (team.resources[k] || 0) >= team.storageCap - 5);
     const wish = [];
+    // EMERGENCY: our army pipeline was DESTROYED — we once had a Barracks, now have none (it was razed) and
+    // can't train the recruits we're holding. Rebuilding it is the most urgent build (the analysed loss: Red
+    // sat with 10 recruits and 0 Barracks for 7 minutes). Jump it to the very front. (We track _hadBarracks
+    // so this only fires on a genuine LOSS, not a team that simply hasn't built its first Barracks yet.)
+    if ((team.buildings.barracks || 0) > 0) team._hadBarracks = true;
+    const armyPipelineLost = ab(team, 'rebuildmil') && team._hadBarracks && (team.buildings.barracks || 0) === 0
+      && team.buildQueue.every((q) => q.type !== 'barracks');
+    if (armyPipelineLost) wish.push('barracks');
     // Under food strain, a Farm comes FIRST — sustaining the population/army outranks every other build.
     if (foodStrain && planned('farm') < 4) wish.push('farm');
     // Foundation. WOOD underpins everything (every building, every outpost, most gear), so establish a
@@ -411,12 +419,30 @@ function aiLord(state, team, sys, rng, persona, st) {
     const KEY = { lumberCamp: 1, storehouse: 1, school: 1, stables: 1, workshop: 1, university: 1, walls: 1, barracks: 1, marketplace: 1 };
     const defaultArea = pickBuildArea(state, team);
     const wallArea = bestWallArea(state, team);
+    // Critical MILITARY buildings (Barracks/Workshop/Stables) belong behind the Watchtower at the Keep — a
+    // Barracks at an exposed outpost is deleted by a single raid, killing the whole army pipeline (the loss
+    // in the analysed game). Place them at the Keep; only if it's full, the SAFEST rear site (never a frontier).
+    const MIL = ab(team, 'milkeep') ? { barracks: 1, workshop: 1, stables: 1 } : {};
+    const safeMilArea = (b) => {
+      const base = S.homeBase(team.team);
+      if (freeSlots(state, team, base) > 0) return base;
+      // Keep full → safest owned site: farthest from the enemy, prefer walled, with a free slot.
+      const foe = S.enemyOf(team.team); const ek = S.homeBase(foe);
+      let best = null, bestScore = -1e9;
+      for (const id in state.areas) { const a = state.areas[id];
+        if (a.owner !== team.team || a.terrain === 'base' || freeSlots(state, team, id) <= 0) continue;
+        const bordersEnemy = a.connections.some((n) => state.areas[n] && (state.areas[n].owner === foe || n === ek));
+        const sc = (a.buildings && a.buildings.walls ? 5 : 0) - (bordersEnemy ? 10 : 0) - (a.connections.indexOf(ek) >= 0 ? 5 : 0);
+        if (sc > bestScore) { bestScore = sc; best = id; }
+      }
+      return best;
+    };
     // Honour the Steward's "conserve wood" request: once the core economy stands, defer optional
     // wood-costing builds while conserve is active so the Steward can fund outposts.
     const conserveWood = eco.conserving(team, 'wood', state.elapsed);
     const hasFoundation = team.buildings.barracks > 0 && team.buildings.farm > 0 && team.buildings.lumberCamp > 0 && team.buildings.mine > 0;
     for (const b of wish) {
-      const area = (b === 'walls' && wallArea) ? wallArea : defaultArea; // fortify the frontier, not just the Keep
+      const area = MIL[b] ? safeMilArea(b) : ((b === 'walls' && wallArea) ? wallArea : defaultArea); // military to the Keep; walls fortify the frontier
       if (!area) continue;
       const def = B.BUILDINGS[b]; if (!def) continue;
       if (conserveWood && hasFoundation && (def.cost.wood || 0) > 0) continue;
