@@ -1218,6 +1218,15 @@ function aiCommander(state, team, sys, rng, persona, st) {
       const t = threats.find((x) => x.here && !claim[x.area]);
       if (t) { claim[t.area] = true; army.command(state, team, w.id, 'garrison', t.area); say(state, team, sys, st, C.ROLES.COMMANDER, 'Driving the enemy off ' + state.areas[t.area].name + '!', 14); return; }
     }
+    // F3 — HUNT loose enemy raiders: an enemy host roaming IN or NEXT TO our territory (e.g. one that just
+    // razed an outpost and is moving to the next) that we can BEAT. The Commander watches every enemy host's
+    // position & size and sends this host to intercept the nearest winnable one — denying free raids is high
+    // value and these are winnable fights. Sits just below "drive them off an owned site".
+    if (ab(team, 'huntraiders') && !vulnerable && army.unitCount(w) >= 1.5) {
+      const hclaim = (decide._huntClaim = decide._huntClaim || {});
+      const tgt = raiderHuntTarget(state, army, team, w, winBar, hclaim);
+      if (tgt) { hclaim[tgt] = true; army.command(state, team, w.id, 'garrison', tgt); say(state, team, sys, st, C.ROLES.COMMANDER, 'Enemy raiders near ' + state.areas[tgt].name + ' — run them down!', 14); return; }
+    }
     // Counter-attack: an enemy host or enemy-held post sitting next to OUR land — march out and take it
     // if we can win there. Hold it (garrison) when we can also defend it; otherwise hit-and-run.
     if (!vulnerable && army.unitCount(w) >= 2) {
@@ -1479,6 +1488,26 @@ function keepThreatInfo(state, team, army) {
     else if (k.connections.indexOf(a) >= 0) adj += n;
   }
   return { onKeep, adj };
+}
+// F3 — find the nearest WINNABLE enemy raider near our territory for host w to intercept. A "raider near us"
+// is an enemy host standing ON our owned ground, or one tile from it, that we can beat at that spot. Prefers
+// raiders actually on our land (razing now) and the smaller/closer ones. Skips already-claimed targets.
+function raiderHuntTarget(state, army, team, w, winBar, claimed) {
+  const foe = S.enemyOf(team.team);
+  const enemyAt = {};
+  for (const g of state.teams[foe].armies) { const n = unitCountG(g); if (n < 0.5) continue; const a = g.moving ? g.moving.route[g.moving.legIndex] : g.area; enemyAt[a] = (enemyAt[a] || 0) + n; }
+  let best = null, bestScore = -1e9;
+  for (const aid in enemyAt) {
+    if (claimed && claimed[aid]) continue;
+    const ar = state.areas[aid]; if (!ar || ar.terrain === 'base') continue;       // their own Keep is a siege, not a hunt
+    const onOurLand = ar.owner === team.team;
+    const nextToOurLand = ar.connections.some((n) => state.areas[n] && state.areas[n].owner === team.team);
+    if (!onOurLand && !nextToOurLand) continue;                                     // only raiders in/at our territory
+    if (winChanceAt(state, army, team, w, aid) < winBar) continue;                  // only fights we can win
+    const score = (onOurLand ? 50 : 0) - enemyAt[aid] * 3 + (S.buildingsAt(ar) + (ar.site ? ar.site.level : 0));
+    if (score > bestScore) { bestScore = score; best = aid; }
+  }
+  return best;
 }
 // Owned areas under threat (enemy host on them or an adjacent area), sorted Keep-first then by
 // building count — exactly the defence priority the Lord asked for.
