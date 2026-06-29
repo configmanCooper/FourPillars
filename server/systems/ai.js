@@ -30,12 +30,9 @@ const RESEARCH_PRIORITY = {
 
 function isHard(team, role) { const s = team.slots && team.slots[role]; return !!(s && s.difficulty === 'hard'); }
 function smartHard(team, role) { return isHard(team, role) && team._hardVariant !== 'old'; }
-// smartAI: difficulty-agnostic brain upgrades that ship for BOTH medium and hard. Disabled only on the
-// A/B harness "old" side so each improvement can be measured (new vs old) before it is kept.
-function smartAI(team) { return team._hardVariant !== 'old'; }
-// Per-feature A/B gate: lets the harness isolate ONE improvement by disabling just that feature on the
-// baseline side (team._abOff[feat]) while keeping all previously-accepted fixes on. In production neither
-// flag is set, so every feature is live for medium & hard.
+// Per-feature A/B gate: ships difficulty-agnostic brain upgrades for BOTH medium and hard, and lets the
+// harness isolate ONE improvement by disabling just that feature on the baseline side (team._abOff[feat])
+// while keeping all previously-accepted fixes on. In production neither flag is set, so every feature is live.
 function ab(team, feat) { return team._hardVariant !== 'old' && !(team._abOff && team._abOff[feat]); }
 
 function aiTick(state, team, dt, sys, rng) {
@@ -773,16 +770,9 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
   if (!st.acted && army.archer > 0 && (team.resources.arrows || 0) < arrowsNeed) {
     if (forge('arrows', 24).ok) { st.acted = true; say(state, team, sys, st, C.ROLES.BLACKSMITH, 'Archers low on arrows — forging a batch.', 20); }
   }
-  if (!st.acted && team.production.length < (ab(team, 'smith') ? 3 : 2)) {
+  if (!st.acted && team.production.length < 2) {
     let item;
-    if (state.phase === 'EARLY') {
-      const toolFloor = (persona === 'toolsmith' ? 10 : 5);
-      if (team.equipment.tools < toolFloor) item = 'tools';
-      // Armour's tier bonus is the single most decisive battle edge — smart AI starts banking it early
-      // (iron-only, so it doesn't touch the bottleneck wood) instead of forging only spears.
-      else if (ab(team, 'smith') && (team.resources.iron || 0) >= 24) item = 'armor';
-      else item = 'spears';
-    }
+    if (state.phase === 'EARLY') item = (persona === 'toolsmith' && team.equipment.tools < 10) || team.equipment.tools < 5 ? 'tools' : 'spears';
     else {
       // Forge the gear our army needs against THIS enemy (counter-aware), with persona/diversity flavour.
       const want = pickComposition(team, { comp: ['swordsman', 'spearman', 'archer', 'cavalry'] }, enemyComposition(state, team), army).desired;
@@ -790,7 +780,7 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
       if (want === 'archer' && (team.resources.arrows || 0) < 12) item = 'arrows';     // keep archers supplied
       else if (team.buildings.workshop > 0 && (team.equipment.siegeParts || 0) < 8 && state.phase !== 'EARLY' && rng.chance(persona === 'siege' ? 0.55 : 0.3)) item = 'siegeParts';   // keep siege parts stocked so the Commander can field catapults for assaults
       else if (persona === 'armorer' && (team.resources.iron || 0) > 20 && rng.chance(0.45)) item = 'armor';
-      else if (rng.chance(ab(team, 'smith') ? 0.4 : 0.25)) item = 'armor';                  // some armour for the tier bonus (smart AI banks more)
+      else if (rng.chance(0.25)) item = 'armor';                                       // some armour for the tier bonus
     }
     // Honour the Steward's "conserve wood": defer wood-costing forges (prefer iron-only Swords/Armour).
     if (sys.economy.conserving(team, 'wood', state.elapsed) && B.RECIPES[item] && (B.RECIPES[item].cost.wood || 0) > 0) {
@@ -806,52 +796,10 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
     }
     if (item && forge(item, 8).ok) st.acted = true;
   }
-  if (!st.acted && !team.contract && team.contractCooldown <= 0) {
-    const offers = (team.contractOffers && team.contractOffers.length) ? team.contractOffers : B.CONTRACTS.map((c) => c.id);
-    if (ab(team, 'smith')) {
-      // Pick a contract we can actually FINISH in time, instead of a random one. Favour small, single-item,
-      // iron-based goals (swords/armour) and avoid wood-hungry orders when wood is the bottleneck; weight by
-      // reward. A failed contract (the Red AI's mistake in the analysed replay) wastes the whole forge window.
-      const pick = pickSmartContract(team, offers);
-      if (pick && prod.startContract(team, pick).ok) st.acted = true;
-    } else if (rng.chance(0.5)) {
-      if (prod.startContract(team, rng.pick(offers)).ok) st.acted = true;
-    }
-  }
+  if (!st.acted && !team.contract && team.contractCooldown <= 0 && rng.chance(0.5)) { const offers = (team.contractOffers && team.contractOffers.length) ? team.contractOffers : B.CONTRACTS.map((c) => c.id); if (prod.startContract(team, rng.pick(offers)).ok) st.acted = true; }
   if ((team.resources.iron || 0) < 12) { if (req(state, team, sys, st, C.ROLES.BLACKSMITH, C.ROLES.STEWARD, 'IRON', {}, 30)) say(state, team, sys, st, C.ROLES.BLACKSMITH, 'Out of iron — Steward, send more!', 25); }
 }
 function countArmy(team) { const o = { militia: 0, spearman: 0, swordsman: 0, archer: 0, cavalry: 0, catapult: 0 }; for (const g of team.armies) for (const u of C.UNITS) o[u] += g.units[u] || 0; return o; }
-// Choose the offered contract we can most plausibly FINISH (and most want the reward for). Returns an id,
-// or null if nothing is worth committing the forge to right now.
-const CONTRACT_BY_ID = {}; for (const c of B.CONTRACTS) CONTRACT_BY_ID[c.id] = c;
-function pickSmartContract(team, offers) {
-  const woodScarce = (team.resources.wood || 0) < 50;
-  let best = null, bestScore = -1e9;
-  for (const id of offers) {
-    const c = CONTRACT_BY_ID[id]; if (!c) continue;
-    let feasible = true, qty = 0, woodNeed = 0, ironItems = 0;
-    for (const item in c.goal) {
-      const rc = B.RECIPES[item];
-      if (!rc) { feasible = false; break; }
-      if (rc.needs === 'siege' && (team.buildings.workshop || 0) <= 0) { feasible = false; break; }   // can't forge siege parts without a Workshop
-      const n = c.goal[item]; qty += n;
-      const batches = Math.ceil(n / (rc.batch || 1));
-      woodNeed += (rc.cost.wood || 0) * batches;
-      if (item === 'swords' || item === 'armor') ironItems += n;
-    }
-    if (!feasible) continue;
-    let s = 0;
-    s += ironItems * 0.5;                              // iron-only goods are quick & don't touch the wood bottleneck
-    s -= qty * 0.12;                                   // smaller quotas finish in time
-    s -= Object.keys(c.goal).length * 1.4;            // single-item orders are far easier than mixed kits
-    if (woodScarce) s -= woodNeed * 0.18;             // avoid wood-hungry orders when wood is scarce
-    const r = c.reward || {};
-    s += (r.relics || 0) * 4 + (r.iron || 0) * 0.08 + (r.wood || 0) * 0.045 + (r.stone || 0) * 0.04 + (r.horses || 0) * 0.3 + (r.food || 0) * 0.03;
-    if (s > bestScore) { bestScore = s; best = id; }
-  }
-  // Only commit if the best option is reasonably attractive — a marginal/over-large contract isn't worth a failure.
-  return bestScore >= 0 ? best : null;
-}
 function enemyComposition(state, team) { return countArmy(state.teams[S.enemyOf(team.team)]); }
 // Smart troop selection: counter the enemy (spears vs cavalry, cavalry vs archers, archers vs slow
 // infantry), keep a diverse force, and respect what we can build/afford. Returns the unit we WANT
