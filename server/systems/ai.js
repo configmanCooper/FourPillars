@@ -384,6 +384,11 @@ function aiLord(state, team, sys, rng, persona, st) {
     if (planned('lumberCamp') < 2) wish.push('lumberCamp');   // 2nd camp BEFORE the Barracks — wood income must scale early
     if (planned('barracks') < 1) wish.push('barracks');
     if (planned('mine') < 1) wish.push('mine');
+    // GROWTH (lesson from strong human play — they fielded ~2x our population): population growth is gated by
+    // housing, and a House sits low in this list, so a Prosperity realm can idle at its housing cap instead of
+    // growing into more workers/soldiers. When food is plentiful and the gathering base exists to employ the new
+    // hands, raise a House proactively (right after the economic foundation) so the population keeps compounding.
+    if (ab(team, 'growthhousing') && atCap && (team.resources.food || 0) >= 50 && (team.buildings.lumberCamp || 0) >= 2 && planned('house') < 4) wish.push('house');
     if (planned('lumberCamp') < 3) wish.push('lumberCamp');   // 3rd camp — chronic wood demand (outposts + tech + gear)
     if (planned('storehouse') < 1) wish.push('storehouse'); // raise caps early so we can stockpile
     if (atCap && planned('house') < 3) wish.push('house');
@@ -1413,7 +1418,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
       let har = team.armies.find((h) => h.harasser && army.unitCount(h) >= 0.5);
       if (!har && !behind) {
         if ((army.unitCount(g) - reserve) >= 2 && army.currentArea(g) === home && !g.moving) {
-          const r = army.rally(state, team, harasserUnits(g), 'Outriders');
+          const r = army.rally(state, team, harasserUnits(g, ab(team, 'catapultguard')), 'Outriders');
           if (r.ok && army.unitCount(r.group) >= 0.5) { r.group.harasser = true; har = r.group; }
         }
         if (!har) { const small = fhs().filter((h) => !h.moving).sort((a, b) => army.unitCount(a) - army.unitCount(b))[0]; if (small && fhs().length > 1) { small.harasser = true; har = small; } }
@@ -1454,7 +1459,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
         const grabCap = desperate ? 1 : 2;   // when desperate, peel only ONE small raider — the rest turtles home
         while (fhs().filter((h) => !h.harasser && !h.postGuard).length < maxHosts &&
                army.currentArea(g) === home && !g.moving && (army.unitCount(g) - reserve) >= 3 && grabs++ < grabCap) {
-          const det = army.rally(state, team, smallGarrisonUnits(g, clampI(desperate ? 3 : 5 + aggr, desperate ? 2 : 4, desperate ? 4 : 7)), 'Raiders');
+          const det = army.rally(state, team, smallGarrisonUnits(g, clampI(desperate ? 3 : 5 + aggr, desperate ? 2 : 4, desperate ? 4 : 7), ab(team, 'catapultguard')), 'Raiders');
           if (!det.ok || army.unitCount(det.group) < 0.5) break;
           decide(det.group);                                  // routes it to the best undefended capture
           const m = det.group.mission && det.group.mission.type;
@@ -1471,7 +1476,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
         if (team.armies.some((h) => (h.postGuard === pid || (!h.isGarrison && army.currentArea(h) === pid && !h.moving)) && army.unitCount(h) >= 1.5)) continue; // already held
         if (army.currentArea(g) !== home || g.moving || (army.unitCount(g) - reserve) < (broadGuard ? 2 : 3)) break;     // no spare troops
         if (gpGuard++ >= (broadGuard ? 3 : 2)) break;                                                                     // a couple per think (more when defending broadly)
-        const det = army.rally(state, team, smallGarrisonUnits(g, clampI(3 + aggr, 2, 4)), 'Garrison');
+        const det = army.rally(state, team, smallGarrisonUnits(g, clampI(3 + aggr, 2, 4), ab(team, 'catapultguard')), 'Garrison');
         if (det.ok && army.unitCount(det.group) >= 0.5) { det.group.postGuard = pid; army.command(state, team, det.group.id, 'garrison', pid); say(state, team, sys, st, C.ROLES.COMMANDER, 'Garrisoning ' + state.areas[pid].name + '.', 20); }
       }
       // Raise more main raiding parties from the garrison surplus (harasser & post-guards don't count toward the cap).
@@ -1754,9 +1759,10 @@ function countEnemyOutposts(state, foeTeam) {
   return n;
 }
 // A small standing garrison drawn from the home reserve — favour spearmen (cheap, hold ground, anti-cav).
-function smallGarrisonUnits(g, n) {
+function smallGarrisonUnits(g, n, excludeCata) {
   const o = {}; for (const u of C.UNITS) o[u] = 0; let need = n;
-  for (const u of ['spearman', 'militia', 'archer', 'swordsman', 'cavalry', 'catapult']) { if (need <= 0) break; const take = Math.min(Math.floor(g.units[u] || 0), need); if (take > 0) { o[u] = take; need -= take; } }
+  const order = excludeCata ? ['spearman', 'militia', 'archer', 'swordsman', 'cavalry'] : ['spearman', 'militia', 'archer', 'swordsman', 'cavalry', 'catapult'];
+  for (const u of order) { if (need <= 0) break; const take = Math.min(Math.floor(g.units[u] || 0), need); if (take > 0) { o[u] = take; need -= take; } }
   return o;
 }
 function bestAttackTarget(state, team, exclude) {
@@ -1786,11 +1792,14 @@ function enemySupplyPatrol(state, team) {
   for (const c of chokes) { const s = score[c] * 10 + (state.areas[c].owner === foe ? 2 : 1); if (s > bestS) { bestS = s; best = c; } }
   return best;
 }
-// A small, fast strike force for the harasser — favour cavalry, then cheap bodies; ~4 units.
-function harasserUnits(g) {
+// A small, fast strike force for the harasser — favour cavalry, then cheap bodies; ~4 units. Never includes
+// catapults (excludeCata): a lone/escortless catapult in a fast raiding party is fragile and ill-defended —
+// catapults belong in the big diverse main host.
+function harasserUnits(g, excludeCata) {
   const o = {}; for (const u of C.UNITS) o[u] = 0;
   let need = 4;
-  for (const u of ['cavalry', 'militia', 'archer', 'spearman', 'swordsman', 'catapult']) {
+  const order = excludeCata ? ['cavalry', 'militia', 'archer', 'spearman', 'swordsman'] : ['cavalry', 'militia', 'archer', 'spearman', 'swordsman', 'catapult'];
+  for (const u of order) {
     if (need <= 0) break;
     const take = Math.min(g.units[u] || 0, need);
     if (take > 0) { o[u] = take; need -= take; }
