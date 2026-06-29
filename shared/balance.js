@@ -97,18 +97,18 @@
 
   // Building costs and effects. effect keys are read by systems.
   const BUILDINGS = {
-    house:      { name: 'House',       cost: { wood: 50 },             buildTime: 12, effect: { housing: HOUSING_PER_HOUSE } },
-    farm:       { name: 'Farm',        cost: { wood: 60 },             buildTime: 14, effect: { foodMult: 0.25 } },
-    lumberCamp: { name: 'Lumber Camp', cost: { wood: 50, stone: 20 },  buildTime: 14, effect: { woodMult: 0.40 } },
-    mine:       { name: 'Mine',        cost: { wood: 60, stone: 40 },  buildTime: 18, effect: { mineMult: 0.40 } },
-    storehouse: { name: 'Storehouse',  cost: { wood: 70, stone: 50 },  buildTime: 18, effect: { storage: STORAGE_PER_STOREHOUSE } },
-    barracks:   { name: 'Barracks',    cost: { wood: 70, stone: 30 },  buildTime: 20, effect: { unlock: 'train' } },
-    school:     { name: 'School',      cost: { wood: 70, stone: 40 },  buildTime: 20, effect: { unlock: 'educate' } },
-    stables:    { name: 'Stables',     cost: { wood: 90, stone: 50, iron: 20 }, buildTime: 24, effect: { unlock: 'cavalry' } },
-    workshop:   { name: 'Workshop',    cost: { wood: 90, iron: 40 },   buildTime: 24, effect: { unlock: 'siege' } },
-    university: { name: 'University',   cost: { wood: 30, stone: 90, iron: 30 }, buildTime: 26, effect: { unlock: 'research' } },
-    marketplace:{ name: 'Marketplace',  cost: { wood: 80, stone: 60 },  buildTime: 22, effect: { unlock: 'trade' } },
-    walls:      { name: 'Walls',       cost: { stone: 120 },           buildTime: 26, effect: { keepDef: 60, keepHp: 120 } },
+    house:      { name: 'House',       cost: { wood: 50 },             buildTime: 18, effect: { housing: HOUSING_PER_HOUSE } },
+    farm:       { name: 'Farm',        cost: { wood: 60 },             buildTime: 21, effect: { foodMult: 0.25 } },
+    lumberCamp: { name: 'Lumber Camp', cost: { wood: 50, stone: 20 },  buildTime: 21, effect: { woodMult: 0.40 } },
+    mine:       { name: 'Mine',        cost: { wood: 60, stone: 40 },  buildTime: 27, effect: { mineMult: 0.40 } },
+    storehouse: { name: 'Storehouse',  cost: { wood: 70, stone: 50 },  buildTime: 27, effect: { storage: STORAGE_PER_STOREHOUSE } },
+    barracks:   { name: 'Barracks',    cost: { wood: 70, stone: 30 },  buildTime: 30, effect: { unlock: 'train' } },
+    school:     { name: 'School',      cost: { wood: 70, stone: 40 },  buildTime: 30, effect: { unlock: 'educate' } },
+    stables:    { name: 'Stables',     cost: { wood: 90, stone: 50, iron: 20 }, buildTime: 36, effect: { unlock: 'cavalry' } },
+    workshop:   { name: 'Workshop',    cost: { wood: 90, iron: 40 },   buildTime: 36, effect: { unlock: 'siege' } },
+    university: { name: 'University',   cost: { wood: 30, stone: 90, iron: 30 }, buildTime: 39, effect: { unlock: 'research' } },
+    marketplace:{ name: 'Marketplace',  cost: { wood: 80, stone: 60 },  buildTime: 33, effect: { unlock: 'trade' } },
+    walls:      { name: 'Walls',       cost: { stone: 120 },           buildTime: 39, effect: { keepDef: 60, keepHp: 120 } },
     // The Keep's core. Always present, occupies a build slot, can't be built or demolished. It is the
     // LAST thing razed in a siege (only after every other building falls) and its fall = total defeat.
     // It looses arrows like a lone militia at besiegers.
