@@ -1773,8 +1773,8 @@
     const order = ['food', 'wood', 'stone', 'iron', 'horses', 'arrows', 'relics'];
     const col = tm === 'BLUE' ? '#2f5f9f' : '#8b2500';
     const lab = '<div class="res-chip" style="cursor:default;border-color:' + col + '"><span class="rg">' + (tm === 'BLUE' ? '🟦' : '🟥') + '</span><span>' + esc(C.TEAM_META[tm].name.split(' ')[0]) + '</span></div>';
-    const chips = order.map((k) => { const m = C.RESOURCE_META[k]; const v = Math.round(team.resources[k] || 0); return '<div class="res-chip" style="cursor:default" title="' + k + '"><span class="rg">' + m.glyph + '</span><span>' + v + '</span></div>'; }).join('');
-    const pop = '<div class="res-chip" style="cursor:default" title="Population / housing"><span class="rg">👤</span><span>' + team.pop.total + '/' + team.housing + '</span></div>';
+    const chips = order.map((k) => { const m = C.RESOURCE_META[k]; const v = Math.round(team.resources[k] || 0); return '<div class="res-chip" title="' + k + ' — click for details" onclick="FP.UI.modalSpectatorResources(\'' + tm + '\')"><span class="rg">' + m.glyph + '</span><span>' + v + '</span></div>'; }).join('');
+    const pop = '<div class="res-chip" title="Population / housing — click for details" onclick="FP.UI.modalSpectatorResources(\'' + tm + '\')"><span class="rg">👤</span><span>' + team.pop.total + '/' + team.housing + '</span></div>';
     const army = '<div class="res-chip" title="Soldiers — click for both armies" onclick="FP.UI.modalSpectatorMilitary()"><span class="rg">⚔️</span><span>' + team.pop.soldiers + '</span></div>';
     return lab + chips + pop + army;
   }
@@ -1850,6 +1850,31 @@
       return '<div style="flex:1;min-width:240px">' + h + '</div>';
     };
     openModal('⚔️ Both Armies — Composition &amp; Gear', '<div style="display:flex;gap:18px;flex-wrap:wrap">' + col('BLUE') + col('RED') + '</div>', modalSpectatorMilitary);
+  }
+
+  // Read-only resource/economy overview for spectators (both kingdoms, no actions).
+  function modalSpectatorResources(focus) {
+    const snap = State.snapshot; if (!snap) return;
+    const order = ['food', 'wood', 'stone', 'iron', 'horses', 'arrows', 'relics'];
+    const baseDesc = {
+      food: 'Feeds population; at 0, growth stops, morale & productivity drop, and starvation kills.',
+      wood: 'Buildings, Steward outposts, bows & arrows.', stone: 'Buildings, walls & defences.',
+      iron: 'Weapons, armour & advanced buildings.', horses: 'Required to muster Cavalry.',
+      arrows: 'Archers fight at half strength without them.', relics: 'Boost Kingdom Score (timeout tiebreaker).',
+    };
+    const col = (tm) => {
+      const t = snap.teams[tm]; const cap = t.storageCap;
+      let h = '<div class="rp-h" style="color:' + (tm === 'BLUE' ? '#8fb8e8' : '#d46a5a') + '">' + esc(C.TEAM_META[tm].name) + ' — score ' + Math.round(t.score) + '</div>';
+      h += '<div class="rp-h">Resources</div>';
+      for (const k of order) { const m = C.RESOURCE_META[k]; const v = Math.round(t.resources[k] || 0); const full = (k !== 'relics' && v >= cap); h += '<div class="sel-row" title="' + esc(baseDesc[k]) + '"><span>' + m.glyph + ' ' + m.name + '</span><span><b>' + v + '</b>' + (full ? ' <span class="muted">📦 full/' + cap + '</span>' : '') + '</span></div>'; }
+      const p = t.pop;
+      h += '<div class="rp-h">Population (' + p.total + '/' + t.housing + ')</div>';
+      const jobs = [['👤 Idle', p.idle], ['🌾 Farmers', p.farmers], ['🪵 Woodcutters', p.woodcutters], ['⛏️ Miners', p.miners], ['🔨 Builders', p.builders], ['🎓 Students', p.students], ['🛡 Trainers', p.trainers], ['📜 Researchers', p.researchers], ['🎖️ Recruits', Math.round(p.recruits)], ['⚔️ Soldiers', p.soldiers]];
+      for (const [lab, n] of jobs) if (n) h += '<div class="sel-row"><span>' + lab + '</span><b>' + n + '</b></div>';
+      return '<div style="flex:1;min-width:240px">' + h + '</div>';
+    };
+    const blue = col('BLUE'), red = col('RED');
+    openModal('📊 Both Kingdoms — Economy', '<div style="display:flex;gap:18px;flex-wrap:wrap">' + (focus === 'RED' ? red + blue : blue + red) + '</div>', () => modalSpectatorResources(focus));
   }
 
   // ---------- host info popup (left-click any host) ----------
@@ -2013,7 +2038,7 @@
     reequip(gid) { Net.action('reequip', { groupId: gid }); },
     commandSel(mission, area) { const team = State.teamState(); const gid = State.selectedGroupId || garrisonId(team); if (!gid) return toast('No host to command.', true); Net.action('command', { groupId: gid, mission, targetArea: area }); },
     cmd(gid, mission) { Net.action('command', { groupId: gid, mission }); closeModal(); },
-    modalBuild, modalWorkers, modalPolicy, modalMilitaryPolicy, modalSites, modalCaravans, modalStewardship, modalExpeditions, modalForge, modalContracts, modalSpec, modalMuster, modalOrders, modalArmyManage, modalDoctrine, modalNeed, modalMilitary, modalGather, modalResearch, modalSpectatorMilitary,
+    modalBuild, modalWorkers, modalPolicy, modalMilitaryPolicy, modalSites, modalCaravans, modalStewardship, modalExpeditions, modalForge, modalContracts, modalSpec, modalMuster, modalOrders, modalArmyManage, modalDoctrine, modalNeed, modalMilitary, modalGather, modalResearch, modalSpectatorMilitary, modalSpectatorResources,
     gatherTools(pool, delta) { Net.action('setGatherTools', { pool, delta }); },
     toggleDanger(pool) { const t = State.teamState(); const on = !(t && t.dangerWork && t.dangerWork[pool]); Net.action('setDangerWork', { pool, on }); },
     setScouts(delta) { Net.action('setScouts', { delta }); },
