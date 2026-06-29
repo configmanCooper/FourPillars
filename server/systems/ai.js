@@ -1182,6 +1182,11 @@ function aiCommander(state, team, sys, rng, persona, st) {
     const vastlyOutmatched = edge < 0.5;
     if (ownPosts > 0 && !vastlyOutmatched && kt.onKeep < 0.5 && team.keep.hp > team.keep.maxHp * 0.7) reserve = 2;
   }
+  // F5 — mid/late forward defence: when an enemy raider is loose IN or NEXT TO our territory and we aren't
+  // outmatched, garrison ALL owned outposts (not just frontier ones) so they aren't snatched while the main
+  // host is away. Reuses the broad hold-list; only kicks in when a raider is actually detected near us.
+  const raiderNear = ab(team, 'midguard') && state.phase !== 'EARLY' && edge >= 0.7 && raiderNearOurLand(state, team);
+  const broadGuard = earlyDefend || raiderNear;
   const campaignSize = clampI(7 - aggr, 6, 9);                       // raise only substantial hosts (can break a Keep)
   let maxHosts = clampI(2 + (state.phase === 'LATE' ? 1 : 0), 2, 3); // a strong main host + a raiding party
   // F4 — CONSOLIDATE when behind: if the enemy clearly out-armies us, stop splitting into small hosts that
@@ -1189,6 +1194,13 @@ function aiCommander(state, team, sys, rng, persona, st) {
   // when we're not already pressing a near-won assault, which keepThreat/decide handle separately.)
   const behind = ab(team, 'consolidate') && edge < 0.8 && foePow >= 5;
   if (behind) maxHosts = 1;
+  // F6 — ANTI-SNOWBALL: when we've been reduced to ~just our Keep, don't roll over. The Watchtower lets the
+  // main force turtle home, so we peel ONE small fast raider to snatch UNDEFENDED enemy outposts — chipping
+  // the enemy's economy back the way ours was chipped. Allowed even while 'behind' (overrides consolidate),
+  // because passively turtling to death is how a reduced team loses; opportunistic raids are the comeback.
+  const ownPostCount = ownedOutpostList(state, team).length;
+  const desperate = ab(team, 'antisnowball') && state.phase !== 'EARLY' && ownPostCount <= 1 && edge < 0.9;
+  if (desperate) maxHosts = Math.max(maxHosts, 2);   // main turtle host + one opportunistic raider
 
   // Choose this field host's mission by the priority ladder.
   const decide = (w) => {
@@ -1398,11 +1410,12 @@ function aiCommander(state, team, sys, rng, persona, st) {
       // Snatch UNDEFENDED enemy outposts: when the enemy leaves posts wide open, peel a small raiding
       // party off the home reserve and go take them NOW — don't wait for a grand host (that passivity is
       // exactly why open enemy posts sat un-taken). Prioritised ABOVE garrisoning our own frontier.
-      if (!keepThreat && !behind && hasUndefendedEnemyPost(state, team)) {
+      if (!keepThreat && (!behind || desperate) && hasUndefendedEnemyPost(state, team)) {
         let grabs = 0;
+        const grabCap = desperate ? 1 : 2;   // when desperate, peel only ONE small raider — the rest turtles home
         while (fhs().filter((h) => !h.harasser && !h.postGuard).length < maxHosts &&
-               army.currentArea(g) === home && !g.moving && (army.unitCount(g) - reserve) >= 3 && grabs++ < 2) {
-          const det = army.rally(state, team, smallGarrisonUnits(g, clampI(5 + aggr, 4, 7)), 'Raiders');
+               army.currentArea(g) === home && !g.moving && (army.unitCount(g) - reserve) >= 3 && grabs++ < grabCap) {
+          const det = army.rally(state, team, smallGarrisonUnits(g, clampI(desperate ? 3 : 5 + aggr, desperate ? 2 : 4, desperate ? 4 : 7)), 'Raiders');
           if (!det.ok || army.unitCount(det.group) < 0.5) break;
           decide(det.group);                                  // routes it to the best undefended capture
           const m = det.group.mission && det.group.mission.type;
@@ -1414,11 +1427,11 @@ function aiCommander(state, team, sys, rng, persona, st) {
       // game (earlyDefend) we hold ALL owned outposts, not just frontier ones — even building-less ground is
       // worth denying the enemy and is cheap to hold while the Keep's Watchtower covers home.
       let gpGuard = 0;
-      const postsToHold = earlyDefend ? ownedOutpostList(state, team) : ownedFrontierPosts(state, team);
+      const postsToHold = broadGuard ? ownedOutpostList(state, team) : ownedFrontierPosts(state, team);
       for (const pid of postsToHold) {
         if (team.armies.some((h) => (h.postGuard === pid || (!h.isGarrison && army.currentArea(h) === pid && !h.moving)) && army.unitCount(h) >= 1.5)) continue; // already held
-        if (army.currentArea(g) !== home || g.moving || (army.unitCount(g) - reserve) < (earlyDefend ? 2 : 3)) break;     // no spare troops
-        if (gpGuard++ >= (earlyDefend ? 3 : 2)) break;                                                                     // a couple per think (more early)
+        if (army.currentArea(g) !== home || g.moving || (army.unitCount(g) - reserve) < (broadGuard ? 2 : 3)) break;     // no spare troops
+        if (gpGuard++ >= (broadGuard ? 3 : 2)) break;                                                                     // a couple per think (more when defending broadly)
         const det = army.rally(state, team, smallGarrisonUnits(g, clampI(3 + aggr, 2, 4)), 'Garrison');
         if (det.ok && army.unitCount(det.group) >= 0.5) { det.group.postGuard = pid; army.command(state, team, det.group.id, 'garrison', pid); say(state, team, sys, st, C.ROLES.COMMANDER, 'Garrisoning ' + state.areas[pid].name + '.', 20); }
       }
@@ -1494,6 +1507,17 @@ function keepThreatInfo(state, team, army) {
     else if (k.connections.indexOf(a) >= 0) adj += n;
   }
   return { onKeep, adj };
+}
+// True if any enemy host stands ON or NEXT TO our owned ground — a raider is loose near us (used to switch
+// on broad mid-game outpost garrisoning).
+function raiderNearOurLand(state, team) {
+  const foe = S.enemyOf(team.team);
+  for (const g of state.teams[foe].armies) { if (unitCountG(g) < 0.5) continue;
+    const a = g.moving ? g.moving.route[g.moving.legIndex] : g.area; const ar = state.areas[a]; if (!ar || ar.terrain === 'base') continue;
+    if (ar.owner === team.team) return true;
+    if (ar.connections.some((n) => state.areas[n] && state.areas[n].owner === team.team)) return true;
+  }
+  return false;
 }
 // F3 — find the nearest WINNABLE enemy raider near our territory for host w to intercept. A "raider near us"
 // is an enemy host standing ON our owned ground, or one tile from it, that we can beat at that spot. Prefers
