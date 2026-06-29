@@ -460,6 +460,21 @@ function aiLord(state, team, sys, rng, persona, st) {
     if (mineRes) req(state, team, sys, st, C.ROLES.LORD, C.ROLES.STEWARD, 'MINEFOCUS', { res: mineRes }, 40);
   }
 
+  // Smart expansion: when the Keep's build slots are (nearly) full and we hold a defensible position with a
+  // real army, have the Steward claim a new outpost — more build slots + a fresh resource. Only when we can
+  // plausibly hold it (we have soldiers and aren't being overrun), and only if there's neutral ground to take.
+  if (ab(team, 'expandsmart') && state.phase !== 'EARLY' && !threat && (st.cd.expand || 0) <= state.elapsed) {
+    const home = state.areas[S.homeBase(team.team)];
+    const homeNearFull = S.buildingsAt(home) >= home.maxBuildings - 1;
+    const adequateMil = team.pop.soldiers >= 4 && team.keep.hp > team.keep.maxHp * 0.6;
+    let hasNeutral = false;
+    for (const id in state.areas) { const a = state.areas[id]; if (a.revealed[team.team] && a.site && a.terrain !== 'base' && !a.owner) { hasNeutral = true; break; } }
+    if (homeNearFull && adequateMil && hasNeutral) {
+      if (req(state, team, sys, st, C.ROLES.LORD, C.ROLES.STEWARD, 'SITE', { mode: 'expand' }, 60)) say(state, team, sys, st, C.ROLES.LORD, 'Our Keep is full — Steward, claim us new ground!', 30);
+      st.cd.expand = state.elapsed + 50;
+    }
+  }
+
   // Research: staff the University with educated workers and spend RP on prioritised upgrades.
   aiManageResearch(state, team, sys, rng, persona, st);
 
@@ -716,10 +731,15 @@ function aiSteward(state, team, sys, rng, persona, st) {
     if ((res.food || 0) > cap * 0.6 && ['wood', 'stone', 'iron'].some((k) => (res[k] || 0) < 25)) cand.push('grainLevy');
     if ((res.relics || 0) >= 1 && !team._starving) cand.push('learnRelics');
     cand.push('postRoads');
+    const _foodRate = (team.resourceStats && team.resourceStats.food) ? team.resourceStats.food.rate : 0;
+    const foodTight = ab(team, 'stewardfood') && (team._starving || _foodRate < 0.1 || (team.resources.food || 0) < (team.storageCap || 100) * 0.3);
     for (const id of cand) {
       const a = B.STEWARD_ACTIONS_BY_ID[id];
       if (!a) continue;
       if (((team.stewardActionCD && team.stewardActionCD[id]) || 0) > state.elapsed) continue;
+      // Food-aware: when our net food production is low/negative (or the larder is thin), don't spend FOOD on
+      // discretionary stewardship buffs — except grainLevy (which RELIEVES a shortage by converting surplus).
+      if (foodTight && (a.cost && (a.cost.food || 0) > 0) && id !== 'grainLevy') continue;
       if (!eco.canAfford(team, a.cost)) continue;
       if (a.workers && (team.workerLock || team.pop.idle < a.workers + 2)) continue;  // respect the Lord's worker lock; otherwise keep a couple of idle workers in reserve
       // Don't bleed a good down into scarcity for an ordinary buff — but the instant conversions
@@ -1101,8 +1121,11 @@ function aiCommander(state, team, sys, rng, persona, st) {
   else if (edge > 1.4) aggr += 1;                         // press a clear advantage
   // Strength-aware engagement: commit to a fight only with a winning matchup, and pull back when
   // outmatched. Aggressive personas/advantage accept worse odds; cautious ones want a clear edge.
+  // Smart AI refuses near-coin-flip-LOSING fights (the "1 soldier charges 3" stupidity): it needs a real
+  // edge to attack (≥46%) and retreats from any fight it's likely to lose (<40%) instead of feeding troops in.
+  const seng = ab(team, 'smartengage');
   const winBar = Math.max(0.40, Math.min(0.62, 0.52 - aggr * 0.04));   // engage if local win-chance ≥ this
-  const retreatBar = Math.max(0.26, winBar - 0.16);                    // fall back / consolidate if below this
+  const retreatBar = Math.max(seng ? 0.32 : 0.26, winBar - 0.16);                     // fall back / consolidate if below this (smart AI won't sit in a clearly-losing fight)
   const holdBar = Math.max(0.58, winBar + 0.10);                       // only KEEP a captured post if we can clearly hold it
 
   // Defence priorities: the Keep is paramount, then owned sites by building count (most-built first).
@@ -1432,9 +1455,12 @@ function enemyThreats(state, team) {
     // Enemies ON the site are always a threat (they raid it); a force merely NEXT DOOR only counts once
     // it's big enough to actually take the site — a lone scout shouldn't pull a host off the offensive.
     if (!(here >= 0.5 || adj >= 2)) continue;
-    out.push({ area: id, isKeep: a.terrain === 'base', buildings: S.buildingsAt(a), here: here >= 0.5, force: here + adj });
+    out.push({ area: id, isKeep: a.terrain === 'base', buildings: S.buildingsAt(a), farms: (a.buildings && a.buildings.farm) || 0, here: here >= 0.5, force: here + adj });
   }
-  out.sort((x, y) => ((y.isKeep ? 1e6 : 0) + y.buildings + (y.here ? 0.5 : 0)) - ((x.isKeep ? 1e6 : 0) + x.buildings + (x.here ? 0.5 : 0)));
+  // Defend the Keep first, then the richest holdings — counting FARMS double (losing a Farm to a raid is a
+  // food crisis), so the Commander prioritises saving the buildings that keep the realm fed & equipped.
+  const dval = (z) => (z.isKeep ? 1e6 : 0) + z.buildings + z.farms * 2 + (z.here ? 0.5 : 0);
+  out.sort((x, y) => dval(y) - dval(x));
   return out;
 }
 // An enemy host — or enemy-held post — sitting NEXT TO our territory: the prime counter-attack target,

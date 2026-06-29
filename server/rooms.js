@@ -174,11 +174,30 @@ class RoomManager {
     // Pull any new events / comms by id so the log is complete even though clean snapshots trim them.
     for (const e of (st.events || [])) { if (e && e.id && !room._evIds.has(e.id)) { room._evIds.add(e.id); rp.events.push(e); } }
     for (const team of ['BLUE', 'RED']) for (const c of (st.teams[team].comms || [])) { if (c && c.id && !room._commIds.has(c.id)) { room._commIds.add(c.id); rp.comms.push(Object.assign({ team }, c)); } }
-    // Compact per-team snapshot every ~10s.
+    // Capture COMBAT engagements (force sizes on each side) so losing/winning fights — e.g. a lone host
+    // charging a larger one — are visible. Any area where both teams have troops present is a fight.
+    rp.combats = rp.combats || [];
+    const hostCount = (g) => { let n = 0; for (const u of (g.units ? Object.keys(g.units) : [])) n += g.units[u] || 0; return n; };
+    const areaOf = (g) => (g.moving ? g.moving.route[g.moving.legIndex] : g.area);
+    const force = {};
+    for (const team of ['BLUE', 'RED']) for (const g of (st.teams[team].armies || [])) { const n = hostCount(g); if (n < 0.5) continue; const a = areaOf(g); force[a] = force[a] || { BLUE: 0, RED: 0 }; force[a][team] += n; }
+    for (const a in force) { if (force[a].BLUE >= 0.5 && force[a].RED >= 0.5) {
+      const key = a + ':' + Math.floor(st.elapsed / 5);
+      if (!room._combatKeys || !room._combatKeys.has(key)) { (room._combatKeys = room._combatKeys || new Set()).add(key);
+        rp.combats.push({ t: Math.round(st.elapsed), area: a, areaName: (st.areas[a] || {}).name, BLUE: Math.round(force[a].BLUE), RED: Math.round(force[a].RED) }); }
+    } }
+    // Compact per-team snapshot every ~10s — now with food/resource RATES, Keep HP, building counts and a
+    // per-host breakdown (size · location · mission) so starvation and bad engagements can be diagnosed.
     if (rp.snapshots.length === 0 || st.elapsed - rp.snapshots[rp.snapshots.length - 1].t >= 10) {
+      const rate = (tm, k) => (tm.resourceStats && tm.resourceStats[k]) ? +(tm.resourceStats[k].rate || 0).toFixed(2) : 0;
       const sn = (team) => { const tm = st.teams[team]; return {
-        res: Object.assign({}, tm.resources), pop: Object.assign({}, tm.pop), score: Math.round(tm.score || 0),
-        soldiers: tm.pop.soldiers, hosts: (tm.armies || []).length, sites: Object.values(st.areas || {}).filter(a => a.owner === team).length,
+        res: Object.assign({}, tm.resources),
+        rates: { food: rate(tm, 'food'), wood: rate(tm, 'wood'), stone: rate(tm, 'stone'), iron: rate(tm, 'iron') },
+        pop: Object.assign({}, tm.pop), score: Math.round(tm.score || 0),
+        soldiers: tm.pop.soldiers, sites: Object.values(st.areas || {}).filter(a => a.owner === team).length,
+        buildings: Object.assign({}, tm.buildings), keepHp: Math.round(tm.keep ? tm.keep.hp : 0), keepMaxHp: Math.round(tm.keep ? tm.keep.maxHp : 0),
+        starving: !!tm._starving,
+        hosts: (tm.armies || []).map((g) => ({ n: Math.round(hostCount(g)), area: areaOf(g), mission: (g.mission && g.mission.type) || 'idle', moving: !!g.moving, armor: !!g.hasArmor })).filter((h) => h.n >= 1),
         research: Object.assign({}, tm.research), researchPoints: Math.round(tm.researchPoints || 0), stewardPolicy: tm.stewardPolicy };
       };
       rp.snapshots.push({ t: Math.round(st.elapsed), phase: st.phase, BLUE: sn('BLUE'), RED: sn('RED') });
