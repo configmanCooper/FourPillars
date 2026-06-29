@@ -34,6 +34,7 @@ function smartHard(team, role) { return isHard(team, role) && team._hardVariant 
 // harness isolate ONE improvement by disabling just that feature on the baseline side (team._abOff[feat])
 // while keeping all previously-accepted fixes on. In production neither flag is set, so every feature is live.
 function ab(team, feat) { return team._hardVariant !== 'old' && !(team._abOff && team._abOff[feat]); }
+function mfOn(team) { return ab(team, 'minefocus'); }
 
 function aiTick(state, team, dt, sys, rng) {
   team.aiState = team.aiState || {};
@@ -397,6 +398,17 @@ function aiLord(state, team, sys, rng, persona, st) {
   else if ((team.resources.iron || 0) < 12 && state.phase !== 'EARLY') req(state, team, sys, st, C.ROLES.LORD, C.ROLES.STEWARD, 'NEED', { resource: 'iron' }, 30);
   else say(state, team, sys, st, C.ROLES.LORD, rng.pick(['Economy steady — building on.', 'The realm grows.', 'Keep the granaries full.']), 45);
 
+  // The Lord steers the mines: if its next building is blocked on iron/stone (or the realm is short), ask the
+  // Steward to bias the stone↔iron split toward it. The Steward weights the Lord's request highest & holds it.
+  if (mfOn(team) && state.phase !== 'EARLY') {
+    const bgoal = lordBuildGoal(state, team);
+    let mineRes = null;
+    if (bgoal && (bgoal.res === 'iron' || bgoal.res === 'stone')) mineRes = bgoal.res;
+    else if ((team.resources.iron || 0) < 25) mineRes = 'iron';
+    else if ((team.resources.stone || 0) < 25 || (team.buildQueue || []).some((q) => q.type === 'walls')) mineRes = 'stone';
+    if (mineRes) req(state, team, sys, st, C.ROLES.LORD, C.ROLES.STEWARD, 'MINEFOCUS', { res: mineRes }, 40);
+  }
+
   // Research: staff the University with educated workers and spend RP on prioritised upgrades.
   aiManageResearch(state, team, sys, rng, persona, st);
 
@@ -475,13 +487,23 @@ function aiSteward(state, team, sys, rng, persona, st) {
   }
   // Mine focus: bias stone↔iron by our own scarcity AND by recent council demand (a teammate asking
   // for iron/stone shifts the % toward it, not just adding miners). Hysteresis avoids thrashing.
-  const dem = (team._mineDemand && team._mineDemand.until > state.elapsed) ? team._mineDemand.res : null;
+  const demObj = (team._mineDemand && team._mineDemand.until > state.elapsed) ? team._mineDemand : null;
+  const dem = demObj ? demObj.res : null;
   const wantIron = (team.resources.iron || 0) < 40 || dem === 'iron';
   const wantStone = (team.resources.stone || 0) < 40 || dem === 'stone' || (team.buildQueue || []).some((b) => b.type === 'walls');
   let target = B.DEFAULT_MINE_FOCUS;
-  if (wantIron && !wantStone) target = B.AI_MINE_FOCUS_MAX;
-  else if (wantStone && !wantIron) target = B.AI_MINE_FOCUS_MIN;
-  if (Math.abs(target - g.mineIronFocus) > 0.01) { const step = Math.sign(target - g.mineIronFocus) * Math.min(0.1, Math.abs(target - g.mineIronFocus)); eco.setMineFocus(state, team, g.mineIronFocus + step); if (dem && (st.cd.mineSay || 0) <= state.elapsed) { say(state, team, sys, st, C.ROLES.STEWARD, 'Shifting the mines toward ' + dem + ' as asked.', 12); st.cd.mineSay = state.elapsed + 30; } }
+  if (mfOn(team) && demObj) {
+    // An accepted request (or our own committed shift) HOLDS the focus firmly on the asked ore for the whole
+    // demand window — a competing shortage no longer cancels what the council asked for (≥30s, longer for the Lord).
+    target = dem === 'iron' ? B.AI_MINE_FOCUS_MAX : B.AI_MINE_FOCUS_MIN;
+  } else if (wantIron && !wantStone) {
+    target = B.AI_MINE_FOCUS_MAX;
+    if (mfOn(team)) team._mineDemand = { res: 'iron', until: state.elapsed + 30, role: 'STEWARD', self: true };   // commit our own shift ≥30s (don't thrash)
+  } else if (wantStone && !wantIron) {
+    target = B.AI_MINE_FOCUS_MIN;
+    if (mfOn(team)) team._mineDemand = { res: 'stone', until: state.elapsed + 30, role: 'STEWARD', self: true };
+  }
+  if (Math.abs(target - g.mineIronFocus) > 0.01) { const step = Math.sign(target - g.mineIronFocus) * Math.min(0.1, Math.abs(target - g.mineIronFocus)); eco.setMineFocus(state, team, g.mineIronFocus + step); if (dem && !(demObj && demObj.self) && (st.cd.mineSay || 0) <= state.elapsed) { say(state, team, sys, st, C.ROLES.STEWARD, 'Shifting the mines toward ' + dem + ' as asked.', 12); st.cd.mineSay = state.elapsed + 30; } }
 
   // Dangerous home labour: when a good is critically short AND we have population to spare (comfortably
   // above the floor and not in a famine), push that crew hard for +50% output at the risk of losing a
@@ -891,6 +913,8 @@ function aiBlacksmithPlan(state, team, sys, rng, persona, st, ctx) {
   } else if ((team.resources.iron || 0) < 12) {
     if (req(state, team, sys, st, C.ROLES.BLACKSMITH, C.ROLES.STEWARD, 'IRON', {}, 30)) say(state, team, sys, st, C.ROLES.BLACKSMITH, 'Out of iron — Steward, send more!', 25);
   }
+  // Bias the mines toward iron while iron (our forge's lifeblood) is short — the Steward holds the focus.
+  if (mfOn(team) && (team.resources.iron || 0) < 30) req(state, team, sys, st, C.ROLES.BLACKSMITH, C.ROLES.STEWARD, 'MINEFOCUS', { res: 'iron' }, 45);
 }
 function countArmy(team) { const o = { militia: 0, spearman: 0, swordsman: 0, archer: 0, cavalry: 0, catapult: 0 }; for (const g of team.armies) for (const u of C.UNITS) o[u] += g.units[u] || 0; return o; }
 function enemyComposition(state, team) { return countArmy(state.teams[S.enemyOf(team.team)]); }

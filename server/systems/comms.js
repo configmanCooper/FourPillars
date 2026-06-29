@@ -234,15 +234,26 @@ function fulfill(state, team, req, systems) {
       // 1 = all iron. We set a longer demand window (the AI Steward holds the focus) AND nudge it now.
       const res = req.payload && req.payload.res;
       if (res !== 'iron' && res !== 'stone') return false;
-      team._mineDemand = { res: res, until: state.elapsed + 75 };
-      const g = team.gather; if (g) { const target = res === 'iron' ? B.AI_MINE_FOCUS_MAX : B.AI_MINE_FOCUS_MIN; const cur = (typeof g.mineIronFocus === 'number') ? g.mineIronFocus : B.DEFAULT_MINE_FOCUS; const step = Math.sign(target - cur) * Math.min(0.34, Math.abs(target - cur)); economy.setMineFocus(state, team, cur + step); }
+      const mf = !(team._abOff && team._abOff.minefocus);
+      const cur = team._mineDemand;
+      // The Lord's standing focus outranks a CONFLICTING ask from another role within its window.
+      if (mf && cur && cur.until > state.elapsed && cur.role === 'LORD' && req.fromRole !== 'LORD' && cur.res !== res) return true;
+      const win = (mf && req.fromRole === 'LORD') ? 90 : 75;   // ≥30s; the Lord's hold lasts longer
+      team._mineDemand = { res: res, until: state.elapsed + win, role: mf ? req.fromRole : undefined };
+      const g = team.gather; if (g) { const target = res === 'iron' ? B.AI_MINE_FOCUS_MAX : B.AI_MINE_FOCUS_MIN; const cur2 = (typeof g.mineIronFocus === 'number') ? g.mineIronFocus : B.DEFAULT_MINE_FOCUS; const step = Math.sign(target - cur2) * Math.min(0.34, Math.abs(target - cur2)); economy.setMineFocus(state, team, cur2 + step); }
       return true;
     }
     case 'NEED': {
       const res = req.payload && req.payload.resource;
       const jobFor = { food: 'farmers', wood: 'woodcutters', stone: 'miners', iron: 'miners' };
       if (jobFor[res]) {
-        if (res === 'iron' || res === 'stone') team._mineDemand = { res, until: state.elapsed + 30 };  // tell the Steward to bias the mines toward it
+        if (res === 'iron' || res === 'stone') {  // tell the Steward to bias the mines toward it (Lord's outranks)
+          const mf = !(team._abOff && team._abOff.minefocus);
+          const cur = team._mineDemand;
+          if (!(mf && cur && cur.until > state.elapsed && cur.role === 'LORD' && req.fromRole !== 'LORD' && cur.res !== res)) {
+            team._mineDemand = { res, until: state.elapsed + (mf && req.fromRole === 'LORD' ? 45 : 30), role: mf ? req.fromRole : undefined };
+          }
+        }
         const move = Math.min(3, team.pop.idle);
         if (move <= 0) return false;
         team.pop.idle -= move; team.pop[jobFor[res]] = (team.pop[jobFor[res]] || 0) + move; economy.recomputeDerived(team); return true;
