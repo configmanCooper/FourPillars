@@ -852,6 +852,7 @@
     const unis = (team.buildings.university || 0);
     const p = team.pop;
     const rp = Math.floor(team.researchPoints || 0);
+    const cdLeft = Math.max(0, Math.ceil((team.researchCooldownUntil || 0) - snap.elapsed));
     let html = '';
     if (unis <= 0) {
       html += '<div class="muted">Research happens at a <b>🏫 University</b>. The Lord assigns <b>educated</b> workers as Researchers (4 per University); each yields <b>1 Research Point every 5s</b>. RP buy permanent, team-wide upgrades.</div>';
@@ -865,6 +866,7 @@
       html += '<div class="opt"><div class="opt-info"><div class="opt-name">👩‍🔬 Assign Researchers</div><div class="opt-desc">Educated workers only. ' + (p.educated <= (p.researchers || 0) ? '<span style="color:#d9a441">Educate more workers at a School.</span>' : 'Idle ready: ' + p.idle) + '</div></div><span><button class="btn btn-sm" ' + ((p.researchers || 0) <= 0 ? 'disabled' : '') + ' onclick="FP.UI.act(\'setResearchers\',{delta:-1});FP.UI.modalResearch()">−</button> <b>' + (p.researchers || 0) + '</b> <button class="btn btn-sm" ' + ((p.researchers || 0) >= rcap || p.idle <= 0 ? 'disabled' : '') + ' onclick="FP.UI.act(\'setResearchers\',{delta:1});FP.UI.modalResearch()">＋</button></span></div>';
     }
     html += '<div class="rp-h">Upgrades (3 tiers each — each needs the previous)</div>';
+    if (cdLeft > 0) html += '<div class="muted" style="color:#d9a441">⏳ Labs retooling — next upgrade in <b>' + cdLeft + 's</b>.</div>';
     for (const key in B.RESEARCH) {
       const def = B.RESEARCH[key];
       const cur = (team.research && team.research[key]) || 0;
@@ -877,9 +879,10 @@
       const why = !next ? '' : (!affRP ? ' — need ' + next.rp + ' RP' : (!affMat ? ' — need ' + missingCost(team, next.cost) : ''));
       const pips = '●'.repeat(cur) + '○'.repeat(def.tiers.length - cur);
       const sub = (cur > 0 ? 'Now: ' + curVal + ' · ' : def.desc + ' · ') + (done ? '<span style="color:#6fae5f">maxed</span>' : 'Next (T' + (cur + 1) + '): <b>' + nextVal + '</b> · ' + next.rp + ' RP ' + costStr(next.cost)) + (why ? '<span style="color:#c8553d">' + why + '</span>' : '');
-      const canBuy = role === 'LORD' && next && affRP && affMat;
+      const canBuy = role === 'LORD' && next && affRP && affMat && cdLeft <= 0;
+      const btnLabel = cdLeft > 0 ? 'Research (' + cdLeft + 's)' : 'Research';
       html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + def.glyph + ' ' + def.name + ' <span class="muted">' + pips + '</span></div><div class="opt-desc">' + sub + '</div></div>' +
-        (done ? '<span class="muted">✓</span>' : (role === 'LORD' ? '<button class="btn btn-sm ' + (canBuy ? 'btn-gold' : '') + '" ' + (canBuy ? '' : 'disabled') + ' onclick="FP.UI.act(\'buyResearch\',{key:\'' + key + '\'});FP.UI.modalResearch()">Research</button>' : '')) + '</div>';
+        (done ? '<span class="muted">✓</span>' : (role === 'LORD' ? '<button class="btn btn-sm ' + (canBuy ? 'btn-gold' : '') + '" ' + (canBuy ? '' : 'disabled') + ' onclick="FP.UI.act(\'buyResearch\',{key:\'' + key + '\'});FP.UI.modalResearch()">' + btnLabel + '</button>' : '')) + '</div>';
     }
     openModal('🏫 Research', html, modalResearch);
   }

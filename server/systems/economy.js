@@ -586,12 +586,16 @@ function buyResearch(state, team, key) {
   const cur = researchTier(team, key);
   if (cur >= def.tiers.length) return { ok: false, reason: def.name + ' is fully researched.' };
   const tier = def.tiers[cur];   // the NEXT tier (each requires the previous, enforced by `cur`)
+  if ((team.researchCooldownUntil || 0) > state.elapsed) {
+    return { ok: false, reason: 'Research labs need ' + Math.ceil((team.researchCooldownUntil - state.elapsed)) + 's to retool before the next upgrade.' };
+  }
   if ((team.researchPoints || 0) < tier.rp) return { ok: false, reason: 'Need ' + tier.rp + ' Research Points (have ' + Math.floor(team.researchPoints || 0) + ').' };
   if (!canAfford(team, tier.cost)) return { ok: false, reason: 'Not enough resources for ' + def.name + ' Tier ' + (cur + 1) + '.' };
   team.researchPoints -= tier.rp;
   spendFor(team, tier.cost, 'LORD', 'researching ' + def.name + ' T' + (cur + 1));
   team.research = team.research || {};
   team.research[key] = cur + 1;
+  team.researchCooldownUntil = state.elapsed + B.RESEARCH_COOLDOWN;
   recomputeDerived(team);
   return { ok: true, msg: def.name + ' Tier ' + (cur + 1) + ' researched!' };
 }
