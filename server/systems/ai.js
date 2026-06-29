@@ -1183,7 +1183,12 @@ function aiCommander(state, team, sys, rng, persona, st) {
     if (ownPosts > 0 && !vastlyOutmatched && kt.onKeep < 0.5 && team.keep.hp > team.keep.maxHp * 0.7) reserve = 2;
   }
   const campaignSize = clampI(7 - aggr, 6, 9);                       // raise only substantial hosts (can break a Keep)
-  const maxHosts = clampI(2 + (state.phase === 'LATE' ? 1 : 0), 2, 3); // a strong main host + a raiding party
+  let maxHosts = clampI(2 + (state.phase === 'LATE' ? 1 : 0), 2, 3); // a strong main host + a raiding party
+  // F4 — CONSOLIDATE when behind: if the enemy clearly out-armies us, stop splitting into small hosts that
+  // get beaten one at a time; mass everything into a single stack so we fight with weight behind us. (Only
+  // when we're not already pressing a near-won assault, which keepThreat/decide handle separately.)
+  const behind = ab(team, 'consolidate') && edge < 0.8 && foePow >= 5;
+  if (behind) maxHosts = 1;
 
   // Choose this field host's mission by the priority ladder.
   const decide = (w) => {
@@ -1353,8 +1358,9 @@ function aiCommander(state, team, sys, rng, persona, st) {
     } else {
       // Maintain ONE small, fast caravan-harasser ("Outriders") that roams the enemy's supply lines
       // hunting caravans — exactly the low-soldier roving raider the war effort is otherwise too busy for.
+      // When we're behind (consolidate) we forgo the harasser and keep every soldier in the main stack.
       let har = team.armies.find((h) => h.harasser && army.unitCount(h) >= 0.5);
-      if (!har) {
+      if (!har && !behind) {
         if ((army.unitCount(g) - reserve) >= 2 && army.currentArea(g) === home && !g.moving) {
           const r = army.rally(state, team, harasserUnits(g), 'Outriders');
           if (r.ok && army.unitCount(r.group) >= 0.5) { r.group.harasser = true; har = r.group; }
@@ -1392,7 +1398,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
       // Snatch UNDEFENDED enemy outposts: when the enemy leaves posts wide open, peel a small raiding
       // party off the home reserve and go take them NOW — don't wait for a grand host (that passivity is
       // exactly why open enemy posts sat un-taken). Prioritised ABOVE garrisoning our own frontier.
-      if (!keepThreat && hasUndefendedEnemyPost(state, team)) {
+      if (!keepThreat && !behind && hasUndefendedEnemyPost(state, team)) {
         let grabs = 0;
         while (fhs().filter((h) => !h.harasser && !h.postGuard).length < maxHosts &&
                army.currentArea(g) === home && !g.moving && (army.unitCount(g) - reserve) >= 3 && grabs++ < 2) {
