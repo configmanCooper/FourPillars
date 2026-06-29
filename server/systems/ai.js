@@ -50,6 +50,12 @@ function aiTick(state, team, dt, sys, rng) {
   for (const role of C.ROLE_ORDER) {
     const slot = team.slots[role];
     if (!slot || slot.controller !== C.CONTROLLER.AI) continue;
+    // NEVER let the AI act for a seat a human has CLAIMED (playerId set) — not even during a brief
+    // disconnect/reload when the seat momentarily reverts to AI control. Otherwise the AI Lord would re-run
+    // its worker allocation (setWorkers bypasses the lock, since the AI Lord IS the allocator) and stomp a
+    // human Lord's LOCKED workforce on every connection blip — the persistent "AI keeps changing my workers
+    // even when locked" complaint. (An intentional lobby switch to AI clears playerId, so real AI seats run.)
+    if (slot.playerId) continue;
     if (!team.aiPersona[role]) {
       team.aiPersona[role] = rng.pick(PERSONAS[role]);
       // Announce identity once so humans know their AI teammates.
