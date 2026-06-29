@@ -1145,7 +1145,17 @@ function aiCommander(state, team, sys, rng, persona, st) {
   const garStr = army.unitCount(g);
   // Home guard scales with the threat on our doorstep: hold more back when the enemy masses near the
   // Keep (so we don't strip defenders to go harassing), commit nearly everything when the rear is safe.
-  const reserve = clampI(3 - aggr + Math.min(7, kt.adj * 0.7), 2, 10);
+  let reserve = clampI(3 - aggr + Math.min(7, kt.adj * 0.7), 2, 10);
+  // Early-game outpost defence: the Keep has its Watchtower, so we needn't hoard troops there early. When we
+  // own outposts and the enemy isn't VASTLY stronger (and isn't on the Keep), keep only a token home reserve
+  // and push the rest out to hold our outposts. We only turtle at the Keep early if the foe massively
+  // out-armies us AND we hold no outposts.
+  const earlyDefend = ab(team, 'earlydefend') && state.phase === 'EARLY';
+  if (earlyDefend) {
+    const ownPosts = ownedOutpostList(state, team).length;
+    const vastlyOutmatched = edge < 0.5;
+    if (ownPosts > 0 && !vastlyOutmatched && kt.onKeep < 0.5 && team.keep.hp > team.keep.maxHp * 0.7) reserve = 2;
+  }
   const campaignSize = clampI(7 - aggr, 6, 9);                       // raise only substantial hosts (can break a Keep)
   const maxHosts = clampI(2 + (state.phase === 'LATE' ? 1 : 0), 2, 3); // a strong main host + a raiding party
 
@@ -1359,12 +1369,15 @@ function aiCommander(state, team, sys, rng, persona, st) {
         }
       }
       // Keep a small standing garrison on each FRONTIER outpost (owned post bordering the enemy) so it
-      // isn't snatched the moment the field army is elsewhere — drawn from spare home strength.
+      // isn't snatched the moment the field army is elsewhere — drawn from spare home strength. In the early
+      // game (earlyDefend) we hold ALL owned outposts, not just frontier ones — even building-less ground is
+      // worth denying the enemy and is cheap to hold while the Keep's Watchtower covers home.
       let gpGuard = 0;
-      for (const pid of ownedFrontierPosts(state, team)) {
+      const postsToHold = earlyDefend ? ownedOutpostList(state, team) : ownedFrontierPosts(state, team);
+      for (const pid of postsToHold) {
         if (team.armies.some((h) => (h.postGuard === pid || (!h.isGarrison && army.currentArea(h) === pid && !h.moving)) && army.unitCount(h) >= 1.5)) continue; // already held
-        if (army.currentArea(g) !== home || g.moving || (army.unitCount(g) - reserve) < 3) break;     // no spare troops
-        if (gpGuard++ >= 2) break;                                                                     // a couple per think
+        if (army.currentArea(g) !== home || g.moving || (army.unitCount(g) - reserve) < (earlyDefend ? 2 : 3)) break;     // no spare troops
+        if (gpGuard++ >= (earlyDefend ? 3 : 2)) break;                                                                     // a couple per think (more early)
         const det = army.rally(state, team, smallGarrisonUnits(g, clampI(3 + aggr, 2, 4)), 'Garrison');
         if (det.ok && army.unitCount(det.group) >= 0.5) { det.group.postGuard = pid; army.command(state, team, det.group.id, 'garrison', pid); say(state, team, sys, st, C.ROLES.COMMANDER, 'Garrisoning ' + state.areas[pid].name + '.', 20); }
       }
@@ -1601,6 +1614,14 @@ function ownedFrontierPosts(state, team) {
     if (a.owner !== team.team || a.terrain === 'base') continue;
     if (a.connections.some((n) => state.areas[n] && state.areas[n].owner === foe)) out.push(id);
   }
+  return out;
+}
+// Every owned outpost (non-base), nearest-to-the-enemy first — what to garrison when defending broadly early.
+function ownedOutpostList(state, team) {
+  const out = [];
+  for (const id in state.areas) { const a = state.areas[id]; if (a.owner === team.team && a.terrain !== 'base' && a.site) out.push(id); }
+  const ek = S.homeBase(S.enemyOf(team.team));
+  out.sort((x, y) => (state.areas[x].connections.indexOf(ek) >= 0 ? -1 : 0) - (state.areas[y].connections.indexOf(ek) >= 0 ? -1 : 0));
   return out;
 }
 // A small standing garrison drawn from the home reserve — favour spearmen (cheap, hold ground, anti-cav).
