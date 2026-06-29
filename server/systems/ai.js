@@ -33,6 +33,10 @@ function smartHard(team, role) { return isHard(team, role) && team._hardVariant 
 // smartAI: difficulty-agnostic brain upgrades that ship for BOTH medium and hard. Disabled only on the
 // A/B harness "old" side so each improvement can be measured (new vs old) before it is kept.
 function smartAI(team) { return team._hardVariant !== 'old'; }
+// Per-feature A/B gate: lets the harness isolate ONE improvement by disabling just that feature on the
+// baseline side (team._abOff[feat]) while keeping all previously-accepted fixes on. In production neither
+// flag is set, so every feature is live for medium & hard.
+function ab(team, feat) { return team._hardVariant !== 'old' && !(team._abOff && team._abOff[feat]); }
 
 function aiTick(state, team, dt, sys, rng) {
   team.aiState = team.aiState || {};
@@ -488,7 +492,17 @@ function aiSteward(state, team, sys, rng, persona, st) {
   // in a famine. This is free (like the Lord's worker tuning), so it isn't gated by st.acted.
   {
     const dres = team.resources, dcap = team.storageCap || 100, dp = team.pop;
-    const dwSafe = !team._starving && (dp.total || 0) > B.POP_FLOOR + 6;
+    // Stricter safety for smart AI: only gamble lives with a comfortable population buffer, never while
+    // starving, never while shrinking (deaths outran births since last check), and never while an enemy is
+    // raiding our land (we can't afford to bleed workers AND ground at once). Constant dangerous-work deaths
+    // with no buffer were a real drag in the analysed game.
+    let dwSafe = !team._starving && (dp.total || 0) > B.POP_FLOOR + 6;
+    if (ab(team, 'dangerwork')) {
+      const shrinking = (team._dwLastPop != null) && (dp.total || 0) < team._dwLastPop;
+      const underRaid = stewardUnderRaid(state, team);
+      dwSafe = !team._starving && (dp.total || 0) > B.POP_FLOOR + 10 && !shrinking && !underRaid;
+    }
+    team._dwLastPop = dp.total || 0;
     const dw = team.dangerWork || {};
     // Hysteresis (switch on below 18% of cap, only stand down once back above 28%) avoids flip-flopping
     // the crew between safe and dangerous each second while a good hovers near the threshold.
@@ -669,6 +683,16 @@ function aiSteward(state, team, sys, rng, persona, st) {
   }
 }
 function enemyAt(state, team, areaId) { const foe = S.enemyOf(team.team); return state.teams[foe].armies.some((g) => (g.moving ? g.moving.route[g.moving.legIndex] : g.area) === areaId && unitCountG(g) >= 0.5); }
+// True when an enemy host is ON or NEXT TO any of our owned outposts (or Keep) — we're being raided and
+// shouldn't also be bleeding workers to dangerous labour.
+function stewardUnderRaid(state, team) {
+  for (const id in state.areas) { const a = state.areas[id];
+    if (a.owner !== team.team) continue;
+    if (enemyAt(state, team, id)) return true;
+    for (const n of a.connections) if (enemyAt(state, team, n)) return true;
+  }
+  return false;
+}
 // Scout-target priority: prefer unscouted neutral SITES (expansion), then ground near the enemy / our
 // frontier (so our hosts don't fight blind there), then anything adjacent.
 function scoutPrio(state, team, a) {
@@ -749,14 +773,14 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
   if (!st.acted && army.archer > 0 && (team.resources.arrows || 0) < arrowsNeed) {
     if (forge('arrows', 24).ok) { st.acted = true; say(state, team, sys, st, C.ROLES.BLACKSMITH, 'Archers low on arrows — forging a batch.', 20); }
   }
-  if (!st.acted && team.production.length < (smartAI(team) ? 3 : 2)) {
+  if (!st.acted && team.production.length < (ab(team, 'smith') ? 3 : 2)) {
     let item;
     if (state.phase === 'EARLY') {
       const toolFloor = (persona === 'toolsmith' ? 10 : 5);
       if (team.equipment.tools < toolFloor) item = 'tools';
       // Armour's tier bonus is the single most decisive battle edge — smart AI starts banking it early
       // (iron-only, so it doesn't touch the bottleneck wood) instead of forging only spears.
-      else if (smartAI(team) && (team.resources.iron || 0) >= 24) item = 'armor';
+      else if (ab(team, 'smith') && (team.resources.iron || 0) >= 24) item = 'armor';
       else item = 'spears';
     }
     else {
@@ -766,7 +790,7 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
       if (want === 'archer' && (team.resources.arrows || 0) < 12) item = 'arrows';     // keep archers supplied
       else if (team.buildings.workshop > 0 && (team.equipment.siegeParts || 0) < 8 && state.phase !== 'EARLY' && rng.chance(persona === 'siege' ? 0.55 : 0.3)) item = 'siegeParts';   // keep siege parts stocked so the Commander can field catapults for assaults
       else if (persona === 'armorer' && (team.resources.iron || 0) > 20 && rng.chance(0.45)) item = 'armor';
-      else if (rng.chance(smartAI(team) ? 0.4 : 0.25)) item = 'armor';                  // some armour for the tier bonus (smart AI banks more)
+      else if (rng.chance(ab(team, 'smith') ? 0.4 : 0.25)) item = 'armor';                  // some armour for the tier bonus (smart AI banks more)
     }
     // Honour the Steward's "conserve wood": defer wood-costing forges (prefer iron-only Swords/Armour).
     if (sys.economy.conserving(team, 'wood', state.elapsed) && B.RECIPES[item] && (B.RECIPES[item].cost.wood || 0) > 0) {
@@ -784,7 +808,7 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
   }
   if (!st.acted && !team.contract && team.contractCooldown <= 0) {
     const offers = (team.contractOffers && team.contractOffers.length) ? team.contractOffers : B.CONTRACTS.map((c) => c.id);
-    if (smartAI(team)) {
+    if (ab(team, 'smith')) {
       // Pick a contract we can actually FINISH in time, instead of a random one. Favour small, single-item,
       // iron-based goals (swords/armour) and avoid wood-hungry orders when wood is the bottleneck; weight by
       // reward. A failed contract (the Red AI's mistake in the analysed replay) wastes the whole forge window.
