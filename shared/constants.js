@@ -61,7 +61,7 @@
     swordsman: { glyph: '🗡️', name: 'Swordsman', needs: { swords: 1 } },
     archer:    { glyph: '🏹', name: 'Archer',    needs: { bows: 1 } },
     cavalry:   { glyph: '🐎', name: 'Cavalry',   needs: { swords: 1, horses: 1 } },
-    catapult:  { glyph: '🪨', name: 'Catapult',  needs: { siegeParts: 4 } },
+    catapult:  { glyph: '🪨', name: 'Catapult',  needs: { siegeParts: 3 } },
   };
 
   const BUILDINGS = ['house', 'farm', 'lumberCamp', 'mine', 'storehouse', 'barracks', 'school', 'stables', 'workshop', 'university', 'marketplace', 'walls', 'watchtower'];

@@ -804,7 +804,7 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
       const want = pickComposition(team, { comp: ['swordsman', 'spearman', 'archer', 'cavalry'] }, enemyComposition(state, team), army).desired;
       item = GEAR_FOR_UNIT[want] || 'spears';
       if (want === 'archer' && (team.resources.arrows || 0) < 12) item = 'arrows';     // keep archers supplied
-      else if (team.buildings.workshop > 0 && (team.equipment.siegeParts || 0) < 8 && state.phase !== 'EARLY' && rng.chance(persona === 'siege' ? 0.55 : 0.3)) item = 'siegeParts';   // keep siege parts stocked so the Commander can field catapults for assaults
+      else if (team.buildings.workshop > 0 && (team.equipment.siegeParts || 0) < 6 && state.phase !== 'EARLY' && rng.chance(persona === 'siege' ? 0.55 : 0.3)) item = 'siegeParts';   // keep ~2 catapults' worth (3 parts each) stocked so the Commander can field catapults for assaults
       else if (persona === 'armorer' && (team.resources.iron || 0) > 20 && rng.chance(0.45)) item = 'armor';
       else if (rng.chance(0.25)) item = 'armor';                                       // some armour for the tier bonus
     }
@@ -847,7 +847,7 @@ function forgePlan(state, team, sys, rng, persona, army) {
     bump('armor', 3);                           // armour's tier bonus is a big battle edge
     if (army.archer > 0) bump('arrows', 2);
     const siegeWanted = (team.buildings.workshop || 0) > 0 && (state.phase === 'LATE' || (team.equipment.siegeParts || 0) < 2 && state.phase !== 'EARLY');
-    if (siegeWanted && (team.equipment.siegeParts || 0) < 8) bump('siegeParts', persona === 'siege' ? 3 : 1);
+    if (siegeWanted && (team.equipment.siegeParts || 0) < 6) bump('siegeParts', persona === 'siege' ? 3 : 1);
     if (persona === 'armorer') bump('armor', 2);
   }
   if (woodScarce) {
