@@ -825,10 +825,12 @@ function aiCommander(state, team, sys, rng, persona, st) {
   if (!team.doctrine) team.doctrine = cfg.doctrine;
   const p = team.pop;
 
-  // Need recruits? Ask the Lord.
-  if (p.recruits < 2) req(state, team, sys, st, C.ROLES.COMMANDER, C.ROLES.LORD, 'RECRUITS', {}, 25);
+  // Need recruits? Ask the Lord. Smart Hard won't grow the army while food is tight (now that food
+  // demand is higher and famine kills people) — over-levying just starves the realm.
+  const foodOkForArmy = !smartHard(team, 'COMMANDER') || team.resources.food >= 40;
+  if (p.recruits < 2 && foodOkForArmy) req(state, team, sys, st, C.ROLES.COMMANDER, C.ROLES.LORD, 'RECRUITS', {}, 25);
   // Need trainers running? (Lord assigns them.) Send an ACTIONABLE request so the Lord sees it.
-  if (team.buildings.barracks > 0 && p.trainers <= 0) req(state, team, sys, st, C.ROLES.COMMANDER, C.ROLES.LORD, 'TRAINERS', {}, 30);
+  if (team.buildings.barracks > 0 && p.trainers <= 0 && foodOkForArmy) req(state, team, sys, st, C.ROLES.COMMANDER, C.ROLES.LORD, 'TRAINERS', {}, 30);
 
   // Prune STALLED training orders: a unit waiting on equipment the Blacksmith can't supply
   // (e.g. swordsman with no swords) parks at progress=1 and clogs the 2-slot queue, so no new
