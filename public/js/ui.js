@@ -692,6 +692,15 @@
       const capLabel = cap != null ? '/' + cap : '';
       html += optRow(def.name + ' <span class="muted">(kingdom total: ' + kingdomTotal + capLabel + ')</span>', effectDesc(type), costStr(bcost) + (why ? '<span style="color:#c8553d">' + why + '</span>' : ''), 'Build here',
         () => { Net.action('build', { type, areaId: target }); }, !aff || free <= 0 || atCap); }
+    // Demolish existing buildings here: frees the slot and refunds 25% of the cost. (The Watchtower can't be razed.)
+    const here = area.buildings || {};
+    const demoTypes = Object.keys(here).filter((t) => (here[t] || 0) > 0 && !(B.BUILDINGS[t] && B.BUILDINGS[t].fixed));
+    if (demoTypes.length) {
+      html += '<div class="rp-h">Demolish here <span class="muted" style="font-size:11px">(frees the slot · refunds 25%)</span></div>';
+      for (const t of demoTypes) { const def = B.BUILDINGS[t]; if (!def) continue;
+        const refund = Object.keys(def.cost || {}).map((k) => '+' + Math.floor((def.cost[k] || 0) * (B.DEMOLISH_REFUND || 0.25)) + ' ' + k).join(' ');
+        html += '<div class="opt"><div class="opt-info"><div class="opt-name">' + def.name + ' <span class="muted">×' + here[t] + '</span></div><div class="opt-desc">Refund ' + (refund || '—') + '</div></div><button class="btn btn-sm" style="border-color:#a3553a;color:#e0998a" onclick="FP.UI.demolish(\'' + target + '\',\'' + t + '\')">Demolish</button></div>'; }
+    }
     if (team.buildQueue.length) html += '<div class="rp-h">Construction queue</div>' + team.buildQueue.map((q, i) => '<div class="opt"><div class="opt-info"><div class="opt-name">' + B.BUILDINGS[q.type].name + ' <span class="muted">@ ' + (snap.areas[q.areaId] ? snap.areas[q.areaId].name : '?') + (i === 0 ? '' : ' · queued') + '</span></div><div class="opt-desc">' + (i === 0 ? Math.ceil(q.remaining) + 's left' + (team.pop.builders <= 0 ? ' (no builders assigned!)' : '') : 'waiting') + '</div></div><button class="btn btn-sm" onclick="FP.UI.act(\'cancelBuild\',{id:\'' + q.id + '\'})">Cancel</button></div>').join('');
     openModal('Build — choose location, then structure', html, modalBuild);
   }
@@ -1991,6 +2000,7 @@
       const pane = $('tab-' + name); if (pane) pane.classList.add('active');
     },
     act(action, payload) { Net.action(action, payload); },
+    demolish(areaId, type) { Net.action('demolish', { areaId, type }); toast('Demolishing ' + ((C.BUILDINGS && B.BUILDINGS[type]) ? B.BUILDINGS[type].name : type) + '…'); },
     setWorkModeSafe(areaId, mode, contested) {
       Net.action('setWorkMode', { areaId, mode });
     },

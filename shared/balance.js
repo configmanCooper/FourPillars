@@ -115,6 +115,8 @@
     watchtower: { name: 'Watchtower',   cost: {}, buildTime: 0, fixed: true, effect: {} },
   };
   const MAX_PER_BUILDING = { house: 6, farm: 4, lumberCamp: 4, mine: 3, storehouse: 3, barracks: 2, school: 2, stables: 2, workshop: 2, university: 1, marketplace: 1, walls: 3, watchtower: 1 };
+  // Demolishing a building you own refunds this fraction of its base cost and frees its build slot.
+  const DEMOLISH_REFUND = 0.25;
 
   // Per-location build slots: your Keep is roomy; outposts are small, so expansion matters.
   const BUILD_SLOTS_BASE = 7;
@@ -498,7 +500,7 @@
     TRAINERS_PER_BARRACKS, TRAIN_SECONDS_PER_UNIT, EDU_SECONDS, COOLDOWN_ORDINARY, COOLDOWN_EDUCATED,
     RESEARCHERS_PER_UNIVERSITY, RESEARCH_INTERVAL, RESEARCH,
     DANGER_YIELD_BONUS, DANGER_DEATH_BASE, DANGER_DEATH_TOOLED, DANGER_TOOL_WEAR_MULT,
-    BUILDINGS, MAX_PER_BUILDING, POLICIES,
+    BUILDINGS, MAX_PER_BUILDING, DEMOLISH_REFUND, POLICIES,
     BUILD_SLOTS_BASE, BUILD_SLOTS_SITE, SITE_WALL_RESIST, CAPTURE_TIME_BASE, CAPTURE_DECAY,
     SITE_YIELD, SITE_UPGRADE_COST, SITE_UPGRADE_MULT, EXPLORE_TIME, CLAIM_TIME, CLAIM_COST, CLAIM_MIN_INSTALMENT,
     SCOUT_MAX, SCOUT_FULL, SCOUT_DECAY_SEC, UNSCOUTED_COMBAT_PENALTY,

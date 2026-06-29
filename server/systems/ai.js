@@ -259,6 +259,19 @@ const LORD_CFG = {
   turtler:   { policy: 'industry',   split: { farmers: .34, woodcutters: .18, miners: .22, builders: .14, students: .04, trainers: .08 }, levyPct: .05 },
   balanced:  { policy: 'prosperity', split: { farmers: .32, woodcutters: .22, miners: .18, builders: .12, students: .05, trainers: .11 }, levyPct: .06 },
 };
+// When starving and slot-constrained, the least-valuable Keep buildings to raze for a Farm (most expendable
+// first). Never sacrifices food/wood/ore production, the Barracks, walls, the last Storehouse, or housing in use.
+const DEMOLISH_PRIORITY = ['marketplace', 'university', 'school', 'stables', 'workshop', 'storehouse', 'house'];
+function pickDemolishForFarm(team, area) {
+  const here = area.buildings || {};
+  for (const t of DEMOLISH_PRIORITY) {
+    if ((here[t] || 0) <= 0) continue;
+    if (t === 'storehouse' && (team.buildings.storehouse || 0) <= 1) continue;       // keep at least one Storehouse
+    if (t === 'house' && team.pop.total >= team.housing - 4) continue;               // don't raze housing we're living in
+    return t;
+  }
+  return null;
+}
 function aiLord(state, team, sys, rng, persona, st) {
   const eco = sys.economy, p = team.pop, cfg = LORD_CFG[persona] || LORD_CFG.balanced;
   // Same policy rules as the human: setting a policy locks it for 3 minutes (no cooldown bypass).
@@ -283,10 +296,23 @@ function aiLord(state, team, sys, rng, persona, st) {
   const hasSchool = team.buildings.school > 0;
   const lowFood = team.resources.food < 25 || team._starving;
   const lowWood = !lowFood && team.resources.wood < 25; // wood gates almost every building
+  // Food SUSTAINABILITY: the net food rate (production − upkeep). Reacting only when the stockpile is already
+  // empty is too late — by then the army's upkeep is locked in and outruns farming, and the realm starves.
+  // So treat a draining/flat trend as "strain" and farm proactively + stop growing an army we can't feed.
+  const foodRate = (team.resourceStats && team.resourceStats.food) ? team.resourceStats.food.rate : 0;
+  const foodSafe = ab(team, 'foodsafe');
+  // Enemy-reactive posture: only spend workers/wood SHORING UP FOOD when we're not under military pressure.
+  // If the enemy is out-massing us (or on our land / battering the Keep), those resources are better spent on
+  // the army — investing in food while losing the war just loses faster. When safe, we fix sustainability
+  // (build Farms, add Farmers) so we never starve mid-snowball.
+  const _enemy = state.teams[S.enemyOf(team.team)];
+  const econSafe = foodSafe && !threat && (_enemy.pop.soldiers <= team.pop.soldiers + 4) && team.keep.hp > team.keep.maxHp * 0.7;
+  const foodStrain = econSafe && !lowFood && foodRate < 0.25;
 
   // Worker split (scaled to workforce). Specials gated by buildings.
   let s = Object.assign({}, cfg.split);
   if (lowFood) { s = { farmers: .55, woodcutters: .18, miners: .15, builders: .08, students: 0, trainers: .04 }; }
+  else if (foodStrain) { s = { farmers: .38, woodcutters: .30, miners: .16, builders: .08, students: .02, trainers: .06 }; }   // safe to bolster farming before the stockpile crashes
   else if (lowWood) { s = { farmers: .26, woodcutters: .44, miners: .14, builders: .08, students: .02, trainers: .06 }; }
   const builders = team.buildQueue.length ? Math.max(1, Math.round(wf * s.builders)) : 1;
   let trainers = hasBarracks && !lowFood ? Math.min(eco.maxTrainers(team), Math.max(1, Math.round(wf * s.trainers))) : 0;
@@ -299,7 +325,7 @@ function aiLord(state, team, sys, rng, persona, st) {
   // Reallocate on meaningful change, when idle piles up, or when an unlock changes the plan
   // (e.g. a Barracks lets us assign Trainers). Avoid per-tick thrash that traps workers cooling.
   let change = 0; for (const j in desired) change += Math.abs(desired[j] - p[j]);
-  const stateKey = (hasBarracks ? 'B' : '') + (hasSchool ? 'S' : '') + (lowFood ? 'F' : '') + (lowWood ? 'W' : '');
+  const stateKey = (hasBarracks ? 'B' : '') + (hasSchool ? 'S' : '') + (lowFood ? 'F' : '') + (lowWood ? 'W' : '') + (foodStrain ? 'f' : '');
   const needRealloc = change >= 2 || p.idle >= 4 || st._allocKey !== stateKey;
   if (!st.acted && needRealloc && (st.allocCd || 0) <= state.elapsed) { eco.setWorkers(state, team, desired); st.allocCd = state.elapsed + 6; st._allocKey = stateKey; st.acted = true; }
 
@@ -309,9 +335,8 @@ function aiLord(state, team, sys, rng, persona, st) {
   const civilianFloor = Math.max(8, Math.floor(team.housing * 0.5));
   const armyCap = (team.buildings.barracks || 0) * 8 + 2;
   const wfNow = eco.workforce(team);
-  // Levy when food isn't in crisis. (The old "food > pop*3" gate became unreachable once the
-  // storage cap dropped to 100, which starved the whole army pipeline — 40% of teams fielded
-  // no soldiers. A flat, cap-reachable threshold plus the civilian floor keeps it safe.)
+  // Levy when food isn't in crisis. (Food sustainability is handled by SCALING FARMS up to feed the army,
+  // not by shrinking the army — capping army growth on the food trend just makes the team militarily weak.)
   const foodHealthy = team.resources.food >= 45 && !lowFood;
   if (!st.acted && p.recruits < recTarget && (p.recruits + p.soldiers) < armyCap && wfNow > civilianFloor && foodHealthy) {
     const maxLevy = Math.min(recTarget - p.recruits, wfNow - civilianFloor, armyCap - (p.recruits + p.soldiers), threat ? 3 : 2);
@@ -332,11 +357,17 @@ function aiLord(state, team, sys, rng, persona, st) {
     // Food sits at its cap from turn 1 (it regrows) — only treat wood/stone/iron as "wasting".
     const capHit = ['wood', 'stone', 'iron'].some((k) => (team.resources[k] || 0) >= team.storageCap - 5);
     const wish = [];
+    // Under food strain, a Farm comes FIRST — sustaining the population/army outranks every other build.
+    if (foodStrain && planned('farm') < 4) wish.push('farm');
     // Foundation. WOOD underpins everything (every building, every outpost, most gear), so establish a
     // real wood income FIRST — two lumber camps before the Barracks — or the team crashes its wood and
     // can never afford the Barracks, tech buildings (Workshop/School/University) or outposts.
     if (planned('lumberCamp') < 1) wish.push('lumberCamp');
     if (planned('farm') < 1) wish.push('farm');
+    // A 2nd Farm EARLY (while wood is still available) — one Farm caps farmers at 4 (~1.2 food/s), which
+    // can't feed a growing army under the higher food demand; the team then starves because by the time the
+    // 2nd Farm reaches the build list, wood has crashed and it can never afford the 60 wood. Build it now.
+    if (econSafe && planned('farm') < 2) wish.push('farm');
     if (planned('lumberCamp') < 2) wish.push('lumberCamp');   // 2nd camp BEFORE the Barracks — wood income must scale early
     if (planned('barracks') < 1) wish.push('barracks');
     if (planned('mine') < 1) wish.push('mine');
@@ -394,7 +425,27 @@ function aiLord(state, team, sys, rng, persona, st) {
     }
   }
 
-  if (threat) { req(state, team, sys, st, C.ROLES.LORD, C.ROLES.COMMANDER, 'DEFEND', { area: threat.id }, 20); say(state, team, sys, st, C.ROLES.LORD, 'Enemy at ' + threat.name + '! Commander, defend it!', 15); }
+  // EMERGENCY repurpose: when the realm is genuinely STARVING and we can't simply build a Farm because the
+  // Keep's build slots are full, raze the least-valuable building at the Keep (the Watchtower defends it) to
+  // make room for a Farm. An extreme, rate-limited measure — only when food is actually failing.
+  if (ab(team, 'demolishai') && !st.acted && (st.cd.demo || 0) <= state.elapsed &&
+      (team._starving || (lowFood && foodRate < 0))) {
+    const keep = state.areas[S.homeBase(team.team)];
+    const farmsPlanned = (team.buildings.farm || 0) + team.buildQueue.filter((q) => q.type === 'farm').length;
+    const keepSlots = S.buildingsAt(keep) + team.buildQueue.filter((q) => q.areaId === keep.id).length;
+    if (farmsPlanned < (B.MAX_PER_BUILDING.farm || 4) && keepSlots >= keep.maxBuildings) {
+      const sacrifice = pickDemolishForFarm(team, keep);
+      if (sacrifice) {
+        const r = sys.buildings.demolishBuilding(state, team, keep.id, sacrifice, null);
+        if (r.ok) {
+          st.acted = true; st.cd.demo = state.elapsed + 30;
+          say(state, team, sys, st, C.ROLES.LORD, 'Razing our ' + B.BUILDINGS[sacrifice].name + ' to raise a Farm — the realm is starving!', 18);
+          if (eco.canAfford(team, B.BUILDINGS.farm.cost)) sys.buildings.queueBuilding(state, team, keep.id, 'farm');
+        }
+      }
+    }
+  }
+
   else if ((team.resources.iron || 0) < 12 && state.phase !== 'EARLY') req(state, team, sys, st, C.ROLES.LORD, C.ROLES.STEWARD, 'NEED', { resource: 'iron' }, 30);
   else say(state, team, sys, st, C.ROLES.LORD, rng.pick(['Economy steady — building on.', 'The realm grows.', 'Keep the granaries full.']), 45);
 
@@ -523,11 +574,27 @@ function aiSteward(state, team, sys, rng, persona, st) {
     }
     team._dwLastPop = dp.total || 0;
     const dw = team.dangerWork || {};
-    // Hysteresis (switch on below 18% of cap, only stand down once back above 28%) avoids flip-flopping
-    // the crew between safe and dangerous each second while a good hovers near the threshold.
-    const dwWantPool = (pool, keys) => { if (!dwSafe) return false; const v = Math.min.apply(null, keys.map((k) => (dres[k] || 0) / dcap)); return dw[pool] ? v < 0.28 : v < 0.18; };
+    team._dwOn = team._dwOn || {};   // pool -> elapsed when dangerous work was switched ON (for the time cap)
+    // Dangerous work is a brief, last-resort burst: only START a crew when its good is CRITICALLY low
+    // (<12% of cap) and we're safe; keep it on only while still short AND for at most 30s; then stand down.
+    const DW_CRIT = 0.12, DW_RELIEF = 0.22, DW_MAX_SEC = 30;
+    const dwWantPool = (pool, keys) => {
+      if (!dwSafe) return false;
+      const v = Math.min.apply(null, keys.map((k) => (dres[k] || 0) / dcap));
+      if (dw[pool]) {
+        // Already on: stop as soon as it's no longer critically short, OR the 30s burst is up.
+        if ((state.elapsed - (team._dwOn[pool] || state.elapsed)) >= DW_MAX_SEC) return false;
+        return v < DW_RELIEF;
+      }
+      return v < DW_CRIT;   // only start when truly critical
+    };
     const dwWant = { food: dwWantPool('food', ['food']), wood: dwWantPool('wood', ['wood']), mine: dwWantPool('mine', ['iron', 'stone']) };
-    for (const pool of ['food', 'wood', 'mine']) if (!!dw[pool] !== !!dwWant[pool]) eco.setDangerWork(state, team, pool, dwWant[pool]);
+    for (const pool of ['food', 'wood', 'mine']) {
+      if (!!dw[pool] !== !!dwWant[pool]) {
+        eco.setDangerWork(state, team, pool, dwWant[pool]);
+        if (dwWant[pool]) team._dwOn[pool] = state.elapsed;   // stamp the moment we turned it on
+      }
+    }
   }
 
   // When wood is scarce and there's land worth claiming, ask the council to conserve wood (throttled).
@@ -551,8 +618,12 @@ function aiSteward(state, team, sys, rng, persona, st) {
     if (a.connections.some((n) => state.areas[n].scouted[team.team] || state.areas[n].owner === team.team)) unscoutedAdj.push(a);
   }
   const wantScouts = unscoutedAdj.length > 0 || !!team.scoutJob;
-  if (wantScouts && (team.pop.scouts || 0) < 3 && team.pop.idle > 2) eco.setScouts(state, team, Math.min(3 - (team.pop.scouts || 0), team.pop.idle - 2));
-  else if (!wantScouts && (team.pop.scouts || 0) > 0 && !team.scoutJob) eco.setScouts(state, team, -(team.pop.scouts));
+  // Respect the Lord's worker lock: assigning/removing Scouts moves people in & out of the idle pool, which
+  // is worker allocation — when the Lord has locked it, the Steward must not touch the worker counts.
+  if (!team.workerLock) {
+    if (wantScouts && (team.pop.scouts || 0) < 3 && team.pop.idle > 2) eco.setScouts(state, team, Math.min(3 - (team.pop.scouts || 0), team.pop.idle - 2));
+    else if (!wantScouts && (team.pop.scouts || 0) > 0 && !team.scoutJob) eco.setScouts(state, team, -(team.pop.scouts));
+  }
   if (!team.scoutJob && (team.pop.scouts || 0) > 0 && unscoutedAdj.length) {
     unscoutedAdj.sort((x, y) => scoutPrio(state, team, y) - scoutPrio(state, team, x));
     sites.explore(state, team, unscoutedAdj[0].id);
@@ -594,7 +665,7 @@ function aiSteward(state, team, sys, rng, persona, st) {
   }
   // Expeditions: launch one from the CURRENT OFFERS when idle labour is plentiful and we're not in
   // crisis (prefer scarce goods). Bring tools along (if any) to lower the crew-loss risk.
-  if (!st.acted && !team.expedition && (team.expeditionCooldownUntil || 0) <= state.elapsed && team.pop.idle >= 5 && !team._starving && (st.cd.expedition || 0) <= state.elapsed) {
+  if (!st.acted && !team.workerLock && !team.expedition && (team.expeditionCooldownUntil || 0) <= state.elapsed && team.pop.idle >= 5 && !team._starving && (st.cd.expedition || 0) <= state.elapsed) {
     const offers = (team.expeditionOffers && team.expeditionOffers.length) ? team.expeditionOffers : B.EXPEDITIONS.map((e) => e.id);
     const elig = offers.map((eid) => B.EXPEDITIONS.find((e) => e.id === eid)).filter((e) => e && sites.expeditionEligible(state, team, e) && team.pop.idle >= e.workers + 2);
     if (elig.length) {
@@ -649,7 +720,7 @@ function aiSteward(state, team, sys, rng, persona, st) {
       if (!a) continue;
       if (((team.stewardActionCD && team.stewardActionCD[id]) || 0) > state.elapsed) continue;
       if (!eco.canAfford(team, a.cost)) continue;
-      if (a.workers && team.pop.idle < a.workers + 2) continue;       // keep a couple of idle workers in reserve
+      if (a.workers && (team.workerLock || team.pop.idle < a.workers + 2)) continue;  // respect the Lord's worker lock; otherwise keep a couple of idle workers in reserve
       // Don't bleed a good down into scarcity for an ordinary buff — but the instant conversions
       // (grainLevy/learnRelics) ARE the point, so they ride on affordability + their own trigger above.
       if (!a.instant) { let tooPoor = false; for (const k in a.cost) if ((team.resources[k] || 0) - a.cost[k] < team.storageCap * 0.15) tooPoor = true; if (tooPoor) continue; }

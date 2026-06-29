@@ -60,6 +60,34 @@ function cancelBuilding(state, team, id) {
   return { ok: true };
 }
 
+// Lord demolishes a COMPLETED building they own: frees its build slot and refunds DEMOLISH_REFUND (25%) of
+// the building's base cost. Used to repurpose a slot in a pinch (e.g. raze a low-value building at the
+// Keep — which the Watchtower defends — to drop in a Farm during a famine). The Watchtower can't be razed.
+function demolishBuilding(state, team, areaId, type, log) {
+  const area = state.areas[areaId];
+  if (!area) return { ok: false, reason: 'Unknown location.' };
+  if (area.owner !== team.team) return { ok: false, reason: 'You must own this location.' };
+  const def = B.BUILDINGS[type];
+  if (!def) return { ok: false, reason: 'Unknown building.' };
+  if (def.fixed) return { ok: false, reason: 'The ' + def.name + ' cannot be demolished.' };
+  if (!area.buildings || (area.buildings[type] || 0) <= 0) return { ok: false, reason: 'No ' + def.name + ' to demolish here.' };
+  // Reverse any Keep hardening this building granted (Walls at the Keep raise Keep HP/def).
+  const eff = def.effect || {};
+  if (area.terrain === 'base') {
+    if (eff.keepHp) { team.keep.maxHp = Math.max(1, team.keep.maxHp - eff.keepHp); team.keep.hp = Math.min(team.keep.hp, team.keep.maxHp); }
+    if (eff.keepDef) { team.keep.def = Math.max(0, team.keep.def - eff.keepDef); }
+  }
+  area.buildings[type] -= 1;
+  if (area.buildings[type] <= 0) delete area.buildings[type];
+  const refund = {}; const cost = def.cost || {};
+  for (const k in cost) { const v = Math.floor((cost[k] || 0) * B.DEMOLISH_REFUND); if (v > 0) refund[k] = v; }
+  eco.refund(team, refund);
+  S.recomputeBuildings(state, team);
+  eco.recomputeDerived(team);
+  if (log) log(team.team, 'Demolished ' + def.name + ' at ' + area.name + ' (slot freed, +25% resources).', 'build');
+  return { ok: true, msg: 'Demolished ' + def.name + ' — slot freed, resources partly refunded.', refund };
+}
+
 function applyEffect(state, team, item, log) {
   const type = item.type; const eff = B.BUILDINGS[type].effect || {};
   const area = state.areas[item.areaId] || state.areas[S.homeBase(team.team)];
@@ -86,4 +114,4 @@ function tickBuildings(state, team, dt, log) {
   }
 }
 
-module.exports = { queueBuilding, cancelBuilding, tickBuildings, applyEffect, canBuildAt, effectiveBuildCost };
+module.exports = { queueBuilding, cancelBuilding, demolishBuilding, tickBuildings, applyEffect, canBuildAt, effectiveBuildCost };

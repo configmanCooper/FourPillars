@@ -150,6 +150,7 @@ function applyAction(state, team, role, action, payload) {
     case 'levy': return economy.levy(T, payload.count);
     case 'build': return buildings.queueBuilding(state, T, payload.areaId, payload.type);
     case 'cancelBuild': return buildings.cancelBuilding(state, T, payload.id);
+    case 'demolish': return buildings.demolishBuilding(state, T, payload.areaId, payload.type, log);
     case 'setPolicy': {
       if (!B.POLICIES[payload.policy]) return { ok: false, reason: 'Unknown policy.' };
       if (payload.policy === T.policy) return { ok: false, reason: 'That policy is already active.' };
@@ -291,7 +292,7 @@ function applyAction(state, team, role, action, payload) {
 }
 
 const ACTION_ROLE = {
-  setWorkers: 'LORD', assignWorker: 'LORD', levy: 'LORD', build: 'LORD', cancelBuild: 'LORD', setPolicy: 'LORD', setMilitaryPolicy: 'LORD', setHold: 'LORD', setResourceAccess: 'LORD', releaseHold: 'LORD', setWorkerLock: 'LORD', setResearchers: 'LORD', buyResearch: 'LORD',
+  setWorkers: 'LORD', assignWorker: 'LORD', levy: 'LORD', build: 'LORD', cancelBuild: 'LORD', demolish: 'LORD', setPolicy: 'LORD', setMilitaryPolicy: 'LORD', setHold: 'LORD', setResourceAccess: 'LORD', releaseHold: 'LORD', setWorkerLock: 'LORD', setResearchers: 'LORD', buyResearch: 'LORD',
   explore: 'STEWARD', claim: 'STEWARD', upgradeSite: 'STEWARD', abandon: 'STEWARD', setGatherTools: 'STEWARD', setMineFocus: 'STEWARD', requestConserve: 'STEWARD', setWorkMode: 'STEWARD', setCaravanMode: 'STEWARD', dispatchCaravan: 'STEWARD', setGuards: 'STEWARD', startExpedition: 'STEWARD', setDangerWork: 'STEWARD', setScouts: 'STEWARD', doStewardAction: 'STEWARD', setStewardPolicy: 'STEWARD', marketTrade: 'STEWARD', supervise: 'STEWARD',
   produce: 'BLACKSMITH', cancelProduce: 'BLACKSMITH', startContract: 'BLACKSMITH', setSpec: 'BLACKSMITH',
   formUnits: 'COMMANDER', trainUnits: 'COMMANDER', upgradeUnits: 'COMMANDER', reequip: 'COMMANDER', cancelTraining: 'COMMANDER', rally: 'COMMANDER', transferUnits: 'COMMANDER', command: 'COMMANDER', setFormation: 'COMMANDER', setStance: 'COMMANDER', setDoctrine: 'COMMANDER',
