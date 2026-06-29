@@ -115,6 +115,7 @@
     PAUSE_REQUEST: 'pause_request',
     RESUME_REQUEST: 'resume_request',
     PAUSE_VOTE: 'pause_vote',
+    REQUEST_REPLAY: 'request_replay',
     // server -> client
     ROOM_UPDATE: 'room_update',
     LOBBY_UPDATE: 'lobby_update',
@@ -124,6 +125,7 @@
     GAME_EVENT: 'game_event',
     GAME_OVER: 'game_over',
     ERROR_MSG: 'error_message',
+    REPLAY_DATA: 'replay_data',
   };
 
   return {

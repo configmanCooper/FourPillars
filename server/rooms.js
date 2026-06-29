@@ -114,6 +114,7 @@ class RoomManager {
     }
     // Any unclaimed slot is already AI by default. Begin.
     room.state.status = 'playing';
+    this.initReplay(room);
     this.io.to(room.code).emit(C.EV.GAME_STARTED, {});
     this.broadcastLobby(room);
     this.startLoop(room);
@@ -129,8 +130,10 @@ class RoomManager {
       this.refreshPause(room);
       let result = null;
       if (!state.pause.active) result = sim.step(state);
+      this.captureReplay(room);
       this.io.to(room.code).emit(C.EV.SNAPSHOT, sim.snapshot(state));
       if (result) {
+        this.finishReplay(room, result);
         this.io.to(room.code).emit(C.EV.GAME_OVER, { winner: result.winner, reason: result.reason });
         clearInterval(room.interval); room.interval = null;
         // If everyone has already left (AI finished the match alone), free the room.
@@ -138,6 +141,60 @@ class RoomManager {
       }
     }, B.TICK_MS);
   }
+
+  // ---------- replay / debug export ----------
+  initReplay(room) {
+    const st = room.state;
+    const slots = {};
+    for (const team of ['BLUE', 'RED']) {
+      slots[team] = {};
+      for (const role of C.ROLE_ORDER) {
+        const sl = st.teams[team].slots[role];
+        slots[team][role] = { controller: sl.controller, name: sl.name, difficulty: sl.difficulty, persona: (st.teams[team].aiPersona || {})[role] || null };
+      }
+    }
+    room.replay = {
+      version: 1,
+      meta: { code: room.code, devMode: st.devMode, matchPreset: st.matchPreset || null, matchLength: st.matchLength, startedAt: Date.now(), slots },
+      actions: [],          // human actions {t, team, role, action, payload, ok}
+      snapshots: [],        // periodic compact per-team state
+      events: [],           // full game event log (built up; deduped by id)
+      comms: [],            // all team comms/requests (both teams), deduped by id
+      outcome: null,
+    };
+    room._evIds = new Set(); room._commIds = new Set();
+  }
+  recordAction(room, team, role, action, payload, ok) {
+    if (!room.replay) return;
+    room.replay.actions.push({ t: Math.round(room.state.elapsed), team, role, action, payload, ok });
+    if (room.replay.actions.length > 20000) room.replay.actions.shift();
+  }
+  captureReplay(room) {
+    const rp = room.replay; if (!rp) return; const st = room.state;
+    // Pull any new events / comms by id so the log is complete even though clean snapshots trim them.
+    for (const e of (st.events || [])) { if (e && e.id && !room._evIds.has(e.id)) { room._evIds.add(e.id); rp.events.push(e); } }
+    for (const team of ['BLUE', 'RED']) for (const c of (st.teams[team].comms || [])) { if (c && c.id && !room._commIds.has(c.id)) { room._commIds.add(c.id); rp.comms.push(Object.assign({ team }, c)); } }
+    // Compact per-team snapshot every ~10s.
+    if (rp.snapshots.length === 0 || st.elapsed - rp.snapshots[rp.snapshots.length - 1].t >= 10) {
+      const sn = (team) => { const tm = st.teams[team]; return {
+        res: Object.assign({}, tm.resources), pop: Object.assign({}, tm.pop), score: Math.round(tm.score || 0),
+        soldiers: tm.pop.soldiers, hosts: (tm.armies || []).length, sites: Object.values(st.areas || {}).filter(a => a.owner === team).length,
+        research: Object.assign({}, tm.research), researchPoints: Math.round(tm.researchPoints || 0), stewardPolicy: tm.stewardPolicy };
+      };
+      rp.snapshots.push({ t: Math.round(st.elapsed), phase: st.phase, BLUE: sn('BLUE'), RED: sn('RED') });
+    }
+  }
+  finishReplay(room, result) {
+    const rp = room.replay; if (!rp) return;
+    this.captureReplay(room);
+    rp.outcome = { winner: result.winner, reason: result.reason, elapsed: Math.round(room.state.elapsed), score: { BLUE: Math.round(room.state.teams.BLUE.score), RED: Math.round(room.state.teams.RED.score) } };
+  }
+  sendReplay(socket) {
+    const room = this.rooms.get(socket._fp && socket._fp.code);
+    if (!room || !room.replay) { socket.emit(C.EV.ERROR_MSG, { msg: 'No replay available.' }); return; }
+    socket.emit(C.EV.REPLAY_DATA, room.replay);
+  }
+
 
   // ---------- pause / vote ----------
   humansInRoom(room) {
@@ -265,6 +322,7 @@ class RoomManager {
     }
     if (!team) { socket.emit(C.EV.ERROR_MSG, { msg: 'You do not control a role.' }); return; }
     const res = sim.applyAction(room.state, team, role, payload.action, payload.payload);
+    this.recordAction(room, team, role, payload.action, payload.payload, res.ok);
     socket.emit(C.EV.ACTION_RESULT, { action: payload.action, ok: res.ok, msg: res.msg, reason: res.reason, data: res.data });
     // Push a fresh snapshot to everyone so the action's effect appears immediately (not next tick).
     if (res.ok) this.io.to(room.code).emit(C.EV.SNAPSHOT, sim.snapshot(room.state));

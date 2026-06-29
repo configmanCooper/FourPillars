@@ -118,4 +118,14 @@
   $('pauseBtn').onclick = () => UI.pauseToggle();
   // Help / onboarding.
   $('helpBtn').onclick = () => UI.showHelp();
+
+  // ---- Debug / replay export: type "fourpillars" to toggle a debug panel (works even after game over). ----
+  let typed = '';
+  document.addEventListener('keydown', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (!e.key || e.key.length !== 1) return;
+    typed = (typed + e.key.toLowerCase()).slice(-12);
+    if (typed.indexOf('fourpillars') !== -1) { typed = ''; UI.toggleDebug(); }
+  });
+  Net.on(C.EV.REPLAY_DATA, (data) => UI.onReplayData(data));
 })();

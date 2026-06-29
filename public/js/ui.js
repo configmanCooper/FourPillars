@@ -2041,6 +2041,31 @@
     levy(n) { Net.action('levy', { count: n }); toast('Levied workers → recruits.'); },
     trainAt(area) { trainTarget = area; modalMuster(); },
     wAdj(job, d) { Net.action('assignWorker', { job, delta: d }); },
+    toggleDebug() {
+      let p = document.getElementById('fpDebug');
+      if (p) { p.remove(); return; }
+      p = document.createElement('div'); p.id = 'fpDebug';
+      p.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:#1a1410;border:2px solid #c9a44a;border-radius:8px;padding:18px 22px;color:#e8dcc0;font:13px/1.5 monospace;box-shadow:0 8px 40px rgba(0,0,0,.7);max-width:340px';
+      p.innerHTML = '<div style="font-weight:bold;color:#e3c578;margin-bottom:8px">⚙ Debug / Replay</div>' +
+        '<div style="margin-bottom:10px;opacity:.8">Download the full game replay (every action, periodic state snapshots, all events &amp; requests for both teams). Works during or after the match.</div>' +
+        '<button id="fpDlReplay" style="background:#c9a44a;border:0;border-radius:5px;padding:8px 14px;color:#1a1410;font-weight:bold;cursor:pointer;width:100%;margin-bottom:6px">⬇ Download replay JSON</button>' +
+        '<button id="fpDbgClose" style="background:#3a302282;border:1px solid #6b5a30;border-radius:5px;padding:6px;color:#e8dcc0;cursor:pointer;width:100%">Close (or type fourpillars)</button>';
+      document.body.appendChild(p);
+      document.getElementById('fpDlReplay').onclick = () => { toast('Fetching replay…'); Net.requestReplay(); };
+      document.getElementById('fpDbgClose').onclick = () => p.remove();
+    },
+    onReplayData(data) {
+      try {
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'fourpillars_replay_' + (data && data.meta && data.meta.code ? data.meta.code + '_' : '') + Date.now() + '.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        toast('Replay downloaded.');
+      } catch (e) { toast('Replay download failed.', true); }
+    },
   };
   window.FP.UI = UI;
 })();
