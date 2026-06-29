@@ -91,6 +91,7 @@ function claim(state, team, areaId, opts) {
 function upgradeSite(state, team, areaId) {
   const area = state.areas[areaId];
   if (!area || area.claimedBy !== team.team || !area.site) return { ok: false, reason: 'Not your site.' };
+  if ((area.site.level || 1) >= B.MAX_SITE_LEVEL) return { ok: false, reason: area.name + ' is already at the maximum level (' + B.MAX_SITE_LEVEL + ').' };
   const held = eco.heldCostForRole(team, 'STEWARD', B.SITE_UPGRADE_COST);
   if (held) return { ok: false, reason: held.charAt(0).toUpperCase() + held.slice(1) + ' is reserved by the Lord.' };
   if (!eco.canAfford(team, B.SITE_UPGRADE_COST)) return { ok: false, reason: 'Not enough resources.' };

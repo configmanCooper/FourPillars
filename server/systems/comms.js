@@ -132,6 +132,23 @@ function forgeQuality(team) {
   return B.rollQuality(diff, Math.random());
 }
 
+// Best enemy LAND target to raid (an enemy-held outpost, or a neutral/contested site) — used when the Lord
+// orders a raid without naming a target. NEVER returns the enemy Keep (assaulting the Keep is a 'siege').
+function bestRaidTarget(state, team) {
+  const foe = S.enemyOf(team.team);
+  const ekId = S.homeBase(foe);
+  let best = null, bestScore = -1;
+  for (const id in state.areas) {
+    const a = state.areas[id];
+    if (a.terrain === 'base' || id === ekId) continue;          // never the Keep
+    let score = -1;
+    if (a.owner === foe) score = 10 + S.buildingsAt(a) * 2 + (a.site ? a.site.level : 0);   // enemy-held land = prime raid
+    else if (!a.owner && a.site) score = 1;                     // a neutral site we could contest
+    if (score > bestScore) { bestScore = score; best = id; }
+  }
+  return best;
+}
+
 // Best-effort concrete effect so a request matters no matter who accepts it.
 function fulfill(state, team, req, systems) {
   const { army, economy, production, sites, buildings } = systems;
@@ -209,8 +226,12 @@ function fulfill(state, team, req, systems) {
       let host = null, best = -1;
       for (const gx of team.armies) { const n = army.unitCount(gx); if (n > best) { best = n; host = gx; } }
       if (!host || best < 0.5) return false;
-      if (mission === 'siege') return !!army.command(state, team, host.id, 'siege').ok;
-      const tgt = (req.payload && req.payload.targetArea) || S.homeBase(S.enemyOf(team.team));
+      if (mission === 'siege') return !!army.command(state, team, host.id, 'siege', S.homeBase(S.enemyOf(team.team))).ok;
+      // A RAID hits enemy LAND, not the Keep (the Keep is a 'siege', a separate order). If no specific target
+      // was given, pick the best enemy-held outpost / contested site to raid — never default to the enemy Keep.
+      let tgt = req.payload && req.payload.targetArea;
+      if (!tgt) tgt = bestRaidTarget(state, team);
+      if (!tgt) return false;   // nothing worth raiding right now (don't fall back to attacking the Keep)
       return !!army.command(state, team, host.id, mission, tgt).ok;
     }
     case 'SITE': {

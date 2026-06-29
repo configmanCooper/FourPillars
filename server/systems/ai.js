@@ -365,6 +365,11 @@ function aiLord(state, team, sys, rng, persona, st) {
     const armyPipelineLost = ab(team, 'rebuildmil') && team._hadBarracks && (team.buildings.barracks || 0) === 0
       && team.buildQueue.every((q) => q.type !== 'barracks');
     if (armyPipelineLost) wish.push('barracks');
+    // Enemy-reactive RUSH: if the enemy already fields soldiers and we have no Barracks yet, pull the Barracks
+    // to the FRONT so we can answer the threat — economy can wait when a hostile army is already on the map.
+    // (The build loop saves for the first unaffordable KEY building it hits, so fronting it rushes it.)
+    const rushBarracks = ab(team, 'barracksslot') && (team.buildings.barracks || 0) === 0
+        && team.buildQueue.every((q) => q.type !== 'barracks') && state.teams[S.enemyOf(team.team)].pop.soldiers >= 3;
     // Under food strain, a Farm comes FIRST — sustaining the population/army outranks every other build.
     if (foodStrain && planned('farm') < 4) wish.push('farm');
     // Foundation. WOOD underpins everything (every building, every outpost, most gear), so establish a
@@ -417,6 +422,8 @@ function aiLord(state, team, sys, rng, persona, st) {
     if (capHit && hasBarracks && planned('storehouse') < 3) wish.unshift('storehouse');
 
     const KEY = { lumberCamp: 1, storehouse: 1, school: 1, stables: 1, workshop: 1, university: 1, walls: 1, barracks: 1, marketplace: 1 };
+    // Apply the enemy-reactive Barracks rush: front the wish so the Lord saves for it ahead of economy.
+    if (rushBarracks) wish.unshift('barracks');
     const defaultArea = pickBuildArea(state, team);
     const wallArea = bestWallArea(state, team);
     // Critical MILITARY buildings (Barracks/Workshop/Stables) belong behind the Watchtower at the Keep — a
@@ -441,9 +448,23 @@ function aiLord(state, team, sys, rng, persona, st) {
     // wood-costing builds while conserve is active so the Steward can fund outposts.
     const conserveWood = eco.conserving(team, 'wood', state.elapsed);
     const hasFoundation = team.buildings.barracks > 0 && team.buildings.farm > 0 && team.buildings.lumberCamp > 0 && team.buildings.mine > 0;
+    // RESERVE A KEEP SLOT FOR THE BARRACKS: the Keep has only ~6 buildable slots; if economy (farms, lumber
+    // camps, houses, storehouse) greedily fills them first, the Barracks gets shoved to an exposed outpost —
+    // or, when rushed by a human, never gets built and we field ZERO soldiers (the live-vs-human loss). So
+    // once the Keep is down to its last free slot and no Barracks exists yet, don't let a non-military build
+    // take that slot — hold it (and save) for the Barracks.
+    const keepBase = S.homeBase(team.team);
+    const noBarracksYet = (team.buildings.barracks || 0) === 0 && team.buildQueue.every((q) => q.type !== 'barracks');
+    // Only reserve the slot / rush when the enemy ACTUALLY fields an army — otherwise (the normal symmetric
+    // econ-vs-econ opening) reserving a slot just delays our economy for no reason. This makes the fix neutral
+    // in AI-vs-AI but decisive against a human who rushes military early (which AI-vs-AI testing can't model).
+    const enemyArmy = (state.teams[S.enemyOf(team.team)].pop.soldiers || 0) >= 3;
+    const reserveBarracksSlot = ab(team, 'barracksslot') && noBarracksYet && enemyArmy;
     for (const b of wish) {
       const area = MIL[b] ? safeMilArea(b) : ((b === 'walls' && wallArea) ? wallArea : defaultArea); // military to the Keep; walls fortify the frontier
       if (!area) continue;
+      // Don't let a non-military Keep build consume the last slot the Barracks needs.
+      if (reserveBarracksSlot && b !== 'barracks' && area === keepBase && freeSlots(state, team, keepBase) <= 1) continue;
       const def = B.BUILDINGS[b]; if (!def) continue;
       if (conserveWood && hasFoundation && (def.cost.wood || 0) > 0) continue;
       if (eco.canAfford(team, def.cost)) { if (sys.buildings.queueBuilding(state, team, area, b).ok) { st.acted = true; break; } }
@@ -1293,7 +1314,25 @@ function aiCommander(state, team, sys, rng, persona, st) {
     const canRaid = !vulnerable && edge >= (0.85 - aggr * 0.1);
     const canSiege = !vulnerable && edge >= (1.0 - aggr * 0.12);
     const siegeSize = clampI(5 - aggr, 3, 8);
-    if (canSiege && wn >= siegeSize && winChanceAt(state, army, team, w, ekArea.id) >= winBar && (state.phase === 'LATE' || keepWeak || keepExposed || edge > 1.25)) {
+    // Smart siege (your design): assaulting the Keep needs a BIG consolidated force, and is only worth it when
+    // we're FAR ahead militarily AND the enemy has no other outposts left to raid (take their land first) — or
+    // the Keep is already weak and we're finishing the kill. Leaves the home garrison behind for defence.
+    if (ab(team, 'smartsiege')) {
+      const enemyOutposts = countEnemyOutposts(state, enemyTeam);
+      const consolidated = wn >= Math.max(siegeSize, 6);
+      const farAhead = edge >= 1.4;
+      const lastTarget = enemyOutposts === 0;     // their Keep is the only land left to take
+      const finishing = keepWeak || keepExposed;  // already weak/lightly held — press the kill
+      const siegeWorth = !vulnerable && consolidated && winChanceAt(state, army, team, w, ekArea.id) >= winBar
+        && (finishing || (farAhead && lastTarget));
+      if (siegeWorth) {
+        army.command(state, team, w.id, 'siege');
+        say(state, team, sys, st, C.ROLES.COMMANDER, finishing ? 'Their Keep is exposed — END THIS!' : 'No enemy land left and we dominate — march on the Keep!', 18);
+        req(state, team, sys, st, C.ROLES.COMMANDER, C.ROLES.BLACKSMITH, 'EQUIPMENT', {}, 30);
+        return;
+      }
+      // Not worth sieging yet — fall through to RAID their outposts (handled below).
+    } else if (canSiege && wn >= siegeSize && winChanceAt(state, army, team, w, ekArea.id) >= winBar && (state.phase === 'LATE' || keepWeak || keepExposed || edge > 1.25)) {
       army.command(state, team, w.id, 'siege'); say(state, team, sys, st, C.ROLES.COMMANDER, keepExposed ? 'Their Keep lies open — march on it!' : 'The host marches on the enemy Keep!', 18); req(state, team, sys, st, C.ROLES.COMMANDER, C.ROLES.BLACKSMITH, 'EQUIPMENT', {}, 30); return;
     }
     if (canRaid && army.unitCount(w) >= 2) {
@@ -1708,6 +1747,11 @@ function ownedOutpostList(state, team) {
   const ek = S.homeBase(S.enemyOf(team.team));
   out.sort((x, y) => (state.areas[x].connections.indexOf(ek) >= 0 ? -1 : 0) - (state.areas[y].connections.indexOf(ek) >= 0 ? -1 : 0));
   return out;
+}
+// Count of non-base outposts a (foe) team owns — used to gate sieging: take their LAND before their Keep.
+function countEnemyOutposts(state, foeTeam) {
+  let n = 0; for (const id in state.areas) { const a = state.areas[id]; if (a.owner === foeTeam.team && a.terrain !== 'base' && a.site) n++; }
+  return n;
 }
 // A small standing garrison drawn from the home reserve — favour spearmen (cheap, hold ground, anti-cav).
 function smallGarrisonUnits(g, n) {

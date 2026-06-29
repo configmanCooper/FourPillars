@@ -391,6 +391,12 @@
     }
     // Anyone can ping/request defense at an owned area.
     if (revealed && a.owner === State.myTeam) btns += btn('Ask defend', "FP.UI.requestDefend('" + a.id + "')");
+    // Non-Commanders (e.g. the Lord) can ask the Commander to attack a SPECIFIC place: raid enemy land /
+    // contested sites, or siege the enemy Keep. (Raiding land is separate from sieging the Keep.)
+    if (revealed && role !== 'COMMANDER' && (a.owner === State.enemyTeam() || (!a.owner && a.site))) {
+      if (a.terrain === 'base') btns += btn('🏰 Ask siege here', "FP.UI.requestAttack('siege','" + a.id + "')");
+      else btns += btn('⚔️ Ask raid here', "FP.UI.requestAttack('raid','" + a.id + "')");
+    }
     if (role === 'COMMANDER') {
       btns += '<div style="width:100%;margin-top:6px" class="muted">Your hosts (click to select target):</div>';
       for (const g of team.armies) { let n = 0; for (const u of C.UNITS) n += g.units[u] || 0; if (n < 0.5) continue;
@@ -2023,6 +2029,11 @@
     resume() { Net.resume(); },
     vote(v) { Net.vote(v); },
     requestDefend(area) { Net.action('request', { type: 'DEFEND', payload: { area } }); toast('Asked Commander to defend.'); },
+    requestAttack(mission, area) {
+      const snap = State.snapshot; const name = (snap && snap.areas[area] && snap.areas[area].name) || 'there';
+      Net.action('request', { type: 'MISSION', payload: { mission, targetArea: area } });
+      toast('Asked the Commander to ' + (mission === 'siege' ? '🏰 siege ' : '⚔️ raid ') + name + '.');
+    },
     selectGroup(id) { State.selectedGroupId = id; updateRight(State.snapshot); },
     selectHost(id) { State.selectedGroupId = (State.selectedGroupId === id ? null : id); updateRight(State.snapshot); reMng(); },
     moveHostTo(gid, areaId) {
