@@ -609,6 +609,7 @@ function aiSteward(state, team, sys, rng, persona, st) {
   }
 
   askIfHeld(state, team, sys, st, C.ROLES.STEWARD, 'wood', 'to claim & build outposts');
+  askIfHeld(state, team, sys, st, C.ROLES.STEWARD, 'stone', 'to claim outposts');   // claiming costs wood AND stone
   // ---- Scouting: keep a few Scouts and reveal/maintain the frontier so our soldiers never fight blind
   //      (unscouted areas cost us 20% attack & defence). Owned outposts stay scouted automatically.
   const unscoutedAdj = [];

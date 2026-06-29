@@ -211,12 +211,17 @@ function fulfill(state, team, req, systems) {
     }
     case 'SITE': {
       const mode = (req.payload && req.payload.mode) || 'expand';
+      const fromLord = req.fromRole === 'LORD';   // the Lord authorising expansion waives their own resource hold
       if (mode === 'upgrade') {
         for (const id in state.areas) { const a = state.areas[id]; if (a.claimedBy === team.team && a.terrain !== 'base' && a.site) { if (sites.upgradeSite(state, team, id).ok) return true; } }
         return false;
       }
-      // expand: claim a revealed neutral site, else explore toward one.
-      for (const id in state.areas) { const a = state.areas[id]; if (a.revealed[team.team] && a.site && a.terrain !== 'base' && !a.owner) { if (sites.claim(state, team, id).ok) return true; } }
+      // expand: claim the best revealed neutral site we can, else explore toward one.
+      const neutral = [];
+      for (const id in state.areas) { const a = state.areas[id]; if (a.revealed[team.team] && a.site && a.terrain !== 'base' && !a.owner) neutral.push(a); }
+      // Prefer the richest / nearest-to-home site (more build slots + a resource).
+      neutral.sort((x, y) => (S.buildingsAt(y) + (y.site ? y.site.level : 0)) - (S.buildingsAt(x) + (x.site ? x.site.level : 0)));
+      for (const a of neutral) { if (sites.claim(state, team, a.id, { bypassHold: fromLord }).ok) return true; }
       for (const id in state.areas) { const a = state.areas[id]; if (!a.revealed[team.team] && a.connections.some((n) => state.areas[n].revealed[team.team])) { if (sites.explore(state, team, id).ok) return true; } }
       return false;
     }

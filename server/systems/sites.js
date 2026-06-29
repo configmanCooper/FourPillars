@@ -33,7 +33,8 @@ function explore(state, team, areaId) {
   return { ok: true, msg: 'Scouting ' + area.name + '...' };
 }
 
-function claim(state, team, areaId) {
+function claim(state, team, areaId, opts) {
+  opts = opts || {};
   const area = state.areas[areaId];
   if (!area) return { ok: false, reason: 'No such area.' };
   if (!area.revealed[team.team]) return { ok: false, reason: 'Explore it first.' };
@@ -55,8 +56,10 @@ function claim(state, team, areaId) {
     team._busyJob = { kind: 'claim', areaId, remaining: B.CLAIM_TIME };
     return { ok: true, msg: 'Building outpost at ' + area.name + '...' };
   }
-  // Enforce the Lord's rationing on EVERY required resource (the AI Steward calls claim() directly).
-  const held = eco.heldCostForRole(team, 'STEWARD', COST);
+  // Enforce the Lord's rationing on EVERY required resource (the AI Steward calls claim() directly) —
+  // UNLESS the Lord themselves authorised this expansion (opts.bypassHold), in which case the reservation
+  // is waived for the claim (the Lord asking to expand IS permission to spend on it).
+  const held = opts.bypassHold ? null : eco.heldCostForRole(team, 'STEWARD', COST);
   if (held) return { ok: false, reason: (m[held] ? m[held].name : held) + ' is reserved by the Lord — ask to access it.' };
   // Pay an instalment toward each still-owed resource (at least CLAIM_MIN_INSTALMENT each, or the remainder).
   let paidAny = false;
