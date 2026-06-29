@@ -158,16 +158,19 @@ function fulfill(state, team, req, systems) {
       return true;
     }
     case 'WORKERS': {
+      if (team.workerLock) return false;   // the Lord has locked worker allocation — don't move their workers
       const job = (req.payload && req.payload.job) || 'miners';
       const move = Math.min(3, team.pop.idle);
       if (move <= 0) return false;
       team.pop.idle -= move; team.pop[job] = (team.pop[job] || 0) + move; economy.recomputeDerived(team); return true;
     }
     case 'RECRUITS': {
+      if (team.workerLock) return false;   // levying moves workers out of the pool — the Lord controls that when locked
       const r = economy.levy(team, 3);  // commit idle workers to the recruit pool (one-way)
       return !!(r && r.ok);
     }
     case 'TRAINERS': {
+      if (team.workerLock) return false;   // assigning trainers reallocates workers — respect the Lord's lock
       const cap = economy.maxTrainers(team);           // Barracks * 2
       const room = cap - team.pop.trainers;
       if (room <= 0) return false;                      // no Barracks capacity (or already maxed)
@@ -185,10 +188,10 @@ function fulfill(state, team, req, systems) {
     }
     case 'IRON': {
       // Blacksmith→Steward: "send more iron from the mines." Bias the mines toward iron and shift idle
-      // hands to mining — NOT forge spears (which would CONSUME the iron we're short of).
+      // hands to mining — NOT forge spears (which would CONSUME the iron we're short of). The worker shift
+      // is skipped when the Lord has locked allocation (the mine-focus bias still applies).
       team._mineDemand = { res: 'iron', until: state.elapsed + 30 };
-      const move = Math.min(3, team.pop.idle);
-      if (move > 0) { team.pop.idle -= move; team.pop.miners = (team.pop.miners || 0) + move; economy.recomputeDerived(team); }
+      if (!team.workerLock) { const move = Math.min(3, team.pop.idle); if (move > 0) { team.pop.idle -= move; team.pop.miners = (team.pop.miners || 0) + move; economy.recomputeDerived(team); } }
       return true;
     }
     case 'TRAIN': {
@@ -196,8 +199,9 @@ function fulfill(state, team, req, systems) {
       const count = (req.payload && req.payload.count) || 2;
       const area = (req.payload && req.payload.area) || (army.barracksAreasOf(state, team)[0]);
       if (!area) return false;
-      // Ensure there are recruits to train (the Lord can levy on the Commander's behalf).
-      if (team.pop.recruits < 1) economy.levy(team, Math.max(2, count));
+      // Ensure there are recruits to train (the Lord can levy on the Commander's behalf) — but never levy
+      // the Lord's workers when allocation is locked.
+      if (team.pop.recruits < 1) { if (team.workerLock) return false; economy.levy(team, Math.max(2, count)); }
       return !!army.trainUnits(state, team, area, unitType, count).ok;
     }
     case 'MISSION': {
@@ -259,6 +263,10 @@ function fulfill(state, team, req, systems) {
             team._mineDemand = { res, until: state.elapsed + (mf && req.fromRole === 'LORD' ? 45 : 30), role: mf ? req.fromRole : undefined };
           }
         }
+        // Shift idle workers into the matching job — but NOT when the Lord has locked allocation. The
+        // mine-focus bias above still applies; we just don't move the Lord's workers. (Return true so the
+        // request is acknowledged rather than retried forever.)
+        if (team.workerLock) return true;
         const move = Math.min(3, team.pop.idle);
         if (move <= 0) return false;
         team.pop.idle -= move; team.pop[jobFor[res]] = (team.pop[jobFor[res]] || 0) + move; economy.recomputeDerived(team); return true;
