@@ -200,7 +200,7 @@
   const SUPERVISE_MAX_PER_WINDOW = 20;
 
   const STEWARD_ACTIONS = [
-    { id: 'fertility',       name: 'Fertility Decree',     glyph: '👶', cost: { food: 20 },           workers: 0, durationSec: 90,  cooldownSec: 240, effect: { popGrowth: 0.25 },                 desc: 'Population grows +25% faster.' },
+    { id: 'fertility',       name: 'Fertility Decree',     glyph: '👶', cost: { food: 50 },           workers: 0, durationSec: 90,  cooldownSec: 240, effect: { popGrowth: 0.25 },                 desc: 'Population grows +25% faster.' },
     { id: 'postRoads',       name: 'Post Roads',           glyph: '🐎', cost: { wood: 40 },           workers: 0, durationSec: 210, cooldownSec: 360, effect: { caravanSpeed: 0.35 },             desc: 'All caravans move +35% faster.' },
     { id: 'forgeBellows',    name: 'Forge Bellows',        glyph: '🔥', cost: { iron: 25 },           workers: 0, durationSec: 120, cooldownSec: 300, effect: { forgeSpeed: 0.30 },               desc: 'The forge works +30% faster.' },
     { id: 'overseers',       name: "Overseers' Push",      glyph: '⛏️', cost: { food: 30 },           workers: 3, durationSec: 150, cooldownSec: 360, effect: { gatherAll: 0.25 },                desc: 'All gathering +25% (ties up 3 workers).' },
