@@ -765,6 +765,10 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
   const forge = (item, qty) => { const t = B.rollQuality(diff, rng.float()); return prod.queueProduction(team, item, qty, t.mult, t.id); };
   // Count army composition to read demand.
   const army = countArmy(team);
+  // Planned Blacksmith: build a short forge PLAN (what the army needs next), keep the queue stocked a couple
+  // deep from it, set the forge focus to whatever the plan makes most of, and only take a contract that
+  // ALIGNS with the plan (else wait). One cohesive brain instead of one-off picks.
+  if (ab(team, 'bsmithplan')) { aiBlacksmithPlan(state, team, sys, rng, persona, st, { prod, forge, army }); return; }
   const arrowsNeed = army.archer * 8;
   // Arrow crisis.
   if (!st.acted && army.archer > 0 && (team.resources.arrows || 0) < arrowsNeed) {
@@ -798,6 +802,95 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
   }
   if (!st.acted && !team.contract && team.contractCooldown <= 0 && rng.chance(0.5)) { const offers = (team.contractOffers && team.contractOffers.length) ? team.contractOffers : B.CONTRACTS.map((c) => c.id); if (prod.startContract(team, rng.pick(offers)).ok) st.acted = true; }
   if ((team.resources.iron || 0) < 12) { if (req(state, team, sys, st, C.ROLES.BLACKSMITH, C.ROLES.STEWARD, 'IRON', {}, 30)) say(state, team, sys, st, C.ROLES.BLACKSMITH, 'Out of iron — Steward, send more!', 25); }
+}
+// ---- Planned Blacksmith brain (gated ab('bsmithplan')) ----
+const CONTRACT_BY_ID = {}; for (const c of B.CONTRACTS) CONTRACT_BY_ID[c.id] = c;
+// Build a weighted forge plan: what the army needs next, biased to iron-only staples when wood is scarce.
+// Returns an ordered item list, the per-item weights, and the focus (the item we'll make most of).
+function forgePlan(state, team, sys, rng, persona, army) {
+  const iron = team.resources.iron || 0;
+  const woodScarce = (smartHard(team, 'BLACKSMITH') && (team.resources.wood || 0) < 60) || sys.economy.conserving(team, 'wood', state.elapsed);
+  const w = {};
+  const bump = (it, n) => { if (it && n > 0) w[it] = (w[it] || 0) + n; };
+  if (army.archer > 0 && (team.resources.arrows || 0) < army.archer * 8) bump('arrows', 3);
+  if (state.phase === 'EARLY') {
+    const toolFloor = persona === 'toolsmith' ? 10 : 5;
+    if (team.equipment.tools < toolFloor) bump('tools', 2);
+    bump('spears', 3);          // arm a starting force early so we're not defenceless mid-game
+    bump('armor', 2);           // start banking the decisive tier bonus
+  } else {
+    const want = pickComposition(team, { comp: ['swordsman', 'spearman', 'archer', 'cavalry'] }, enemyComposition(state, team), army).desired;
+    bump(GEAR_FOR_UNIT[want] || 'spears', 4);   // the gear our desired troops need most
+    bump('swords', 1);                          // swords are a reliable iron-only staple
+    bump('armor', 3);                           // armour's tier bonus is a big battle edge
+    if (army.archer > 0) bump('arrows', 2);
+    const siegeWanted = (team.buildings.workshop || 0) > 0 && (state.phase === 'LATE' || (team.equipment.siegeParts || 0) < 2 && state.phase !== 'EARLY');
+    if (siegeWanted && (team.equipment.siegeParts || 0) < 8) bump('siegeParts', persona === 'siege' ? 3 : 1);
+    if (persona === 'armorer') bump('armor', 2);
+  }
+  if (woodScarce) {
+    for (const it of Object.keys(w)) {
+      if (B.RECIPES[it] && (B.RECIPES[it].cost.wood || 0) > 0) {
+        const repl = iron >= (B.RECIPES.swords.cost.iron || 8) ? 'swords' : (iron >= (B.RECIPES.armor.cost.iron || 12) ? 'armor' : null);
+        const n = w[it]; delete w[it]; bump(repl, n);
+      }
+    }
+  }
+  const order = Object.keys(w).sort((a, b) => w[b] - w[a]);
+  let focus = null; for (const it of order) { if (B.BLACKSMITH_SPECS[it]) { focus = it; break; } }
+  return { order, counts: w, focus };
+}
+// How well an offered contract fits our plan: every goal item must be something we're already planning to
+// make (and forgeable now); score by how heavily we plan it plus the reward, minus a penalty for big/mixed
+// orders. 0 means "off-plan — don't take it".
+function contractAlignsPlan(team, id, plan) {
+  const c = CONTRACT_BY_ID[id]; if (!c) return 0;
+  let score = 0, qty = 0;
+  for (const item in c.goal) {
+    const rc = B.RECIPES[item]; if (!rc) return 0;
+    if (rc.needs === 'siege' && (team.buildings.workshop || 0) <= 0) return 0;
+    if (!plan.counts[item]) return 0;                 // we are NOT planning this — skip it
+    score += plan.counts[item];
+    qty += c.goal[item];
+  }
+  const r = c.reward || {};
+  score += (r.relics || 0) * 3 + (r.iron || 0) * 0.06 + (r.wood || 0) * 0.04 + (r.horses || 0) * 0.2 + (r.stone || 0) * 0.03 + (r.food || 0) * 0.02;
+  score -= Object.keys(c.goal).length * 0.5;          // single-item orders finish more reliably
+  score -= qty * 0.05;                                // smaller quotas are safer
+  return score;
+}
+function aiBlacksmithPlan(state, team, sys, rng, persona, st, ctx) {
+  const { prod, forge, army } = ctx;
+  const plan = forgePlan(state, team, sys, rng, persona, army);
+  // Forge focus: specialise in the item the plan makes the most of (+10% speed on it).
+  if (plan.focus && B.BLACKSMITH_SPECS[plan.focus] && team.blacksmithSpec !== plan.focus) team.blacksmithSpec = plan.focus;
+  // Keep the forge queue a couple deep, following the plan (one job per distinct item for a balanced spread),
+  // so the forge never idles between thinks and the next needed gear is always lined up.
+  if (!st.acted && team.production.length < 3) {
+    const queued = {}; for (const j of team.production) queued[j.item] = (queued[j.item] || 0) + 1;
+    for (const it of plan.order) {
+      if (!B.RECIPES[it] || (queued[it] || 0) >= 1) continue;
+      if (forge(it, it === 'arrows' ? 24 : 8).ok) { st.acted = true; break; }
+    }
+  }
+  // Contracts: take one that ALIGNS with the plan (finishing it = making what we'd make anyway). If nothing
+  // on offer aligns, WAIT for the offers to rotate instead of committing the forge to off-plan busywork.
+  if (!team.contract && team.contractCooldown <= 0) {
+    const offers = (team.contractOffers && team.contractOffers.length) ? team.contractOffers : [];
+    let best = null, bestS = 0;
+    for (const id of offers) { const s = contractAlignsPlan(team, id, plan); if (s > bestS) { bestS = s; best = id; } }
+    if (best && prod.startContract(team, best).ok) say(state, team, sys, st, C.ROLES.BLACKSMITH, 'Taking a forge contract that fits our plan.', 40);
+  }
+  // Stuck? The active job can't afford its inputs — ask the Steward for exactly what it needs.
+  const job = team.production[0];
+  if (job && job.short) {
+    const rc = B.RECIPES[job.item] || { cost: {} };
+    if ((rc.cost.iron || 0) > (team.resources.iron || 0)) { if (req(state, team, sys, st, C.ROLES.BLACKSMITH, C.ROLES.STEWARD, 'IRON', {}, 30)) say(state, team, sys, st, C.ROLES.BLACKSMITH, 'Forge stalled — Steward, I need iron!', 25); }
+    else if ((rc.cost.wood || 0) > (team.resources.wood || 0)) req(state, team, sys, st, C.ROLES.BLACKSMITH, C.ROLES.STEWARD, 'NEED', { resource: 'wood' }, 30);
+    else if ((rc.cost.stone || 0) > (team.resources.stone || 0)) req(state, team, sys, st, C.ROLES.BLACKSMITH, C.ROLES.STEWARD, 'NEED', { resource: 'stone' }, 30);
+  } else if ((team.resources.iron || 0) < 12) {
+    if (req(state, team, sys, st, C.ROLES.BLACKSMITH, C.ROLES.STEWARD, 'IRON', {}, 30)) say(state, team, sys, st, C.ROLES.BLACKSMITH, 'Out of iron — Steward, send more!', 25);
+  }
 }
 function countArmy(team) { const o = { militia: 0, spearman: 0, swordsman: 0, archer: 0, cavalry: 0, catapult: 0 }; for (const g of team.armies) for (const u of C.UNITS) o[u] += g.units[u] || 0; return o; }
 function enemyComposition(state, team) { return countArmy(state.teams[S.enemyOf(team.team)]); }
