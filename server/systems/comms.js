@@ -242,10 +242,15 @@ function fulfill(state, team, req, systems) {
         return false;
       }
       // expand: claim the best revealed neutral site we can, else explore toward one.
-      const neutral = [];
+      const wantRes = req.payload && req.payload.resource;   // optional: a specific resource the Lord asked to secure
+      const home = state.areas[S.homeBase(team.team)];
+      const distOf = (a) => home ? Math.hypot((a.x || 0) - home.x, (a.y || 0) - home.y) : 0;
+      const richOf = (a) => S.buildingsAt(a) + (a.site ? a.site.level : 0);
+      let neutral = [];
       for (const id in state.areas) { const a = state.areas[id]; if (a.revealed[team.team] && a.site && a.terrain !== 'base' && !a.owner) neutral.push(a); }
-      // Prefer the richest / nearest-to-home site (more build slots + a resource).
-      neutral.sort((x, y) => (S.buildingsAt(y) + (y.site ? y.site.level : 0)) - (S.buildingsAt(x) + (x.site ? x.site.level : 0)));
+      if (wantRes) { const m = neutral.filter((a) => a.resource === wantRes); if (m.length) neutral = m; }   // honor a specific resource ask
+      // Prefer the CLOSEST site (shorter supply route + the Commander can defend it sooner); richness breaks ties.
+      neutral.sort((x, y) => (distOf(x) - distOf(y)) || (richOf(y) - richOf(x)));
       for (const a of neutral) { if (sites.claim(state, team, a.id, { bypassHold: fromLord }).ok) return true; }
       for (const id in state.areas) { const a = state.areas[id]; if (!a.revealed[team.team] && a.connections.some((n) => state.areas[n].revealed[team.team])) { if (sites.explore(state, team, id).ok) return true; } }
       return false;

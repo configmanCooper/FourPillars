@@ -751,11 +751,11 @@ function aiSteward(state, team, sys, rng, persona, st) {
     // it (owner is us but no working outpost yet) — so the Steward rebuilds outposts on captured land.
     // (You can only build on SCOUTED ground now, so don't bother trying unscouted sites.)
     for (const id in state.areas) { const a = state.areas[id]; if (a.scouted[team.team] && a.site && a.terrain !== 'base' && (!a.owner || (a.owner === team.team && a.claimedBy !== team.team))) cand.push(a); }
-    cand.sort((x, y) => sitePrio(team, persona, y) - sitePrio(team, persona, x));
+    cand.sort((x, y) => sitePrio(state, team, persona, y) - sitePrio(state, team, persona, x));
     for (const a of cand) {
       // Cautious steward won't claim next to an enemy host.
       if (persona === 'cautious' && a.connections.some((n) => enemyAt(state, team, n))) continue;
-      if (sites.claim(state, team, a.id).ok) { st.acted = true; say(state, team, sys, st, C.ROLES.STEWARD, 'Claiming ' + a.name + ' for ' + a.resource + '.', 30); break; }
+      if (sites.claim(state, team, a.id).ok) { st.acted = true; say(state, team, sys, st, C.ROLES.STEWARD, 'Claiming ' + a.name + ' for ' + a.resource + '.', 30); if (ab(team, 'outpostguard')) say(state, team, sys, st, C.ROLES.STEWARD, 'Raising an outpost at ' + a.name + ' — Commander, cover it!', 12); break; }
     }
   }
   // Upgrade owned strategic sites.
@@ -947,7 +947,7 @@ function expeditionValue(team, def) {
   for (const k in def.reward) { const short = Math.max(0, 80 - (team.resources[k] || 0)); v += def.reward[k] * (1 + short * 0.02); }
   return v - def.workers * 5 - (def.risk || 0) * 30;
 }
-function sitePrio(team, persona, a) {
+function sitePrio(state, team, persona, a) {
   let base = { mountain: 6, hills: 5, farmland: 4, ruins: 4, forest: 3, plains: 3 }[a.terrain] || 1;
   const short = (k) => (team.resources[k] || 0) < 30;
   if (a.resource && short(a.resource)) base += 3;
@@ -957,6 +957,12 @@ function sitePrio(team, persona, a) {
   // Smart Hard prizes a WOOD (forest) outpost while wood is the bottleneck — same claim cost as any
   // other site, but it ships home the exact resource that gates the whole economy.
   if (smartHard(team, 'STEWARD') && a.terrain === 'forest' && (team.resources.wood || 0) < 40) base += 6;
+  // Prefer CLOSER sites: a nearer outpost ships resources home over a shorter (safer) route and the Commander
+  // can defend it far quicker — distant claims get raided before help arrives. (Was the "secured the furthest
+  // food site instead of the closest" complaint.) Straight-line distance, scaled so it meaningfully ranks
+  // same-resource sites by nearness without entirely overriding a richer/needed resource.
+  const _home = state.areas[S.homeBase(team.team)];
+  if (_home) base -= Math.hypot((a.x || 0) - _home.x, (a.y || 0) - _home.y) / 300;
   return base;
 }
 
@@ -1232,7 +1238,10 @@ function aiCommander(state, team, sys, rng, persona, st) {
   // defence). A lone scout — or a single small host poking an adjacent tile — must NOT pin the army:
   // those are met by ONE claimed defender (below) while the rest keep raiding and interdicting caravans.
   // (This was the bug: any enemy adjacent to the Keep force-recalled everything, freezing the offensive.)
-  const keepThreat = kt.onKeep >= 0.5 || team.keep.hp < team.keep.maxHp * 0.6 || kt.adj >= Math.max(6, homeDef * 1.1);
+  // outpostguard: how readily we recall to the Keep follows the LORD'S STANCE — Offensive cares LESS about
+  // the Keep (recall only to a bigger doorstep force), Defensive cares MORE (recall sooner), Balanced between.
+  const keepCare = (ab(team, 'outpostguard') && mpol) ? (mpol.aggression > 0 ? 1.4 : (mpol.aggression < 0 ? 0.7 : 1.0)) : 1.0;
+  const keepThreat = kt.onKeep >= 0.5 || team.keep.hp < team.keep.maxHp * 0.6 || kt.adj >= Math.max(6, homeDef * 1.1) * keepCare;
 
   let war = team.armies.find((h) => !h.isGarrison && army.unitCount(h) >= 0.5);
   const garStr = army.unitCount(g);
@@ -1247,7 +1256,12 @@ function aiCommander(state, team, sys, rng, persona, st) {
   if (earlyDefend) {
     const ownPosts = ownedOutpostList(state, team).length;
     const vastlyOutmatched = edge < 0.5;
-    if (ownPosts > 0 && !vastlyOutmatched && kt.onKeep < 0.5 && team.keep.hp > team.keep.maxHp * 0.7) reserve = 2;
+    // Early game the Keep's Watchtower covers home and threats there are minimal, so keep only a TOKEN reserve
+    // (2-3) and push everything else out to defend the vulnerable outposts. Stance tunes it: a Defensive Lord
+    // keeps 3 at home, Offensive/Balanced keep 2. (outpostguard)
+    if (ownPosts > 0 && !vastlyOutmatched && kt.onKeep < 0.5 && team.keep.hp > team.keep.maxHp * 0.7) {
+      reserve = (ab(team, 'outpostguard') && mpol && mpol.aggression < 0) ? 3 : 2;
+    }
   }
   // F5 — mid/late forward defence: when an enemy raider is loose IN or NEXT TO our territory and we aren't
   // outmatched, garrison ALL owned outposts (not just frontier ones) so they aren't snatched while the main
@@ -1524,9 +1538,14 @@ function aiCommander(state, team, sys, rng, persona, st) {
       // game (earlyDefend) we hold ALL owned outposts, not just frontier ones — even building-less ground is
       // worth denying the enemy and is cheap to hold while the Keep's Watchtower covers home.
       let gpGuard = 0;
-      const postsToHold = broadGuard ? ownedOutpostList(state, team) : ownedFrontierPosts(state, team);
+      // outpostguard: COORDINATE with the Steward — a site they're CLAIMING right now (team._busyJob) is about
+      // to become a fresh, building-less, super-vulnerable outpost. Pre-position a defender there before it's
+      // even finished so it isn't snatched the instant it's raised. Front it ahead of the standing-garrison list.
+      let preDefend = [];
+      if (ab(team, 'outpostguard') && team._busyJob && team._busyJob.kind === 'claim' && team._busyJob.areaId && state.areas[team._busyJob.areaId]) preDefend.push(team._busyJob.areaId);
+      const postsToHold = preDefend.concat(broadGuard ? ownedOutpostList(state, team) : ownedFrontierPosts(state, team));
       for (const pid of postsToHold) {
-        if (team.armies.some((h) => (h.postGuard === pid || (!h.isGarrison && army.currentArea(h) === pid && !h.moving)) && army.unitCount(h) >= 1.5)) continue; // already held
+        if (team.armies.some((h) => (h.postGuard === pid || (!h.isGarrison && army.currentArea(h) === pid && (!h.moving || (h.mission && h.mission.targetArea === pid)))) && army.unitCount(h) >= 1.5)) continue; // already held / en route
         if (army.currentArea(g) !== home || g.moving || (army.unitCount(g) - reserve) < (broadGuard ? 2 : 3)) break;     // no spare troops
         if (gpGuard++ >= (broadGuard ? 3 : 2)) break;                                                                     // a couple per think (more when defending broadly)
         const det = army.rally(state, team, smallGarrisonUnits(g, clampI(3 + aggr, 2, 4), ab(team, 'catapultguard')), 'Garrison');
