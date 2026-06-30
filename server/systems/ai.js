@@ -744,7 +744,19 @@ function aiSteward(state, team, sys, rng, persona, st) {
   // very first Barracks; the Lord decides when wood is free for expansion.
   const noBarracks = (team.buildings.barracks || 0) < 1 && team.buildQueue.every((q) => q.type !== 'barracks');
   const bWood = (B.BUILDINGS.barracks.cost.wood || 0), bStone = (B.BUILDINGS.barracks.cost.stone || 0);
-  const reserveForCore = noBarracks && ((team.resources.wood || 0) < bWood + 20 || (team.resources.stone || 0) < bStone + 10);
+  // barracksfirst (your rules): tie EXPANSION to military progress so the Steward can't sprawl into outposts
+  // while the realm has no army. Cap owned outposts at:
+  //   • 1  — while we have no Barracks AND no soldier (build the Barracks + first troops before more land);
+  //   • 2  — once we have a Barracks and at least 1 soldier;
+  //   • 3+ — only when our military actually EXCEEDS the enemy's (and we have a Barracks).
+  let ownedSites = 0; for (const id in state.areas) { const a = state.areas[id]; if (a.claimedBy === team.team && a.terrain !== 'base') ownedSites++; }
+  const _hasBarracks = (team.buildings.barracks || 0) >= 1;
+  const _hasMilitary = (team.pop.soldiers || 0) >= 1;
+  const _enemy = state.teams[S.enemyOf(team.team)];
+  const _milEdge = (team.pop.soldiers || 0) > (_enemy.pop.soldiers || 0);
+  const siteCap = (_hasBarracks && _milEdge) ? Infinity : (_hasBarracks && _hasMilitary) ? 2 : 1;
+  const overCap = ab(team, 'barracksfirst') && ownedSites >= siteCap;
+  const reserveForCore = overCap || (noBarracks && ((team.resources.wood || 0) < bWood + 20 || (team.resources.stone || 0) < bStone + 10));
   if (!st.acted && !team._busyJob && !reserveForCore) {
     const cand = [];
     // Claimable: SCOUTED neutral sites, AND our own ground whose outpost was destroyed when we took
