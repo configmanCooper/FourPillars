@@ -1300,7 +1300,19 @@ function aiCommander(state, team, sys, rng, persona, st) {
     if (threats.length) {
       const claim = (decide._threatClaim = decide._threatClaim || {});
       const t = threats.find((x) => x.here && !claim[x.area]);
-      if (t) { claim[t.area] = true; army.command(state, team, w.id, 'garrison', t.area); say(state, team, sys, st, C.ROLES.COMMANDER, 'Driving the enemy off ' + state.areas[t.area].name + '!', 14); return; }
+      if (t) {
+        // threatwin: a multi-unit host always contests a raid on our ground (trading/disrupting the raze pays,
+        // even at rough odds). But a LONE unit (<2) thrown at a bigger raiding stack just dies one-at-a-time
+        // without disrupting much — the reported "sends a guy out one at a time vs a bigger army" bug. So a lone
+        // host only commits if it has a real fighting chance; otherwise it holds at the Keep to ACCUMULATE into
+        // a proper host, then sallies once it's strong enough to win.
+        const canWin = !ab(team, 'threatwin') || army.unitCount(w) >= 2 || winChanceAt(state, army, team, w, t.area) >= retreatBar;
+        if (canWin) { claim[t.area] = true; army.command(state, team, w.id, 'garrison', t.area); say(state, team, sys, st, C.ROLES.COMMANDER, 'Driving the enemy off ' + state.areas[t.area].name + '!', 14); return; }
+        // Too weak to drive them off alone — fall back to the Keep and mass up instead of dying piecemeal.
+        army.command(state, team, w.id, 'defend');
+        say(state, team, sys, st, C.ROLES.COMMANDER, 'Not enough to drive them off ' + state.areas[t.area].name + ' yet — massing at the Keep.', 20);
+        return;
+      }
     }
     // F3 — HUNT loose enemy raiders: an enemy host roaming IN or NEXT TO our territory (e.g. one that just
     // razed an outpost and is moving to the next) that we can BEAT. The Commander watches every enemy host's
