@@ -329,6 +329,10 @@ function aiLord(state, team, sys, rng, persona, st) {
   if (ab(team, 'fastbuild') && state.phase === 'EARLY' && team.buildQueue.length && !lowFood) s.builders = Math.max(s.builders, 0.20);
   const builders = team.buildQueue.length ? Math.max(1, Math.round(wf * s.builders)) : 1;
   let trainers = hasBarracks && !lowFood ? Math.min(eco.maxTrainers(team), Math.max(1, Math.round(wf * s.trainers))) : 0;
+  // maxtrainers (MID instrumentation — 40% of the time trainers sit below the Barracks cap while recruits
+  // WAIT, so the army trains slower than it could): when recruits are queued and food is fine, fill the
+  // trainer slots to the Barracks cap so recruits convert to soldiers at full throughput.
+  if (ab(team, 'maxtrainers') && hasBarracks && !lowFood && (p.recruits || 0) > 0) trainers = eco.maxTrainers(team);
   let students = hasSchool && !lowFood ? Math.max(0, Math.round(wf * s.students)) : 0;
   let remaining = Math.max(0, wf - builders - trainers - students);
   const farmers = Math.round(remaining * (s.farmers / (s.farmers + s.woodcutters + s.miners)));
