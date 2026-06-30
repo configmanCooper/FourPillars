@@ -518,6 +518,27 @@ function aiLord(state, team, sys, rng, persona, st) {
   else if ((team.resources.iron || 0) < 12 && state.phase !== 'EARLY') req(state, team, sys, st, C.ROLES.LORD, C.ROLES.STEWARD, 'NEED', { resource: 'iron' }, 30);
   else say(state, team, sys, st, C.ROLES.LORD, rng.pick(['Economy steady — building on.', 'The realm grows.', 'Keep the granaries full.']), 45);
 
+  // EMERGENCY military catch-up (your rule): the enemy out-militaries us and we have NO Barracks, but the
+  // Keep is FULL (no slot for one). Raze a DUPLICATE Keep building — highly preferring economy dupes (a 2nd
+  // farm / 2nd lumber camp / spare house) — to free a slot and raise a Barracks. Without an army we just lose.
+  if (ab(team, 'barracksrescue') && !st.acted && (st.cd.demo || 0) <= state.elapsed) {
+    const keep = state.areas[S.homeBase(team.team)];
+    const enemy = state.teams[S.enemyOf(team.team)];
+    const noBar = (team.buildings.barracks || 0) === 0 && team.buildQueue.every((q) => q.type !== 'barracks');
+    const behindMil = (enemy.pop.soldiers || 0) > (team.pop.soldiers || 0);
+    const keepFull = (S.buildingsAt(keep) + team.buildQueue.filter((q) => q.areaId === keep.id).length) >= keep.maxBuildings;
+    if (noBar && behindMil && keepFull) {
+      // Sacrifice a DUPLICATE (count ≥ 2), least-critical first — never the last of any building, never fixed.
+      const PREF = ['house', 'storehouse', 'marketplace', 'farm', 'lumberCamp', 'mine', 'school', 'stables', 'workshop', 'university'];
+      let sac = null; for (const tname of PREF) { if ((keep.buildings[tname] || 0) >= 2) { sac = tname; break; } }
+      if (sac && sys.buildings.demolishBuilding(state, team, keep.id, sac, null).ok) {
+        st.acted = true; st.cd.demo = state.elapsed + 30;
+        say(state, team, sys, st, C.ROLES.LORD, 'Razing a spare ' + B.BUILDINGS[sac].name + ' to raise a Barracks — we need an army!', 18);
+        if (eco.canAfford(team, B.BUILDINGS.barracks.cost)) sys.buildings.queueBuilding(state, team, keep.id, 'barracks');
+      }
+    }
+  }
+
   // The Lord steers the mines: if its next building is blocked on iron/stone (or the realm is short), ask the
   // Steward to bias the stone↔iron split toward it. The Steward weights the Lord's request highest & holds it.
   if (mfOn(team) && state.phase !== 'EARLY') {
