@@ -45,6 +45,7 @@ function step(state) {
     production.tickProduction(team, dt, log);
     sites.tickSites(state, team, dt, rng, log);
     army.tickMovement(state, team, dt);
+    army.tickEnergy(state, team, dt);
     army.tickTraining(state, team, dt);
     comms.tickComms(state, team, dt);
   }

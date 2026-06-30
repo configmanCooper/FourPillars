@@ -34,6 +34,8 @@ function moveUnits(from, to, type, n) {
   if (n <= 0) return 0;
   ensureGear(from); ensureGear(to);
   if (from.gear[type].length < Math.round(from.units[type] || 0)) reconcileHostGear(from);
+  // Carry energy with the moving soldiers: blend the source host's energy into the destination's average.
+  const toN = unitCount(to); to.energy = (hostEnergy(to) * toN + hostEnergy(from) * n) / (toN + n);
   from.units[type] -= n; to.units[type] = (to.units[type] || 0) + n;
   const moved = from.gear[type].splice(0, n);
   while (moved.length < n) moved.push({ w: 1, a: 0 });
@@ -41,7 +43,12 @@ function moveUnits(from, to, type, n) {
   return n;
 }
 // Add one soldier of a type to a host with a specific gear record.
-function addSoldier(g, type, rec) { ensureGear(g); g.units[type] = (g.units[type] || 0) + 1; g.gear[type].push(rec || { w: 1, a: 0 }); }
+function addSoldier(g, type, rec) {
+  ensureGear(g);
+  // A freshly mustered soldier arrives at FULL energy (100); blend it into the host's average.
+  const n0 = unitCount(g); g.energy = (hostEnergy(g) * n0 + 100) / (n0 + 1);
+  g.units[type] = (g.units[type] || 0) + 1; g.gear[type].push(rec || { w: 1, a: 0 });
+}
 // Remove one soldier of a type, returning its gear record (caller decides which — random by default).
 function removeSoldier(g, type, idx) {
   ensureGear(g); const arr = g.gear[type];
@@ -75,8 +82,32 @@ function newGroup(state, team, area, name) {
     id: S.uid('army'), team: team.team, name: name || 'Host', units: emptyUnits(),
     hasArmor: false, formation: 'line', stance: 'balanced', area,
     moving: null, mission: { type: 'idle' }, morale: 'normal', x: ar ? ar.x : 0, y: ar ? ar.y : 0,
+    energy: 100,   // 0-100 deployment energy: regenerates at the Keep, drains in the field (see tickEnergy)
   };
 }
+function hostEnergy(g) { return (g && typeof g.energy === 'number') ? g.energy : 100; }
+// Deployment energy: a host regenerates only at its own Keep, and tires in the field — faster on hostile
+// ground and faster still while marching. This makes over-extending across the map costly and gives fresh
+// Keep-raised troops (energy 100) an edge over a tired, far-flung enemy.
+function tickEnergy(state, team, dt) {
+  const home = S.homeBase(team.team);
+  for (const g of team.armies) {
+    if (unitCount(g) < 0.001) continue;
+    const moving = !!g.moving;
+    const at = currentArea(g);
+    let rate;
+    if (!moving && at === home) rate = 1;                 // stationed at the Keep → +1/s, regenerating
+    else {
+      const area = state.areas[at];
+      const onOwnOutpost = area && area.terrain !== 'base' && area.claimedBy === team.team;
+      rate = onOwnOutpost ? -0.4 : -0.5;                  // tire slower on our own outposts than on open/enemy ground
+      if (moving) rate *= 2;                              // marching tires them twice as fast
+    }
+    g.energy = Math.max(0, Math.min(100, hostEnergy(g) + rate * dt));
+  }
+}
+// Tiered combat penalty from low energy (applies to BOTH attack and defence): <30 → −10%, <20 → −25%, <10 → −50%.
+function energyMult(g) { const e = hostEnergy(g); if (e < 10) return 0.5; if (e < 20) return 0.75; if (e < 30) return 0.9; return 1; }
 
 // Find/create a stationary host at an area to receive newly trained units.
 function hostAt(state, team, area) {
@@ -421,6 +452,7 @@ function strength(team, g, enemyComp, wallMult, onOwnOutpost, unscouted) {
   if (mp) { if (mp.atkMult) atk *= mp.atkMult; if (mp.defMult) def *= mp.defMult; }
   def *= (1 + eco.stewardStat(team, 'troopDef'));   // Muster the Levy — DEFENCE only
   atk *= B.MORALE[g.morale] || 1; def *= B.MORALE[g.morale] || 1;
+  const em = energyMult(g); atk *= em; def *= em;   // deployment-energy penalty: tired hosts hit & defend worse
   // Fighting blind: in an area this team hasn't scouted, soldiers fight at a penalty to attack AND defence.
   if (unscouted) { const m = 1 - B.UNSCOUTED_COMBAT_PENALTY; atk *= m; def *= m; }
   return { atk, def, arrowNeed: arrowOk ? arrowNeed : 0 };
@@ -869,4 +901,5 @@ module.exports = {
   formUnits, trainUnits, upgradeUnits, cancelTraining, tickTraining, rally, command, setFormation, setStance, tickMovement, resolveCombat, tickRaze, transferUnits,
   garrison, unitCount, currentArea, barracksAreasOf, unitsAtArea, enforceCaps, roomAt,
   moveUnits, reconcileGear, ensureGear, reequip, hostPower, removeSoldier, logMil,
+  tickEnergy, hostEnergy, energyMult,
 };

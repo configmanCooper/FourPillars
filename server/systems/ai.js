@@ -1460,6 +1460,13 @@ function aiCommander(state, team, sys, rng, persona, st) {
         return;
       }
     }
+    // Nothing winnable to assault right now. A TIRED host (low energy → combat penalty) should fall back to the
+    // Keep to RECOVER rather than loiter on draining forward ground; a fresh host holds forward to project power.
+    if (ab(team, 'energyrest') && army.hostEnergy(w) < 40 && army.currentArea(w) !== home) {
+      army.command(state, team, w.id, 'defend');
+      say(state, team, sys, st, C.ROLES.COMMANDER, 'Spent — falling back to the Keep to rest and recover.', 22);
+      return;
+    }
     // Nothing winnable to assault right now: hold FORWARD ground near the enemy (project power), never idle at home.
     army.command(state, team, w.id, 'garrison', forwardSite(state, team) || bestSiteToHold(state, team) || home);
   };

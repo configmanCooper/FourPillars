@@ -389,6 +389,15 @@
     // count
     ctx.font = '700 11px Cinzel'; ctx.fillStyle = teamCol(team, true); ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
     ctx.strokeText(Math.round(count), cx, cy + 22); ctx.fillText(Math.round(count), cx, cy + 22);
+    // Deployment-energy bar under the host (host AVERAGE): green = fresh, yellow = tiring, red ≤30 (combat
+    // penalty). Hidden at full so rested/garrison hosts don't clutter the map.
+    const en = (typeof g.energy === 'number') ? g.energy : 100;
+    if (en < 99) {
+      const bw = 22 * scale, bx = cx - bw / 2, by = cy + 28;
+      ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(bx - 1, by - 1, bw + 2, 5);
+      ctx.fillStyle = en <= 30 ? '#d65050' : (en <= 55 ? '#d9a441' : '#6bbf5f');
+      ctx.fillRect(bx, by, bw * Math.max(0, Math.min(1, en / 100)), 3);
+    }
     if (g.mission && (g.mission.type === 'siege' || g.mission.type === 'raid')) { ctx.font = '11px serif'; ctx.fillText(g.mission.type === 'siege' ? '⚔️' : '🔥', cx + 13, cy - 12); }
     ctx.restore();
   }
