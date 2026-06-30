@@ -14,6 +14,10 @@ function canBuildAt(state, team, areaId) {
   const area = state.areas[areaId];
   if (!area) return { ok: false, reason: 'Unknown location.' };
   if (area.owner !== team.team) return { ok: false, reason: 'You must own this location to build here.' };
+  // You may only build on a WORKING outpost (or the Keep). Seizing ground by razing an enemy outpost leaves it
+  // owned but UN-claimed (no outpost) — you must re-claim/rebuild the outpost first. Without this, a captor
+  // could raise buildings on bare seized ground, producing the "owner, buildings, but no outpost" anomaly.
+  if (area.terrain !== 'base' && area.claimedBy !== team.team) return { ok: false, reason: 'Re-claim this outpost (rebuild it) before raising buildings here.' };
   if (slotsUsed(area, team) >= area.maxBuildings) return { ok: false, reason: area.name + ' is full (' + area.maxBuildings + ' build slots).' };
   return { ok: true, area };
 }
@@ -110,6 +114,20 @@ function tickBuildings(state, team, dt, log) {
   item.remaining -= rate * dt;
   if (item.remaining <= 0) {
     team.buildQueue.shift();
+    // Re-validate at COMPLETION: the target may have been captured/lost or its outpost un-claimed while the
+    // job was in progress. A completed job must NOT drop a building onto bare seized ground (the "owner, has
+    // buildings, but Outpost: unclaimed" bug). If it's no longer a buildable, claimed location we own (or the
+    // Keep), refund what was paid and abandon the construction.
+    const area = state.areas[item.areaId];
+    const def = B.BUILDINGS[item.type];
+    const valid = area && def && !def.fixed && area.owner === team.team
+      && (area.terrain === 'base' || area.claimedBy === team.team)
+      && S.buildingsAt(area) < area.maxBuildings;
+    if (!valid) {
+      eco.refund(team, item.paidCost || (def && def.cost) || {});
+      if (log) log(team.team, 'Construction ' + (def ? 'of the ' + def.name + ' ' : '') + 'at ' + (area ? area.name : 'a lost site') + ' was abandoned — the ground is no longer a working outpost.', 'build');
+      return;
+    }
     applyEffect(state, team, item, log);
   }
 }

@@ -459,7 +459,7 @@ function aiLord(state, team, sys, rng, persona, st) {
       const foe = S.enemyOf(team.team); const ek = S.homeBase(foe);
       let best = null, bestScore = -1e9;
       for (const id in state.areas) { const a = state.areas[id];
-        if (a.owner !== team.team || a.terrain === 'base' || freeSlots(state, team, id) <= 0) continue;
+        if (a.owner !== team.team || a.claimedBy !== team.team || a.terrain === 'base' || freeSlots(state, team, id) <= 0) continue;
         const bordersEnemy = a.connections.some((n) => state.areas[n] && (state.areas[n].owner === foe || n === ek));
         const sc = (a.buildings && a.buildings.walls ? 5 : 0) - (bordersEnemy ? 10 : 0) - (a.connections.indexOf(ek) >= 0 ? 5 : 0);
         if (sc > bestScore) { bestScore = sc; best = id; }
@@ -633,7 +633,9 @@ function canEventuallyAfford(team, cost) {
 function pickBuildArea(state, team) {
   const base = S.homeBase(team.team);
   if (freeSlots(state, team, base) > 0) return base;
-  for (const id in state.areas) { const a = state.areas[id]; if (a.owner === team.team && a.terrain !== 'base' && freeSlots(state, team, id) > 0) return id; }
+  // Only CLAIMED outposts are buildable — seized-but-unclaimed ground (owner set, no outpost) must be
+  // re-claimed by the Steward first, so don't route Lord builds there (they'd just fail).
+  for (const id in state.areas) { const a = state.areas[id]; if (a.owner === team.team && a.claimedBy === team.team && a.terrain !== 'base' && freeSlots(state, team, id) > 0) return id; }
   return null;
 }
 
