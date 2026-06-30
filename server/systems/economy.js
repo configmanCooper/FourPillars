@@ -487,6 +487,10 @@ function adjustWorker(state, team, job, delta) {
 // Dangerous-work toggle per gather pool (food/wood/mine): +50% output, but workers risk death.
 function setDangerWork(state, team, pool, on) {
   if (!['food', 'wood', 'mine'].includes(pool)) return { ok: false, reason: 'Unknown work crew.' };
+  // The Lord's worker lock means they alone control the workforce — and dangerous work KILLS home workers, so
+  // it must not be ENABLED while locked (standing a crew down is always allowed). Defense-in-depth: this guards
+  // every caller (AI or human) so locked workers can never be bled by dangerous labour.
+  if (on && team.workerLock) return { ok: false, reason: 'The Lord has locked the workforce — dangerous work is disabled until they unlock it.' };
   team.dangerWork = team.dangerWork || { food: false, wood: false, mine: false };
   team.dangerWork[pool] = !!on;
   const lab = { food: 'Farmers', wood: 'Woodcutters', mine: 'Miners' }[pool];

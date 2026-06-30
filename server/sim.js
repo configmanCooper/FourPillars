@@ -208,6 +208,9 @@ function applyAction(state, team, role, action, payload) {
     }
     case 'setWorkerLock': {
       T.workerLock = !!payload.locked;
+      // Locking the workforce also stands down any DANGEROUS work — the Lord controls their workers now, and
+      // dangerous labour kills them. (Stop the bleed immediately, even if the Steward is human/idle.)
+      if (T.workerLock && T.dangerWork) { for (const pool of ['food', 'wood', 'mine']) if (T.dangerWork[pool]) economy.setDangerWork(state, T, pool, false); }
       comms.postChat(state, T, 'LORD', T.workerLock ? '🔒 I will manage the workforce myself.' : '🔓 Steward, you may help assign workers.', 'request');
       return { ok: true, msg: T.workerLock ? 'Worker allocation locked to the Lord.' : 'Steward may assign workers.' };
     }

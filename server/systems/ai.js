@@ -676,6 +676,10 @@ function aiSteward(state, team, sys, rng, persona, st) {
       const underRaid = stewardUnderRaid(state, team);
       dwSafe = !team._starving && (dp.total || 0) > B.POP_FLOOR + 10 && !shrinking && !underRaid;
     }
+    // Respect the Lord's worker LOCK: dangerous work KILLS home workers (farmers/woodcutters/miners), so when
+    // the Lord has locked the workforce, the AI Steward must never gamble their lives — and must STAND DOWN any
+    // crew that's already on dangerous work (so a pre-lock toggle stops bleeding the Lord's locked workers).
+    if (team.workerLock) dwSafe = false;
     team._dwLastPop = dp.total || 0;
     const dw = team.dangerWork || {};
     team._dwOn = team._dwOn || {};   // pool -> elapsed when dangerous work was switched ON (for the time cap)
