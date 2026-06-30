@@ -387,6 +387,11 @@ function strength(team, g, enemyComp, wallMult, onOwnOutpost, unscouted) {
   // Research: Weaponsmithing lifts every soldier's attack; Plate Armour boosts armour's defence effect.
   const resAtk = 1 + eco.researchStat(team, 'attack');
   const armorDefMult = 1 + eco.researchStat(team, 'armorDef');
+  // Archer formation cover: archers are fragile alone but deadly behind a line. Each non-archer, non-catapult
+  // unit sharing their host shields them for +10% DEFENCE, capped at +100% (i.e. once 10+ frontline units screen
+  // them). Encourages mixing archers into a proper combined-arms host rather than fielding glass-cannon stacks.
+  let frontline = 0; for (const u of C.UNITS) { if (u !== 'archer' && u !== 'catapult') frontline += Math.round(g.units[u] || 0); }
+  const archerCoverDef = 1 + Math.min(1.0, 0.10 * frontline);
   for (const u of C.UNITS) {
     const n = Math.round(g.units[u] || 0); if (n <= 0) continue;
     const st = B.UNIT_STATS[u]; const wep = B.UNIT_WEAPON[u]; const recs = g.gear[u] || [];
@@ -395,6 +400,7 @@ function strength(team, g, enemyComp, wallMult, onOwnOutpost, unscouted) {
       let ua = st.atk, ud = st.def;
       if (u === 'archer' && !arrowOk) ua = 1;                                  // out of arrows -> fight poorly
       if (u === 'archer' && onOwnOutpost) ud *= B.ARCHER_OUTPOST_BONUS;        // archers dig in on our own outpost — DEFENCE only
+      if (u === 'archer') ud *= archerCoverDef;                                // +10% DEF per shielding frontline hostmate (cap +100%)
       if (u === 'cavalry') { ua *= cavBonus; ud *= cavBonus; }                 // strong vs soft (non-spear/non-cav) foes
       if (u === 'spearman') { ua *= spearBonus; ud *= spearBonus; }            // strong vs cavalry
       if (wep) ua *= (rec.w || 1);                                             // this soldier's OWN weapon quality

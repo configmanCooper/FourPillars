@@ -224,7 +224,7 @@
   function formationFx(f) { const x = B.FORMATIONS[f]; if (!x) return ''; const p = []; if (x.atkMult && x.atkMult !== 1) p.push('atk ' + fxPct(x.atkMult)); if (x.defMult && x.defMult !== 1) p.push('def ' + fxPct(x.defMult)); if (x.speedMult && x.speedMult !== 1) p.push('spd ' + fxPct(x.speedMult)); return p.join(', ') || 'no modifiers'; }
   function stanceFx(s) { const x = B.STANCES[s]; if (!x) return ''; const p = []; if (x.atkMult && x.atkMult !== 1) p.push('atk ' + fxPct(x.atkMult)); if (x.defMult && x.defMult !== 1) p.push('def ' + fxPct(x.defMult)); if (x.lossMult && x.lossMult !== 1) p.push('losses ' + fxPct(x.lossMult)); return p.join(', ') || 'no modifiers'; }
   // Short tactical role/counter hint per unit type (for the Train screen).
-  const UNIT_HINT = { militia: 'cheap fodder — fills ranks fast', spearman: 'counters 🐎 cavalry', swordsman: 'durable frontline melee', archer: 'ranged — needs 🏹 arrows; +25% DEF on a team outpost, +50% DEF/wall (owned)', cavalry: 'fast flanker — counters 🏹 archers & soft units', catapult: 'wrecks 🏰 Keeps & walls (needs Workshop)' };
+  const UNIT_HINT = { militia: 'cheap fodder — fills ranks fast', spearman: 'counters 🐎 cavalry', swordsman: 'durable frontline melee', archer: 'ranged — needs 🏹 arrows; +10% DEF per frontline hostmate (max +100%); +25% DEF on a team outpost, +50% DEF/wall (owned)', cavalry: 'fast flanker — counters 🏹 archers & soft units', catapult: 'wrecks 🏰 Keeps & walls (needs Workshop)' };
 
   // ---------- pause / surrender / vote overlay ----------
   function updatePause(snap) {
