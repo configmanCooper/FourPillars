@@ -324,6 +324,9 @@ function aiLord(state, team, sys, rng, persona, st) {
   // gear needs it, so getting wood income up FIRST compounds across the whole game): in a healthy early game
   // bias the split toward woodcutters so the economy/build engine spins up faster.
   else if (ab(team, 'woodopen') && state.phase === 'EARLY') { s = { farmers: .30, woodcutters: .34, miners: .14, builders: .12, students: .04, trainers: .06 }; }
+  // fastbuild (opening-tempo follow-up to woodopen — more wood early is only useful if it becomes BUILDINGS
+  // fast): while we have a build queue early, commit more hands to construction so the economy spins up sooner.
+  if (ab(team, 'fastbuild') && state.phase === 'EARLY' && team.buildQueue.length && !lowFood) s.builders = Math.max(s.builders, 0.20);
   const builders = team.buildQueue.length ? Math.max(1, Math.round(wf * s.builders)) : 1;
   let trainers = hasBarracks && !lowFood ? Math.min(eco.maxTrainers(team), Math.max(1, Math.round(wf * s.trainers))) : 0;
   let students = hasSchool && !lowFood ? Math.max(0, Math.round(wf * s.students)) : 0;
