@@ -226,9 +226,10 @@
   // Short tactical role/counter hint per unit type (for the Train screen).
   const UNIT_HINT = { militia: 'cheap fodder — fills ranks fast', spearman: 'counters 🐎 cavalry', swordsman: 'durable frontline melee', archer: 'ranged — needs 🏹 arrows; +25% DEF on a team outpost, +50% DEF/wall (owned)', cavalry: 'fast flanker — counters 🏹 archers & soft units', catapult: 'wrecks 🏰 Keeps & walls (needs Workshop)' };
 
-  // ---------- pause / vote overlay ----------
+  // ---------- pause / surrender / vote overlay ----------
   function updatePause(snap) {
     const pause = snap.pause || { active: false, vote: null, cooldownSec: {} };
+    const sv = snap.surrender || null;
     const ov = $('pauseOverlay'); const card = $('pauseCard');
     const me = State.you;
     const iVoted = pause.vote && pause.vote.votes && pause.vote.votes[me] !== undefined;
@@ -240,8 +241,31 @@
         const cd = pause.cooldownSec && pause.cooldownSec[me];
         if (pause.active) { btn.textContent = '▶ Resume'; btn.disabled = false; }
         else if (cd) { btn.textContent = '⏸ ' + cd + 's'; btn.disabled = true; }
-        else { btn.textContent = '⏸ Pause'; btn.disabled = !!pause.vote; }
+        else { btn.textContent = '⏸ Pause'; btn.disabled = !!pause.vote || !!sv; }
       }
+    }
+    // Surrender button — seated players only; disabled while a surrender offer or pause vote is live.
+    const sbtn = $('surrenderBtn');
+    if (sbtn) {
+      if (State.isSpectator || !State.myTeam) { sbtn.style.display = 'none'; }
+      else { sbtn.style.display = ''; sbtn.disabled = !!sv || !!(pause.vote); }
+    }
+    // A live surrender offer takes over the overlay (it ends the game; it outranks a pause prompt).
+    if (sv) {
+      ov.classList.remove('hidden');
+      const offering = State.myTeam === sv.fromTeam;
+      const deciding = State.myTeam === sv.foe;
+      const iVotedS = sv.votes && sv.votes[me] !== undefined;
+      let html = '<div class="pause-h">🏳 ' + esc(sv.byName) + ' offers to surrender</div>' +
+        '<div class="pause-sub">' + (C.TEAM_META[sv.foe] ? C.TEAM_META[sv.foe].name : sv.foe) + ' decides · <b>' + sv.endsInSec + 's</b> left</div>' +
+        '<div class="pause-tally"><span class="yes">✅ ' + (sv.yes || 0) + '</span> <span class="no">✖ ' + (sv.no || 0) + '</span> <span class="muted">of ' + (sv.voters || 0) + '</span></div>';
+      if (State.isSpectator) html += '<div class="muted">👁 The enemy is deciding…</div>';
+      else if (offering) html += '<div class="muted">Awaiting the enemy\'s decision…</div>';
+      else if (deciding && iVotedS) html += '<div class="muted">You voted. Waiting for the rest…</div>';
+      else if (deciding) html += '<div class="pause-sub muted">Accept to win now, or deny to fight on (no vote = accepted).</div><div class="pause-btns"><button class="btn btn-gold" onclick="FP.UI.voteSurrender(true)">Accept</button><button class="btn" onclick="FP.UI.voteSurrender(false)">Deny</button></div>';
+      else html += '<div class="muted">A surrender is on the table…</div>';
+      card.innerHTML = html;
+      return;
     }
     if (pause.vote) {
       const v = pause.vote;
@@ -2031,6 +2055,12 @@
     pauseToggle() { const snap = State.snapshot; if (snap && snap.pause && snap.pause.active) Net.resume(); else Net.pause(); },
     resume() { Net.resume(); },
     vote(v) { Net.vote(v); },
+    surrender() {
+      const snap = State.snapshot; if (!snap || State.isSpectator || !State.myTeam) return;
+      if (snap.surrender) { toast('A surrender offer is already on the table.'); return; }
+      if (window.confirm('Offer your kingdom\'s surrender? The enemy has 15s to accept (or it\'s accepted by default).')) Net.surrender();
+    },
+    voteSurrender(accept) { Net.voteSurrender(accept); },
     requestDefend(area) { Net.action('request', { type: 'DEFEND', payload: { area } }); toast('Asked Commander to defend.'); },
     requestAttack(mission, area) {
       const snap = State.snapshot; const name = (snap && snap.areas[area] && snap.areas[area].name) || 'there';

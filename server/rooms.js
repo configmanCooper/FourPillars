@@ -4,6 +4,7 @@ const C = require('../shared/constants.js');
 const B = require('../shared/balance.js');
 const S = require('../shared/schema.js');
 const sim = require('./sim.js');
+const victory = require('./systems/victory.js');
 
 function code4() {
   const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -128,18 +129,25 @@ class RoomManager {
       // Resolve any pause vote whose deadline has passed.
       if (state.pause.vote && Date.now() >= room._voteEndsMs) this.resolveVote(room);
       this.refreshPause(room);
+      // Surrender: AI teams may offer to concede a hopeless match; resolve the offer on its deadline.
+      this.maybeAIConcede(room);
+      if (state.surrender && Date.now() >= (room._surrenderEndsMs || 0)) this.resolveSurrender(room);
+      this.refreshSurrender(room);
       let result = null;
-      if (!state.pause.active) result = sim.step(state);
+      if (!state.pause.active && state.status === 'playing') result = sim.step(state);
       this.captureReplay(room);
       this.io.to(room.code).emit(C.EV.SNAPSHOT, sim.snapshot(state));
-      if (result) {
-        this.finishReplay(room, result);
-        this.io.to(room.code).emit(C.EV.GAME_OVER, { winner: result.winner, reason: result.reason });
-        clearInterval(room.interval); room.interval = null;
-        // If everyone has already left (AI finished the match alone), free the room.
-        if (![...room.players.values()].some((x) => x.connected)) this.rooms.delete(room.code);
-      }
+      if (result) this.concludeGame(room, result);
     }, B.TICK_MS);
+  }
+
+  // Finalise a finished game (from the natural victory check OR an accepted surrender) — record the
+  // replay outcome, tell everyone, stop the loop, and free the room if nobody is left watching.
+  concludeGame(room, result) {
+    this.finishReplay(room, result);
+    this.io.to(room.code).emit(C.EV.GAME_OVER, { winner: result.winner, reason: result.reason });
+    if (room.interval) { clearInterval(room.interval); room.interval = null; }
+    if (![...room.players.values()].some((x) => x.connected)) this.rooms.delete(room.code);
   }
 
   // ---------- replay / debug export ----------
@@ -296,15 +304,137 @@ class RoomManager {
     const humans = this.humansInRoom(room);
     let yes = 0, no = 0;
     for (const pid of humans) { if (v.votes[pid] === true) yes++; else if (v.votes[pid] === false) no++; }
-    const passed = yes > humans.length / 2;
+    // Default-accept: only humans vote, and an abstention counts as YES. So a vote passes UNLESS a strict
+    // majority of humans actively votes NO. ("If no one else votes, it's accepted by default; otherwise
+    // majority rules.") This keeps one player from being unable to pause/resume just because teammates
+    // didn't bother to vote, while still letting a real majority block it.
+    const passed = (no * 2) <= humans.length;
     if (passed) {
       state.pause.active = (v.kind === 'pause');
-      this.logPause(room, 'Vote passed (' + yes + '/' + humans.length + ') — game ' + (state.pause.active ? 'PAUSED' : 'RESUMED') + '.');
+      this.logPause(room, 'Vote passed (' + yes + ' yes / ' + no + ' no of ' + humans.length + ') — game ' + (state.pause.active ? 'PAUSED' : 'RESUMED') + '.');
     } else {
-      this.logPause(room, 'Vote failed (' + yes + ' yes / ' + no + ' no).');
+      this.logPause(room, 'Vote failed (' + yes + ' yes / ' + no + ' no) — majority opposed.');
     }
     state.pause.vote = null; room._voteEndsMs = 0;
     this.refreshPause(room); this.broadcastSnapshot(room);
+  }
+
+  // ---------- surrender / concede ----------
+  // Which team a connected human controls (a player only ever seats on one team). null if none.
+  teamOfPid(room, pid) {
+    for (const team of ['BLUE', 'RED']) for (const role of C.ROLE_ORDER) {
+      const sl = room.state.teams[team].slots[role];
+      if (sl.controller === C.CONTROLLER.HUMAN && sl.playerId === pid) return team;
+    }
+    return null;
+  }
+  // Connected human player-ids seated on a given team.
+  humansOnTeam(room, team) {
+    const pids = new Set();
+    for (const role of C.ROLE_ORDER) {
+      const sl = room.state.teams[team].slots[role];
+      if (sl.controller === C.CONTROLLER.HUMAN && sl.playerId) {
+        const p = room.players.get(sl.playerId);
+        if (p && p.connected) pids.add(sl.playerId);
+      }
+    }
+    return [...pids];
+  }
+  teamHasHuman(room, team) { return this.humansOnTeam(room, team).length > 0; }
+
+  // A seated human offers their team's surrender. The OTHER team then gets 15s to accept or deny.
+  offerSurrender(socket) {
+    const room = this.rooms.get(socket._fp && socket._fp.code); if (!room) return;
+    const state = room.state; if (state.status !== 'playing' || state.surrender) return;
+    const pid = socket._fp.pid;
+    const team = this.teamOfPid(room, pid);
+    if (!team) { socket.emit(C.EV.ERROR_MSG, { msg: 'Only a seated player can surrender.' }); return; }
+    this.startSurrender(room, team, this.playerName(room, pid), false);
+  }
+
+  // Begin a surrender offer from `fromTeam`. The enemy team votes to accept (default) or deny within 15s.
+  // An enemy that is ALL AI accepts immediately (AI never refuses a concession).
+  startSurrender(room, fromTeam, byName, aiOffer) {
+    const state = room.state;
+    const foe = S.enemyOf(fromTeam);
+    state.surrender = { fromTeam, foe, byName: byName || (C.TEAM_META[fromTeam] ? C.TEAM_META[fromTeam].name : fromTeam), aiOffer: !!aiOffer, votes: {}, endsInSec: 15, yes: 0, no: 0, voters: 0 };
+    room._surrenderEndsMs = Date.now() + 15000;
+    this.logPause(room, (C.TEAM_META[fromTeam] ? C.TEAM_META[fromTeam].name : fromTeam) + (aiOffer ? ' (AI) seeks terms — they offer to surrender.' : ' offers to surrender — the enemy has 15s to accept.'));
+    // If the deciding (enemy) side has no humans, the AI always accepts the concession immediately.
+    if (!this.teamHasHuman(room, foe)) { this.resolveSurrender(room); return; }
+    this.refreshSurrender(room); this.broadcastSnapshot(room);
+  }
+
+  // A human on the DECIDING team votes to accept/deny the standing surrender offer.
+  voteSurrender(socket, payload) {
+    const room = this.rooms.get(socket._fp && socket._fp.code); if (!room) return;
+    const state = room.state; const sv = state.surrender; if (!sv) return;
+    const pid = socket._fp.pid;
+    const team = this.teamOfPid(room, pid);
+    if (team !== sv.foe) { socket.emit(C.EV.ERROR_MSG, { msg: 'Only the enemy team votes on a surrender.' }); return; }
+    sv.votes[pid] = !!payload.accept;
+    // Resolve early once every deciding human has voted.
+    const deciders = this.humansOnTeam(room, sv.foe);
+    if (deciders.every((p) => sv.votes[p] !== undefined)) this.resolveSurrender(room);
+    else { this.refreshSurrender(room); this.broadcastSnapshot(room); }
+  }
+
+  // Tally the deciding team's human votes. Default-accept: an offer is ACCEPTED unless a strict majority of
+  // the enemy's humans actively DENY it. No humans on the enemy side ⇒ AI auto-accepts.
+  resolveSurrender(room) {
+    const state = room.state; const sv = state.surrender; if (!sv) return;
+    const deciders = this.humansOnTeam(room, sv.foe);
+    let accept = 0, deny = 0;
+    for (const pid of deciders) { if (sv.votes[pid] === true) accept++; else if (sv.votes[pid] === false) deny++; }
+    const accepted = (deny * 2) <= deciders.length;   // accepted unless a majority of enemy humans deny
+    state.surrender = null; room._surrenderEndsMs = 0;
+    if (accepted) {
+      const winner = sv.foe, loser = sv.fromTeam;
+      const reason = (C.TEAM_META[loser] ? C.TEAM_META[loser].name : loser) + ' surrendered.';
+      const result = victory.finish(state, winner, reason);
+      this.logPause(room, reason + ' ' + (C.TEAM_META[winner] ? C.TEAM_META[winner].name : winner) + ' wins.');
+      this.captureReplay(room);
+      this.io.to(room.code).emit(C.EV.SNAPSHOT, sim.snapshot(state));
+      this.concludeGame(room, result);
+    } else {
+      this.logPause(room, 'The surrender was refused (' + deny + ' against) — the war goes on.');
+      // Brief cooldown so a refused AI offer doesn't immediately re-trigger.
+      room._aiConcedeCooldownMs = Date.now() + 60000;
+      this.refreshSurrender(room); this.broadcastSnapshot(room);
+    }
+  }
+
+  refreshSurrender(room) {
+    const state = room.state; const sv = state.surrender; if (!sv) return;
+    const deciders = this.humansOnTeam(room, sv.foe);
+    let accept = 0, deny = 0;
+    for (const pid of deciders) { if (sv.votes[pid] === true) accept++; else if (sv.votes[pid] === false) deny++; }
+    sv.yes = accept; sv.no = deny; sv.voters = deciders.length;
+    sv.endsInSec = Math.max(0, Math.ceil(((room._surrenderEndsMs || 0) - Date.now()) / 1000));
+  }
+
+  // An AI team with NO humans, losing badly to an enemy that HAS humans, offers to concede. Thresholds:
+  // enemy score ≥ 1.5×, enemy army strength ≥ 1.5×, and enemy holds ≥ 2× the sites. All-AI-vs-all-AI never
+  // triggers (the enemy must contain a human), so pure simulations are unaffected.
+  maybeAIConcede(room) {
+    const state = room.state;
+    if (state.status !== 'playing' || state.surrender) return;
+    if (state.elapsed < 300) return;                                  // not in the opening — give the match time
+    if ((room._aiConcedeCooldownMs || 0) > Date.now()) return;
+    for (const team of ['BLUE', 'RED']) {
+      const foe = S.enemyOf(team);
+      if (this.teamHasHuman(room, team)) continue;                    // the conceding team must be ALL AI
+      if (!this.teamHasHuman(room, foe)) continue;                    // and only ever concede TO a human side
+      const us = state.teams[team], them = state.teams[foe];
+      const ourScore = us.score || 0, theirScore = them.score || 0;
+      const ourArmy = victory.armyStrength(us), theirArmy = victory.armyStrength(them);
+      const ourSites = victory.sitesControlled(state, us), theirSites = victory.sitesControlled(state, them);
+      if (theirScore >= 1.5 * ourScore && theirArmy >= 1.5 * ourArmy && theirSites >= 2 * ourSites
+          && theirScore > 0 && theirArmy > 0 && theirSites >= 1) {
+        this.startSurrender(room, team, null, true);
+        return;
+      }
+    }
   }
 
   // Keep client-facing pause fields (countdown, tallies, cooldowns) fresh.

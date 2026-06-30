@@ -50,6 +50,8 @@
     pause() { socket.emit(C.EV.PAUSE_REQUEST); },
     resume() { socket.emit(C.EV.RESUME_REQUEST); },
     vote(v) { socket.emit(C.EV.PAUSE_VOTE, { vote: v }); },
+    surrender() { socket.emit(C.EV.SURRENDER_REQUEST); },
+    voteSurrender(accept) { socket.emit(C.EV.SURRENDER_VOTE, { accept }); },
     requestReplay() { socket.emit(C.EV.REQUEST_REPLAY); },
   };
   window.FP.Net = Net;

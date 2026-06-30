@@ -341,6 +341,7 @@ function snapshot(state) {
     events: state.events,
     combatFx: state._combatFx || [],
     pause: state.pause,
+    surrender: state.surrender || null,
   };
 }
 

@@ -115,6 +115,8 @@
     PAUSE_REQUEST: 'pause_request',
     RESUME_REQUEST: 'resume_request',
     PAUSE_VOTE: 'pause_vote',
+    SURRENDER_REQUEST: 'surrender_request',
+    SURRENDER_VOTE: 'surrender_vote',
     REQUEST_REPLAY: 'request_replay',
     // server -> client
     ROOM_UPDATE: 'room_update',

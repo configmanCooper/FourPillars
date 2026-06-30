@@ -49,4 +49,4 @@ function finish(state, winner, reason) {
   return { winner, reason };
 }
 
-module.exports = { computeScore, update, checkVictory, buildingCount, armyStrength, sitesControlled };
+module.exports = { computeScore, update, checkVictory, finish, buildingCount, armyStrength, sitesControlled };

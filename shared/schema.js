@@ -188,6 +188,7 @@
       events: [],
       nextEventAt: 30,
       pause: { active: false, vote: null, cooldownSec: {} },
+      surrender: null,
     };
     // Starting town buildings sit at each Keep (the base location).
     state.areas.blue_base.buildings = { house: 1, farm: 1, lumberCamp: 1, mine: 1, watchtower: 1 };

@@ -116,6 +116,8 @@
 
   // Pause button.
   $('pauseBtn').onclick = () => UI.pauseToggle();
+  // Surrender button.
+  { const sb = $('surrenderBtn'); if (sb) sb.onclick = () => UI.surrender(); }
   // Help / onboarding.
   $('helpBtn').onclick = () => UI.showHelp();
 
