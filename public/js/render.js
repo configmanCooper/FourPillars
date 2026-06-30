@@ -189,6 +189,17 @@
         ctx.font = '700 9px Cinzel'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         ctx.fillStyle = '#bcd2ee'; ctx.fillText('🔭 ' + Math.round(pct * 100) + '%', cx, by - 3);
       }
+      // Outpost BUILD progress bar: the site MY team's Steward is currently claiming / raising.
+      const bj = st.myTeam && snap.teams && snap.teams[st.myTeam] && snap.teams[st.myTeam]._busyJob;
+      if (bj && bj.kind === 'claim' && bj.areaId === id) {
+        const CT = (window.FP.Balance && window.FP.Balance.CLAIM_TIME) || 1;
+        const pct = Math.max(0, Math.min(1, 1 - (bj.remaining || 0) / CT));
+        const bw = 70 * scale, bx = cx - bw / 2, by = cy + 60 * scale;
+        ctx.fillStyle = 'rgba(20,14,8,0.85)'; roundRect(ctx, bx - 2, by - 2, bw + 4, 8, 3); ctx.fill();
+        ctx.fillStyle = '#caa24a'; ctx.fillRect(bx, by, bw * pct, 4);
+        ctx.font = '700 9px Cinzel'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#e7d8b4'; ctx.fillText('🏗 Raising ' + Math.round(pct * 100) + '%', cx, by - 3);
+      }
       // Selection ring.
       if (st.selectedArea === id) {
         ctx.beginPath(); ctx.arc(cx, cy, 82 * scale, 0, Math.PI * 2);
@@ -220,6 +231,22 @@
           ctx.font = '700 11px Cinzel'; ctx.fillStyle = 'rgba(220,70,50,' + (0.6 + pulse * 0.4) + ')';
           ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
           ctx.strokeText('⚠ AT RISK', cx, cy - 46 * scale); ctx.fillText('⚠ AT RISK', cx, cy - 46 * scale);
+        }
+        // UNDER RAID: the outpost is actively being razed right now — pulsing alert + a remaining-health bar
+        // (the building currently being torn down). Green→red as it's battered toward destruction.
+        const beingRazed = a.terrain !== 'base' && a._razeHp != null && a._razeHpMax && (snap.tick - (a._razeActiveTick || -999)) <= 2;
+        if (beingRazed && !(a.captureProgress > 0)) {
+          const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 120);
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.font = '700 11px Cinzel'; ctx.fillStyle = 'rgba(230,80,60,' + (0.6 + pulse * 0.4) + ')';
+          ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+          ctx.strokeText('⚔ UNDER RAID', cx, cy - 46 * scale); ctx.fillText('⚔ UNDER RAID', cx, cy - 46 * scale);
+          const hp = Math.max(0, Math.min(1, a._razeHp / a._razeHpMax));
+          const bw = 70 * scale, bx = cx - bw / 2, by = cy - 36 * scale;
+          ctx.fillStyle = 'rgba(20,14,8,0.85)'; roundRect(ctx, bx - 2, by - 2, bw + 4, 8, 3); ctx.fill();
+          ctx.fillStyle = hp > 0.4 ? '#6bbf5f' : '#d65050'; ctx.fillRect(bx, by, bw * hp, 4);
+          ctx.font = '700 9px Cinzel'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+          ctx.fillStyle = '#f0cfc7'; ctx.fillText('🛡 ' + Math.round(hp * 100) + '%', cx, by - 3);
         }
       }
       // Your own outposts: flag ~5s before a caravan departs, and show stationed guards.

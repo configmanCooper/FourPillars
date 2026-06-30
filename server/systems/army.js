@@ -841,6 +841,8 @@ function tickRaze(state, dt, rng, log) {
     const wmRaze = (!isBase && area.site && B.WORK_MODES[area.site.workMode]) ? B.WORK_MODES[area.site.workMode].razeMult : 1;
     const targetHp = B.BUILDING_RAZE_HP * (target === 'walls' ? B.WALL_RAZE_MULT : 1) * (isBase ? B.KEEP_RAZE_MULT : B.OUTPOST_RAZE_MULT) * wmRaze;
     if (area._razeTarget !== target) { area._razeTarget = target; area._razeHp = targetHp; }
+    area._razeHpMax = targetHp;                 // expose for the client's outpost health bar
+    area._razeActiveTick = state.tick;          // mark "actively being razed THIS tick" for the raid indicator
     area._razeHp -= power * dt;
     // The Keep's health bar reflects the Watchtower being battered down (full → 0 as it's razed).
     if (target === 'watchtower' && isBase) state.teams[owner].keep.hp = Math.max(0, state.teams[owner].keep.maxHp * (area._razeHp / targetHp));
