@@ -94,6 +94,9 @@
       tiers: [{ rp: 20, cost: { stone: 30, wood: 30 }, val: 60 }, { rp: 45, cost: { stone: 60, wood: 60 }, val: 140 }, { rp: 90, cost: { stone: 100, wood: 100 }, val: 260 }] },
     scholarship:  { name: 'Scholarship', glyph: '🎓', stat: 'research', unit: 'pct', desc: 'Researchers work faster',
       tiers: [{ rp: 20, cost: { relics: 1 }, val: 0.25 }, { rp: 45, cost: { relics: 2 }, val: 0.60 }, { rp: 90, cost: { relics: 3 }, val: 1.20 }] },
+    keephall:     { name: 'Keep Expansion', glyph: '🏯', stat: 'keepSlots', unit: 'flat', desc: 'Each tier adds a build slot to your Keep',
+      // Each tier costs DOUBLE an outpost upgrade (wood 120 / stone 80) + Research Points + 1 Relic (artifact).
+      tiers: [{ rp: 20, cost: { wood: 120, stone: 80, relics: 1 }, val: 1 }, { rp: 45, cost: { wood: 120, stone: 80, relics: 1 }, val: 2 }, { rp: 90, cost: { wood: 120, stone: 80, relics: 1 }, val: 3 }] },
   };
 
   // Building costs and effects. effect keys are read by systems.
@@ -423,7 +426,7 @@
   const ARCHER_OUTPOST_BONUS = 1.25;    // archers fight +25% when stationed on their team's own outpost
   // Building razing: an unopposed enemy force destroys a location's buildings, walls first.
   const BUILDING_RAZE_HP = 60;          // base HP per building (≈ 1 archer in 60s)
-  const RAZE_STAT = { catapult: 20, cavalry: 3, militia: 2, spearman: 2, swordsman: 2, archer: 1 }; // raze HP/sec each
+  const RAZE_STAT = { catapult: 20, cavalry: 6, militia: 2.5, spearman: 2.5, swordsman: 2.5, archer: 1.25 }; // raze HP/sec each
   const WALL_RAZE_MULT = 2;             // walls take twice as long and must fall first
   const CATAPULT_WALL_RAZE_BONUS = 1.5; // catapults raze WALLS 50% faster (siege engines shine vs fortifications)
   const KEEP_RAZE_MULT = 2;             // buildings at the Keep take 100% longer

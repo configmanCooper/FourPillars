@@ -568,6 +568,26 @@ function aiManageResearch(state, team, sys, rng, persona, st) {
     if (add > 0) sys.economy.setResearchers(state, team, add);
   }
   // 3. Spend Research Points on the next tier of a prioritised line we can afford.
+  // 3a. Keep Expansion (REACTIVE & RARE — a turtling play only): pack the safe, defensible Keep with even more
+  // buildings, but only when there's genuinely nowhere else to build and materials are plentiful. Gate hard:
+  //  • a turtling posture (turtler persona or a defensive military policy);
+  //  • the Keep is full AND owned outposts have at most 2 free slots total (no real cheaper room to expand);
+  //  • we have a comfortable surplus of wood/stone beyond the cost, and a relic to spare (relics are also score).
+  if (state.phase !== 'EARLY' && (persona === 'turtler' || team.militaryPolicy === 'defensive')) {
+    const home = S.homeBase(team.team);
+    const khCur = (team.research && team.research.keephall) || 0;
+    const khDef = B.RESEARCH.keephall;
+    if (khCur < khDef.tiers.length && freeSlots(state, team, home) <= 0) {
+      let outpostRoom = 0;
+      for (const id in state.areas) { const a = state.areas[id]; if (a.owner === team.team && a.terrain !== 'base' && a.site) outpostRoom += Math.max(0, freeSlots(state, team, id)); }
+      const tier = khDef.tiers[khCur];
+      const plentyMaterials = (team.resources.wood || 0) >= (tier.cost.wood || 0) + 100 && (team.resources.stone || 0) >= (tier.cost.stone || 0) + 80;
+      const relicReserve = (team.resources.relics || 0) >= (tier.cost.relics || 0) + 1;
+      if (outpostRoom <= 2 && plentyMaterials && relicReserve && (team.researchPoints || 0) >= tier.rp && eco.canAfford(team, tier.cost)) {
+        if (sys.economy.buyResearch(state, team, 'keephall').ok) { st.acted = true; say(state, team, sys, st, C.ROLES.LORD, '🏯 Expanded the Keep — another build slot (T' + (khCur + 1) + ').', 25); return; }
+      }
+    }
+  }
   const order = RESEARCH_PRIORITY[persona] || RESEARCH_PRIORITY.default;
   for (const key of order) {
     const def = B.RESEARCH[key]; if (!def) continue;

@@ -786,8 +786,7 @@ function tickRaze(state, dt, rng, log) {
     const razeTarget = nextRazeTarget(area, isBase);   // what's being razed now (walls first) — needed for the catapult wall bonus
     for (const g of enemyHosts) for (const u of C.UNITS) {
       const n = g.units[u] || 0; if (!n) continue;
-      const armorMult = g.hasArmor ? B.EQUIP_TIER_MULT.advanced : 1;
-      let rp = (B.RAZE_STAT[u] || 0) * armorMult;
+      let rp = (B.RAZE_STAT[u] || 0);
       if (u === 'catapult') {
         const recs = (g.gear && g.gear[u]) || []; let q = 0, cnt = 0; for (const r of recs) { q += (r.w || 1); cnt++; } rp *= (cnt > 0 ? q / cnt : 1) * siegeRes;
         if (razeTarget === 'walls') rp *= B.CATAPULT_WALL_RAZE_BONUS;   // siege engines tear through fortifications

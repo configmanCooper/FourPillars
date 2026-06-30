@@ -596,6 +596,12 @@ function buyResearch(state, team, key) {
   team.research = team.research || {};
   team.research[key] = cur + 1;
   team.researchCooldownUntil = state.elapsed + B.RESEARCH_COOLDOWN;
+  // Keep Expansion: each tier permanently grants the Keep one more build slot.
+  if (def.stat === 'keepSlots') {
+    const baseId = team.team === 'BLUE' ? 'blue_base' : 'red_base';
+    const base = state.areas[baseId];
+    if (base) base.maxBuildings += 1;
+  }
   recomputeDerived(team);
   return { ok: true, msg: def.name + ' Tier ' + (cur + 1) + ' researched!' };
 }
