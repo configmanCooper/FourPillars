@@ -1511,11 +1511,24 @@ function aiCommander(state, team, sys, rng, persona, st) {
 
   // Apply the Commander's full toolkit: per-persona stance + a context-appropriate formation
   // (defensive hosts hold a Shield Wall; attackers use a Battle Line). Same actions a human uses.
+  const smartStance = ab(team, 'smartstance');
   for (const h of team.armies) {
     if (army.unitCount(h) < 0.5) continue;
-    army.setStance(team, h.id, cfg.stance);
     const m = h.mission && h.mission.type;
     const defensive = h.isGarrison || defensivePersona || m === 'defend' || m === 'garrison';
+    // smartstance (A/B): stance is otherwise FIXED per persona and never adapts. A human reads the fight —
+    // press hard (Aggressive: +25% atk / +30% losses) only when winning DECISIVELY so the enemy dies in fewer
+    // rounds and we take fewer net hits; hold ground or pull punches (Cautious: −15% atk / −30% losses) when
+    // defending or in a coin-flip/losing fight so we bleed less. Otherwise Balanced.
+    let stance = cfg.stance;
+    if (smartStance) {
+      const wc = winChanceAt(state, army, team, h, army.currentArea(h));
+      const attacking = m === 'siege' || m === 'raid' || m === 'attack' || m === 'engage';
+      if (h.isGarrison || m === 'defend' || m === 'garrison') stance = wc >= 0.75 ? 'balanced' : 'cautious';
+      else if (attacking) stance = wc >= 0.72 ? 'aggressive' : (wc < 0.5 ? 'cautious' : 'balanced');
+      else stance = cfg.stance;
+    }
+    army.setStance(team, h.id, stance);
     army.setFormation(team, h.id, defensive ? 'shieldWall' : 'line');
   }
   // Occasionally re-equip hosts from the armoury so freshly-forged or recovered gear reaches soldiers
