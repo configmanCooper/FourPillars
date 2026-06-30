@@ -839,7 +839,7 @@ function tickRaze(state, dt, rng, log) {
     // Damage the current target building; walls (×2) and Keep buildings (×2) take longer. An outpost's
     // WORK MODE also scales its raze HP (Defensive ×1.5 = longer, Maximum Production ×0.67 = faster).
     const wmRaze = (!isBase && area.site && B.WORK_MODES[area.site.workMode]) ? B.WORK_MODES[area.site.workMode].razeMult : 1;
-    const targetHp = B.BUILDING_RAZE_HP * (target === 'walls' ? B.WALL_RAZE_MULT : 1) * (isBase ? B.KEEP_RAZE_MULT : B.OUTPOST_RAZE_MULT) * wmRaze;
+    const targetHp = B.BUILDING_RAZE_HP * (target === 'walls' ? B.WALL_RAZE_MULT : 1) * (isBase ? B.KEEP_RAZE_MULT : 1) * wmRaze;
     if (area._razeTarget !== target) { area._razeTarget = target; area._razeHp = targetHp; }
     area._razeHpMax = targetHp;                 // expose for the client's outpost health bar
     area._razeActiveTick = state.tick;          // mark "actively being razed THIS tick" for the raid indicator

@@ -225,12 +225,21 @@
         const w = ctx.measureText(label).width + 8;
         ctx.fillStyle = 'rgba(20,14,8,0.82)'; roundRect(ctx, bx - w / 2, by - 7, w, 14, 4); ctx.fill();
         ctx.fillStyle = used >= max ? '#d9a441' : '#e7d8b4'; ctx.fillText(label, bx, by);
-        // capture risk
+        // capture risk — an EMPTY outpost being seized: pulsing alert + a CAPTURE progress bar (fills red as
+        // the enemy holds the bare ground toward seizing it). captureProgress runs 0 → CAPTURE_AFTER_RAZE.
         if (a.captureProgress > 0) {
           const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 140);
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.font = '700 11px Cinzel'; ctx.fillStyle = 'rgba(220,70,50,' + (0.6 + pulse * 0.4) + ')';
           ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-          ctx.strokeText('⚠ AT RISK', cx, cy - 46 * scale); ctx.fillText('⚠ AT RISK', cx, cy - 46 * scale);
+          ctx.strokeText('⚠ BEING CAPTURED', cx, cy - 46 * scale); ctx.fillText('⚠ BEING CAPTURED', cx, cy - 46 * scale);
+          const CAR = (window.FP.Balance && window.FP.Balance.CAPTURE_AFTER_RAZE) || 10;
+          const cp = Math.max(0, Math.min(1, a.captureProgress / CAR));
+          const bw = 70 * scale, bx = cx - bw / 2, by = cy - 36 * scale;
+          ctx.fillStyle = 'rgba(20,14,8,0.85)'; roundRect(ctx, bx - 2, by - 2, bw + 4, 8, 3); ctx.fill();
+          ctx.fillStyle = '#d65050'; ctx.fillRect(bx, by, bw * cp, 4);
+          ctx.font = '700 9px Cinzel'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+          ctx.fillStyle = '#f0cfc7'; ctx.fillText('🚩 ' + Math.round(cp * 100) + '%', cx, by - 3);
         }
         // UNDER RAID: the outpost is actively being razed right now — pulsing alert + a remaining-health bar
         // (the building currently being torn down). Green→red as it's battered toward destruction.

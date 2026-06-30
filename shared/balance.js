@@ -430,12 +430,12 @@
   const WALL_RAZE_MULT = 2;             // walls take twice as long and must fall first
   const CATAPULT_WALL_RAZE_BONUS = 1.5; // catapults raze WALLS 50% faster (siege engines shine vs fortifications)
   const KEEP_RAZE_MULT = 2;             // buildings at the Keep take 100% longer
-  const OUTPOST_RAZE_MULT = 2;          // outpost buildings are tougher (×2 HP) — they were razed far too quickly
   const KEEP_DEFENDER_BONUS = 1.5;      // +50% combat effectiveness for defenders at their own Keep
   const MAX_UNITS_PER_AREA = 20;        // a team's effective force cap at any one location
   const RAZE_POINTS = 3;                // score per building razed (doubled at an enemy Keep)
   const KEEP_RAZE_POINTS = 6;
-  const CAPTURE_AFTER_RAZE = 5;         // seconds to seize a non-Keep site once all its buildings are razed
+  const CAPTURE_AFTER_RAZE = 10;        // seconds to seize a non-Keep site once empty (no buildings) — doubled
+                                        // from 5 so a bare/empty outpost is twice as durable (time to defend it)
   const ARCHER_ARROW_USE = 0.5;         // arrows consumed per archer per battle round
   const COMBAT_ROUND_LOSS = 0.12;       // (legacy) fraction of losing-side power converted to casualties per round
   // Per-second discrete combat: each engaged side rolls 0/1/2/3 kills/sec based on the strength share.
@@ -519,7 +519,7 @@
     HOST_SPEED_MULT, CAVALRY_SPEED_MULT, PURSUIT_CATCH_RADIUS, PURSUIT_TIMEOUT,
     RECIPES, BLACKSMITH_SPECS, SPEC_TIME_REDUCTION, SPEC_QUALITY_BONUS, SPEC_QUALITY_THRESHOLD, CONTRACTS, CONTRACT_OFFER_COUNT, CONTRACT_ROTATE_SEC, WEAPON_DEGRADE_CHANCE, QUALITY_LADDER,
     UNIT_STATS, EQUIP_TIER_MULT, ARMOR_DEF_BONUS, COUNTER_BONUS_PER, COUNTER_BONUS_MAX, ARCHER_OUTPOST_BONUS, FORMATIONS, STANCES, DOCTRINES, MILITARY_POLICIES, MILITARY_POLICY_DEFAULT, WALL_TROOP_BONUS, WALL_ARCHER_BONUS,
-    BUILDING_RAZE_HP, RAZE_STAT, WALL_RAZE_MULT, CATAPULT_WALL_RAZE_BONUS, KEEP_RAZE_MULT, OUTPOST_RAZE_MULT, KEEP_DEFENDER_BONUS, MAX_UNITS_PER_AREA, RAZE_POINTS, KEEP_RAZE_POINTS, CAPTURE_AFTER_RAZE,
+    BUILDING_RAZE_HP, RAZE_STAT, WALL_RAZE_MULT, CATAPULT_WALL_RAZE_BONUS, KEEP_RAZE_MULT, KEEP_DEFENDER_BONUS, MAX_UNITS_PER_AREA, RAZE_POINTS, KEEP_RAZE_POINTS, CAPTURE_AFTER_RAZE,
     QUALITY_TIERS, FORGE_ZONES, AI_QUALITY_DIST, UNIT_WEAPON, qualityTier, qualityById, rollQuality,
     ARCHER_ARROW_USE, COMBAT_ROUND_LOSS, COMBAT_INTENSITY, SPEED_COMBAT_REF, SPEED_COMBAT_MIN, SPEED_COMBAT_MAX, ARMOR_SAVE_BASE, ARMOR_SAVE_MAX, MORALE,
     KEEP_HP, KEEP_DEF, SCORE_WEIGHTS, RECRUITS_PER_UNIT, START_RECRUITS,
