@@ -708,7 +708,7 @@ function roomAt(team, areaId, exceptId) { return Math.max(0, B.MAX_UNITS_PER_ARE
 function mergeCoLocated(team) {
   const byKey = {};
   for (const g of team.armies) {
-    if (g.moving || g.isGarrison || g.harasser || g.pursue || unitCount(g) < 0.5) continue;
+    if (g.moving || g.isGarrison || g.harasser || g.swarm || g.pursue || unitCount(g) < 0.5) continue;
     const m = g.mission || {};
     const key = g.area + '|' + (m.type || 'idle') + '|' + (m.targetArea || '');
     (byKey[key] = byKey[key] || []).push(g);

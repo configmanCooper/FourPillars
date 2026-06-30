@@ -1236,7 +1236,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
   // actually home and stationary (otherwise folding would teleport troops across the map).
   if (army.currentArea(g) === home && !g.moving) {
     for (const h of team.armies) {
-      if (h.isGarrison || h.moving || h.harasser || h.postGuard) continue;
+      if (h.isGarrison || h.moving || h.harasser || h.swarm || h.postGuard) continue;
       const m = h.mission && h.mission.type;
       if (army.currentArea(h) === home && army.unitCount(h) >= 0.5 && (!m || m === 'idle' || m === 'defend')) {
         let room = B.MAX_UNITS_PER_AREA - army.unitCount(g);
@@ -1317,6 +1317,15 @@ function aiCommander(state, team, sys, rng, persona, st) {
   const ownPostCount = ownedOutpostList(state, team).length;
   const desperate = ab(team, 'antisnowball') && state.phase !== 'EARLY' && ownPostCount <= 1 && edge < 0.9;
   if (desperate) maxHosts = Math.max(maxHosts, 2);   // main turtle host + one opportunistic raider
+  // swarmharass: when we've been snowballed (desperate) AND the enemy holds a SPRAWLING empire (≥3
+  // outposts), don't just turtle to death — fan SEVERAL tiny (1-2 unit) fast raiders out across the enemy's
+  // many posts. The pinpricks force their army to run all over chasing us (tiring them — see energy) and
+  // snatch undefended posts, buying our main force a window to consolidate and rebuild an outpost.
+  const enemyPostCount = countEnemyOutposts(state, enemyTeam);
+  const swarm = ab(team, 'swarmharass') && desperate && enemyPostCount >= 3;
+  if (swarm) maxHosts = Math.max(maxHosts, clampI(enemyPostCount, 3, 5));
+  // When we're no longer being snowballed, retire any swarm raiders back into the normal command ladder.
+  if (!swarm) { for (const h of team.armies) if (h.swarm) h.swarm = false; }
 
   // Choose this field host's mission by the priority ladder.
   const decide = (w) => {
@@ -1490,7 +1499,26 @@ function aiCommander(state, team, sys, rng, persona, st) {
     if (army.currentArea(w) !== tgt || w.moving) army.command(state, team, w.id, 'garrison', tgt);
   };
 
-  // A post-guard holds ONE owned frontier outpost. It stays put while it can hold the post; if the post
+  // A swarm raider: a tiny (1-2 unit) fast host whose job is to ANNOY a sprawling enemy — fan out to a
+  // different enemy outpost than its siblings, snatch it if (near-)undefended, and otherwise pick at the
+  // least-defended post we won't be annihilated at. The point is to spread the enemy thin and make their
+  // army give chase (tiring it), NOT to win a stand-up fight — so it never dives a death-trap, and slips
+  // home to rejoin the rebuild when there's nothing safe left to harry.
+  const swarmRaid = (w) => {
+    if (keepThreat) { w.swarm = false; army.command(state, team, w.id, 'defend'); return; }
+    const sc = (decide._swarmClaim = decide._swarmClaim || {});
+    const tgt = swarmTarget(state, army, team, w, sc);
+    if (tgt) {
+      sc[tgt] = true;
+      army.command(state, team, w.id, 'raid', tgt);
+      say(state, team, sys, st, C.ROLES.COMMANDER, 'Harrying ' + state.areas[tgt].name + ' — keep them chasing!', 18);
+      return;
+    }
+    // Nothing safe to harry — fall back home to rebuild with the main force.
+    army.command(state, team, w.id, 'defend');
+  };
+
+
   // is lost or it becomes badly outmatched there, it stops guarding and falls back to consolidate.
   const guardPost = (w) => {
     const post = w.postGuard;
@@ -1539,6 +1567,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
         const m = h.mission && h.mission.type;
         if (!m || m === 'idle' || m === 'engage' || m === 'defend' || m === 'garrison') {
           if (h.harasser) harass(h);
+          else if (h.swarm) swarmRaid(h);
           else if (h.postGuard) guardPost(h);
           else { reinforceHost(h); decide(h); }
         }
@@ -1558,6 +1587,22 @@ function aiCommander(state, team, sys, rng, persona, st) {
           if (!det.ok || army.unitCount(det.group) < 0.5) break;
           det.group.postGuard = rid; army.command(state, team, det.group.id, 'garrison', rid);
           say(state, team, sys, st, C.ROLES.COMMANDER, 'Relieving ' + state.areas[rid].name + ' — drive them off!', 14);
+        }
+      }
+      // swarmharass: peel SEVERAL tiny (1-2 unit) fast raiders and fan them across the enemy's sprawling
+      // empire (each swarmRaid aims at a DIFFERENT post). Runs before the single-raider/grand-host peels so
+      // these count toward maxHosts and the main force stays home to consolidate. Keeps a Keep reserve.
+      if (!keepThreat && swarm) {
+        let made = 0;
+        while (fhs().filter((h) => !h.harasser && !h.postGuard).length < maxHosts &&
+               army.currentArea(g) === home && !g.moving && (army.unitCount(g) - reserve) >= 2 &&
+               made++ < enemyPostCount) {
+          const det = army.rally(state, team, swarmUnits(g), 'Outriders');
+          if (!det.ok || army.unitCount(det.group) < 0.5) break;
+          det.group.swarm = true;
+          swarmRaid(det.group);
+          const m = det.group.mission && det.group.mission.type;
+          if (!m || m === 'idle' || m === 'defend') { det.group.swarm = false; break; }  // nothing safe to harry — stop
         }
       }
       // Snatch UNDEFENDED enemy outposts: when the enemy leaves posts wide open, peel a small raiding
@@ -1890,6 +1935,34 @@ function smallGarrisonUnits(g, n, excludeCata) {
   const o = {}; for (const u of C.UNITS) o[u] = 0; let need = n;
   const order = excludeCata ? ['spearman', 'militia', 'archer', 'swordsman', 'cavalry'] : ['spearman', 'militia', 'archer', 'swordsman', 'cavalry', 'catapult'];
   for (const u of order) { if (need <= 0) break; const take = Math.min(Math.floor(g.units[u] || 0), need); if (take > 0) { o[u] = take; need -= take; } }
+  return o;
+}
+// A spread target for a tiny SWARM raider when we're being snowballed: an enemy outpost not already
+// claimed by a sibling swarm host. Prefer (near-)undefended posts we can snatch; otherwise the least-
+// defended enemy post we won't be annihilated at — the goal is to SPREAD the enemy thin and make their
+// army give chase, not to win a stand-up fight. Returns an areaId or null.
+function swarmTarget(state, army, team, w, claimed) {
+  const foe = S.enemyOf(team.team); const ekId = S.homeBase(foe);
+  let best = null, bestScore = -1e9;
+  for (const id in state.areas) { const a = state.areas[id];
+    if (a.terrain === 'base' || id === ekId || a.owner !== foe) continue;
+    if (claimed && claimed[id]) continue;
+    const def = enemyUnitsOn(state, team, id);
+    const wc = winChanceAt(state, army, team, w, id);
+    if (wc < 0.3 && def > 1.5) continue;                      // never dive a death-trap with a 1-2 unit host
+    const undef = def <= 1.0 ? 100 : 0;                       // free captures first
+    const score = undef + S.buildingsAt(a) * 3 + wc * 20 - def * 4;
+    if (score > bestScore) { bestScore = score; best = id; }
+  }
+  return best;
+}
+// A tiny (1-2 unit) fast strike body for a swarm raider — cavalry first for speed, then cheap bodies.
+function swarmUnits(g) {
+  const o = {}; for (const u of C.UNITS) o[u] = 0; let need = 2;
+  for (const u of ['cavalry', 'militia', 'archer', 'spearman', 'swordsman']) {
+    if (need <= 0) break; const take = Math.min(Math.floor(g.units[u] || 0), need);
+    if (take > 0) { o[u] = take; need -= take; }
+  }
   return o;
 }
 function bestAttackTarget(state, team, exclude) {
