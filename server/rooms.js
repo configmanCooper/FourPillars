@@ -6,6 +6,9 @@ const S = require('../shared/schema.js');
 const sim = require('./sim.js');
 const victory = require('./systems/victory.js');
 
+// Seat rank for breaking tied surrender/accept votes: Lord > Steward > Commander > Blacksmith.
+const SURRENDER_RANK = ['LORD', 'STEWARD', 'COMMANDER', 'BLACKSMITH'];
+
 function code4() {
   const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let s = ''; for (let i = 0; i < 4; i++) s += A[Math.floor(Math.random() * A.length)];
@@ -124,10 +127,16 @@ class RoomManager {
   startLoop(room) {
     if (room.interval) return;
     room._pauseCooldownMs = room._pauseCooldownMs || {}; // pid -> ms timestamp until which they can't start a pause vote
+    room._surrenderCooldownMs = room._surrenderCooldownMs || {}; // pid -> ms until which they can't initiate another surrender
     room.interval = setInterval(() => {
       const state = room.state;
       // Resolve any pause vote whose deadline has passed.
       if (state.pause.vote && Date.now() >= room._voteEndsMs) this.resolveVote(room);
+      // A passed multi-human pause lasts until its initiator resumes or 5 minutes — whichever is first.
+      if (state.pause.active && room._pauseAutoEndMs && Date.now() >= room._pauseAutoEndMs) {
+        state.pause.active = false; state.pause.initiator = null; room._pauseAutoEndMs = 0;
+        this.logPause(room, 'Pause expired (5-minute maximum) — game resumed.');
+      }
       this.refreshPause(room);
       // Surrender: AI teams may offer to concede a hopeless match; resolve the offer on its deadline.
       this.maybeAIConcede(room);
@@ -251,13 +260,13 @@ class RoomManager {
     if (!this.controlsHuman(room, pid)) { socket.emit(C.EV.ERROR_MSG, { msg: 'Only seated players can pause.' }); return; }
     const humans = this.humansInRoom(room);
     if (humans.length <= 1) {
-      state.pause.active = true;
+      state.pause.active = true; state.pause.initiator = pid;
       this.logPause(room, this.playerName(room, pid) + ' paused the game.');
       this.refreshPause(room); this.broadcastSnapshot(room); return;
     }
     const cd = (room._pauseCooldownMs[pid] || 0) - Date.now();
     if (cd > 0) { socket.emit(C.EV.ERROR_MSG, { msg: 'Pause vote on cooldown (' + Math.ceil(cd / 1000) + 's).' }); return; }
-    room._pauseCooldownMs[pid] = Date.now() + 5 * 60 * 1000; // 5-minute per-initiator cooldown
+    room._pauseCooldownMs[pid] = Date.now() + 300000; // 300s per-initiator cooldown
     room._voteEndsMs = Date.now() + 15000;                   // 15-second vote
     state.pause.vote = { kind: 'pause', initiator: pid, initiatorName: this.playerName(room, pid), votes: { [pid]: true } };
     this.logPause(room, this.playerName(room, pid) + ' called a vote to PAUSE (15s).');
@@ -271,8 +280,9 @@ class RoomManager {
     const pid = socket._fp.pid;
     if (!this.controlsHuman(room, pid)) return;
     const humans = this.humansInRoom(room);
-    if (humans.length <= 1) {
-      state.pause.active = false;
+    // A solo human, OR the player who initiated this pause, can end it directly (no resume vote needed).
+    if (humans.length <= 1 || pid === state.pause.initiator) {
+      state.pause.active = false; state.pause.initiator = null; room._pauseAutoEndMs = 0;
       this.logPause(room, this.playerName(room, pid) + ' resumed the game.');
       this.refreshPause(room); this.broadcastSnapshot(room); return;
     }
@@ -311,6 +321,8 @@ class RoomManager {
     const passed = (no * 2) <= humans.length;
     if (passed) {
       state.pause.active = (v.kind === 'pause');
+      if (v.kind === 'pause') { state.pause.initiator = v.initiator; room._pauseAutoEndMs = Date.now() + 300000; } // 5-min cap
+      else { state.pause.initiator = null; room._pauseAutoEndMs = 0; }
       this.logPause(room, 'Vote passed (' + yes + ' yes / ' + no + ' no of ' + humans.length + ') — game ' + (state.pause.active ? 'PAUSED' : 'RESUMED') + '.');
     } else {
       this.logPause(room, 'Vote failed (' + yes + ' yes / ' + no + ' no) — majority opposed.');
@@ -320,6 +332,24 @@ class RoomManager {
   }
 
   // ---------- surrender / concede ----------
+  // Seat rank for breaking tied votes: Lord > Steward > Commander > Blacksmith (lower index = higher rank).
+  rankOfPid(room, team, pid) {
+    let best = 99;
+    SURRENDER_RANK.forEach((role, i) => { const sl = room.state.teams[team].slots[role]; if (sl && sl.playerId === pid && i < best) best = i; });
+    return best;
+  }
+  // Tally yes/no among the humans who actually voted. A strict majority wins; a TIE is broken by the
+  // highest-ranked voter's choice. If NOBODY voted, return the supplied default.
+  tallyVotes(room, team, humanPids, votes, dflt) {
+    let yes = 0, no = 0; const cast = [];
+    for (const pid of humanPids) { if (votes[pid] === true) { yes++; cast.push(pid); } else if (votes[pid] === false) { no++; cast.push(pid); } }
+    if (cast.length === 0) return dflt;
+    if (yes > no) return true;
+    if (no > yes) return false;
+    let best = null, br = 99;                                  // tie → highest-ranked voter decides
+    for (const pid of cast) { const r = this.rankOfPid(room, team, pid); if (r < br) { br = r; best = pid; } }
+    return votes[best] === true;
+  }
   // Which team a connected human controls (a player only ever seats on one team). null if none.
   teamOfPid(room, pid) {
     for (const team of ['BLUE', 'RED']) for (const role of C.ROLE_ORDER) {
@@ -341,81 +371,110 @@ class RoomManager {
     return [...pids];
   }
   teamHasHuman(room, team) { return this.humansOnTeam(room, team).length > 0; }
+  // The humans who get to vote in the current surrender phase (the offering team while deciding whether to
+  // SEND, then the enemy team while deciding whether to ACCEPT).
+  surrenderVoters(room, sv) { return this.humansOnTeam(room, sv.voteTeam); }
 
-  // A seated human offers their team's surrender. The OTHER team then gets 15s to accept or deny.
+  // A seated human initiates their team's surrender. A multi-human team first votes among themselves to SEND
+  // it; then the enemy team votes to ACCEPT it. A lone human sends directly (no team vote needed).
   offerSurrender(socket) {
     const room = this.rooms.get(socket._fp && socket._fp.code); if (!room) return;
     const state = room.state; if (state.status !== 'playing' || state.surrender) return;
     const pid = socket._fp.pid;
     const team = this.teamOfPid(room, pid);
     if (!team) { socket.emit(C.EV.ERROR_MSG, { msg: 'Only a seated player can surrender.' }); return; }
-    this.startSurrender(room, team, this.playerName(room, pid), false);
-  }
-
-  // Begin a surrender offer from `fromTeam`. The enemy team votes to accept (default) or deny within 15s.
-  // An enemy that is ALL AI accepts immediately (AI never refuses a concession).
-  startSurrender(room, fromTeam, byName, aiOffer) {
-    const state = room.state;
-    const foe = S.enemyOf(fromTeam);
-    state.surrender = { fromTeam, foe, byName: byName || (C.TEAM_META[fromTeam] ? C.TEAM_META[fromTeam].name : fromTeam), aiOffer: !!aiOffer, votes: {}, endsInSec: 15, yes: 0, no: 0, voters: 0 };
+    room._surrenderCooldownMs = room._surrenderCooldownMs || {};
+    const cd = (room._surrenderCooldownMs[pid] || 0) - Date.now();
+    if (cd > 0) { socket.emit(C.EV.ERROR_MSG, { msg: 'You can initiate another surrender in ' + Math.ceil(cd / 1000) + 's.' }); return; }
+    room._surrenderCooldownMs[pid] = Date.now() + 300000;     // 300s cooldown on initiating another surrender
+    const humans = this.humansOnTeam(room, team);
+    if (humans.length <= 1) { this.startAcceptPhase(room, team, this.playerName(room, pid), pid, false); return; }
+    // Multi-human team: hold an internal SEND vote first (initiator auto-votes yes).
+    const foe = S.enemyOf(team);
+    state.surrender = { phase: 'offer', fromTeam: team, foe, voteTeam: team, initiator: pid, byName: this.playerName(room, pid), aiOffer: false, votes: { [pid]: true }, endsInSec: 15, yes: 0, no: 0, voters: 0 };
     room._surrenderEndsMs = Date.now() + 15000;
-    this.logPause(room, (C.TEAM_META[fromTeam] ? C.TEAM_META[fromTeam].name : fromTeam) + (aiOffer ? ' (AI) seeks terms — they offer to surrender.' : ' offers to surrender — the enemy has 15s to accept.'));
-    // If the deciding (enemy) side has no humans, the AI always accepts the concession immediately.
-    if (!this.teamHasHuman(room, foe)) { this.resolveSurrender(room); return; }
+    this.logPause(room, this.playerName(room, pid) + ' calls a vote to surrender (15s).');
+    this.maybeResolveSurrenderVoted(room);
     this.refreshSurrender(room); this.broadcastSnapshot(room);
   }
 
-  // A human on the DECIDING team votes to accept/deny the standing surrender offer.
+  // Begin (or advance to) the ACCEPT phase: the enemy team decides. An all-AI enemy accepts at once.
+  startAcceptPhase(room, fromTeam, byName, initiator, aiOffer) {
+    const state = room.state;
+    const foe = S.enemyOf(fromTeam);
+    state.surrender = { phase: 'accept', fromTeam, foe, voteTeam: foe, initiator: initiator || null, byName: byName || (C.TEAM_META[fromTeam] ? C.TEAM_META[fromTeam].name : fromTeam), aiOffer: !!aiOffer, votes: {}, endsInSec: 15, yes: 0, no: 0, voters: 0 };
+    room._surrenderEndsMs = Date.now() + 15000;
+    this.logPause(room, (C.TEAM_META[fromTeam] ? C.TEAM_META[fromTeam].name : fromTeam) + (aiOffer ? ' (AI) offers to surrender — the enemy has 15s to accept.' : ' offers to surrender — the enemy has 15s to accept.'));
+    if (!this.teamHasHuman(room, foe)) { this.resolveSurrender(room); return; }   // all-AI enemy always accepts
+    this.refreshSurrender(room); this.broadcastSnapshot(room);
+  }
+
+  // A human casts a vote in the current surrender phase (their team must be the one voting now).
   voteSurrender(socket, payload) {
     const room = this.rooms.get(socket._fp && socket._fp.code); if (!room) return;
     const state = room.state; const sv = state.surrender; if (!sv) return;
     const pid = socket._fp.pid;
     const team = this.teamOfPid(room, pid);
-    if (team !== sv.foe) { socket.emit(C.EV.ERROR_MSG, { msg: 'Only the enemy team votes on a surrender.' }); return; }
+    if (team !== sv.voteTeam) { socket.emit(C.EV.ERROR_MSG, { msg: 'It is not your team\'s vote right now.' }); return; }
     sv.votes[pid] = !!payload.accept;
-    // Resolve early once every deciding human has voted.
-    const deciders = this.humansOnTeam(room, sv.foe);
-    if (deciders.every((p) => sv.votes[p] !== undefined)) this.resolveSurrender(room);
-    else { this.refreshSurrender(room); this.broadcastSnapshot(room); }
+    if (!this.maybeResolveSurrenderVoted(room)) { this.refreshSurrender(room); this.broadcastSnapshot(room); }
+  }
+  // Resolve immediately once every human eligible to vote in this phase has voted.
+  maybeResolveSurrenderVoted(room) {
+    const sv = room.state.surrender; if (!sv) return false;
+    const voters = this.surrenderVoters(room, sv);
+    if (voters.length && voters.every((p) => sv.votes[p] !== undefined)) { this.resolveSurrender(room); return true; }
+    return false;
   }
 
-  // Tally the deciding team's human votes. Default-accept: an offer is ACCEPTED unless a strict majority of
-  // the enemy's humans actively DENY it. No humans on the enemy side ⇒ AI auto-accepts.
   resolveSurrender(room) {
     const state = room.state; const sv = state.surrender; if (!sv) return;
+    if (sv.phase === 'offer') {
+      // The offering team votes whether to SEND. Majority (tie → rank); nobody voting ⇒ don't surrender.
+      const humans = this.humansOnTeam(room, sv.fromTeam);
+      const send = this.tallyVotes(room, sv.fromTeam, humans, sv.votes, false);
+      if (send) {
+        this.logPause(room, (C.TEAM_META[sv.fromTeam] ? C.TEAM_META[sv.fromTeam].name : sv.fromTeam) + ' votes to surrender.');
+        this.startAcceptPhase(room, sv.fromTeam, sv.byName, sv.initiator, sv.aiOffer);
+      } else {
+        state.surrender = null; room._surrenderEndsMs = 0;
+        this.logPause(room, (C.TEAM_META[sv.fromTeam] ? C.TEAM_META[sv.fromTeam].name : sv.fromTeam) + ' voted against surrendering.');
+        this.broadcastSnapshot(room);
+      }
+      return;
+    }
+    // ACCEPT phase: the enemy decides. All-AI ⇒ accept; otherwise majority (tie → rank); nobody voting ⇒ accept.
     const deciders = this.humansOnTeam(room, sv.foe);
-    let accept = 0, deny = 0;
-    for (const pid of deciders) { if (sv.votes[pid] === true) accept++; else if (sv.votes[pid] === false) deny++; }
-    const accepted = (deny * 2) <= deciders.length;   // accepted unless a majority of enemy humans deny
+    const accepted = deciders.length === 0 ? true : this.tallyVotes(room, sv.foe, deciders, sv.votes, true);
+    const fromTeam = sv.fromTeam, foe = sv.foe, aiOffer = sv.aiOffer;
     state.surrender = null; room._surrenderEndsMs = 0;
     if (accepted) {
-      const winner = sv.foe, loser = sv.fromTeam;
-      const reason = (C.TEAM_META[loser] ? C.TEAM_META[loser].name : loser) + ' surrendered.';
-      const result = victory.finish(state, winner, reason);
-      this.logPause(room, reason + ' ' + (C.TEAM_META[winner] ? C.TEAM_META[winner].name : winner) + ' wins.');
+      const reason = (C.TEAM_META[fromTeam] ? C.TEAM_META[fromTeam].name : fromTeam) + ' surrendered.';
+      const result = victory.finish(state, foe, reason);
+      this.logPause(room, reason + ' ' + (C.TEAM_META[foe] ? C.TEAM_META[foe].name : foe) + ' wins.');
       this.captureReplay(room);
       this.io.to(room.code).emit(C.EV.SNAPSHOT, sim.snapshot(state));
       this.concludeGame(room, result);
     } else {
-      this.logPause(room, 'The surrender was refused (' + deny + ' against) — the war goes on.');
-      // Brief cooldown so a refused AI offer doesn't immediately re-trigger.
-      room._aiConcedeCooldownMs = Date.now() + 60000;
-      this.refreshSurrender(room); this.broadcastSnapshot(room);
+      this.logPause(room, 'The surrender was refused — the war goes on.');
+      if (aiOffer) room._aiConcedeCooldownMs = Date.now() + 60000;   // don't let a refused AI offer re-trigger at once
+      this.broadcastSnapshot(room);
     }
   }
 
   refreshSurrender(room) {
     const state = room.state; const sv = state.surrender; if (!sv) return;
-    const deciders = this.humansOnTeam(room, sv.foe);
-    let accept = 0, deny = 0;
-    for (const pid of deciders) { if (sv.votes[pid] === true) accept++; else if (sv.votes[pid] === false) deny++; }
-    sv.yes = accept; sv.no = deny; sv.voters = deciders.length;
+    const voters = this.surrenderVoters(room, sv);
+    let yes = 0, no = 0;
+    for (const pid of voters) { if (sv.votes[pid] === true) yes++; else if (sv.votes[pid] === false) no++; }
+    sv.yes = yes; sv.no = no; sv.voters = voters.length;
     sv.endsInSec = Math.max(0, Math.ceil(((room._surrenderEndsMs || 0) - Date.now()) / 1000));
   }
 
   // An AI team with NO humans, losing badly to an enemy that HAS humans, offers to concede. Thresholds:
   // enemy score ≥ 1.5×, enemy army strength ≥ 1.5×, and enemy holds ≥ 2× the sites. All-AI-vs-all-AI never
-  // triggers (the enemy must contain a human), so pure simulations are unaffected.
+  // triggers (the enemy must contain a human), so pure simulations are unaffected. AI teams have no humans to
+  // hold an internal vote, so they go straight to the enemy's ACCEPT phase.
   maybeAIConcede(room) {
     const state = room.state;
     if (state.status !== 'playing' || state.surrender) return;
@@ -431,7 +490,7 @@ class RoomManager {
       const ourSites = victory.sitesControlled(state, us), theirSites = victory.sitesControlled(state, them);
       if (theirScore >= 1.5 * ourScore && theirArmy >= 1.5 * ourArmy && theirSites >= 2 * ourSites
           && theirScore > 0 && theirArmy > 0 && theirSites >= 1) {
-        this.startSurrender(room, team, null, true);
+        this.startAcceptPhase(room, team, null, null, true);
         return;
       }
     }
@@ -451,6 +510,7 @@ class RoomManager {
     for (const pid in (room._pauseCooldownMs || {})) { const s = Math.ceil((room._pauseCooldownMs[pid] - Date.now()) / 1000); if (s > 0) cd[pid] = s; }
     state.pause.cooldownSec = cd;
     state.pause.humansCount = humans.length;
+    state.pause.autoEndInSec = (state.pause.active && room._pauseAutoEndMs) ? Math.max(0, Math.ceil((room._pauseAutoEndMs - Date.now()) / 1000)) : 0;
   }
 
   logPause(room, text) {

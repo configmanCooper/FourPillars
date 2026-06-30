@@ -253,17 +253,21 @@
     // A live surrender offer takes over the overlay (it ends the game; it outranks a pause prompt).
     if (sv) {
       ov.classList.remove('hidden');
-      const offering = State.myTeam === sv.fromTeam;
-      const deciding = State.myTeam === sv.foe;
+      const myVotePhase = State.myTeam === sv.voteTeam;       // is it my team's turn to vote?
       const iVotedS = sv.votes && sv.votes[me] !== undefined;
-      let html = '<div class="pause-h">🏳 ' + esc(sv.byName) + ' offers to surrender</div>' +
-        '<div class="pause-sub">' + (C.TEAM_META[sv.foe] ? C.TEAM_META[sv.foe].name : sv.foe) + ' decides · <b>' + sv.endsInSec + 's</b> left</div>' +
+      const voteTeamName = C.TEAM_META[sv.voteTeam] ? C.TEAM_META[sv.voteTeam].name : sv.voteTeam;
+      const offerPhase = sv.phase === 'offer';
+      const head = offerPhase ? '🏳 Surrender?' : '🏳 Enemy offers to surrender';
+      const sub = offerPhase ? (voteTeamName + ' votes whether to surrender') : (voteTeamName + ' decides');
+      let html = '<div class="pause-h">' + head + '</div>' +
+        '<div class="pause-sub">' + sub + ' · <b>' + sv.endsInSec + 's</b> left</div>' +
         '<div class="pause-tally"><span class="yes">✅ ' + (sv.yes || 0) + '</span> <span class="no">✖ ' + (sv.no || 0) + '</span> <span class="muted">of ' + (sv.voters || 0) + '</span></div>';
-      if (State.isSpectator) html += '<div class="muted">👁 The enemy is deciding…</div>';
-      else if (offering) html += '<div class="muted">Awaiting the enemy\'s decision…</div>';
-      else if (deciding && iVotedS) html += '<div class="muted">You voted. Waiting for the rest…</div>';
-      else if (deciding) html += '<div class="pause-sub muted">Accept to win now, or deny to fight on (no vote = accepted).</div><div class="pause-btns"><button class="btn btn-gold" onclick="FP.UI.voteSurrender(true)">Accept</button><button class="btn" onclick="FP.UI.voteSurrender(false)">Deny</button></div>';
-      else html += '<div class="muted">A surrender is on the table…</div>';
+      if (State.isSpectator) html += '<div class="muted">👁 ' + voteTeamName + ' is voting…</div>';
+      else if (myVotePhase && iVotedS) html += '<div class="muted">You voted. Waiting for the rest…</div>';
+      else if (myVotePhase && offerPhase) html += '<div class="pause-sub muted">Tied votes are broken by rank (Lord first).</div><div class="pause-btns"><button class="btn btn-gold" onclick="FP.UI.voteSurrender(true)">Surrender</button><button class="btn" onclick="FP.UI.voteSurrender(false)">Fight on</button></div>';
+      else if (myVotePhase) html += '<div class="pause-sub muted">Accept to win now, or deny to fight on (no vote = accepted).</div><div class="pause-btns"><button class="btn btn-gold" onclick="FP.UI.voteSurrender(true)">Accept</button><button class="btn" onclick="FP.UI.voteSurrender(false)">Deny</button></div>';
+      else if (offerPhase) html += '<div class="muted">Your enemy is deciding whether to surrender…</div>';
+      else html += '<div class="muted">Awaiting the enemy\'s decision…</div>';
       card.innerHTML = html;
       return;
     }
@@ -280,9 +284,11 @@
     } else if (pause.active) {
       ov.classList.remove('hidden');
       const solo = (pause.humansCount || 1) <= 1;
+      const canEnd = solo || pause.initiator === me;            // solo player or the pause's initiator ends it directly
+      const cap = pause.autoEndInSec ? ('<div class="pause-sub muted">Auto-resumes in ' + pause.autoEndInSec + 's</div>') : '';
       card.innerHTML = '<div class="pause-h">⏸ Paused</div>' +
-        '<div class="pause-sub">The realm holds its breath.</div>' +
-        (State.isSpectator ? '' : '<div class="pause-btns"><button class="btn btn-gold" onclick="FP.UI.resume()">' + (solo ? '▶ Resume' : '▶ Call Resume Vote') + '</button></div>');
+        '<div class="pause-sub">The realm holds its breath.</div>' + cap +
+        (State.isSpectator ? '' : '<div class="pause-btns"><button class="btn btn-gold" onclick="FP.UI.resume()">' + (canEnd ? '▶ Resume' : '▶ Call Resume Vote') + '</button></div>');
     } else {
       ov.classList.add('hidden');
     }
@@ -2057,8 +2063,8 @@
     vote(v) { Net.vote(v); },
     surrender() {
       const snap = State.snapshot; if (!snap || State.isSpectator || !State.myTeam) return;
-      if (snap.surrender) { toast('A surrender offer is already on the table.'); return; }
-      if (window.confirm('Offer your kingdom\'s surrender? The enemy has 15s to accept (or it\'s accepted by default).')) Net.surrender();
+      if (snap.surrender) { toast('A surrender vote is already underway.'); return; }
+      if (window.confirm('Propose surrender? If your team has other players it goes to a team vote first; otherwise the enemy decides (15s).')) Net.surrender();
     },
     voteSurrender(accept) { Net.voteSurrender(accept); },
     requestDefend(area) { Net.action('request', { type: 'DEFEND', payload: { area } }); toast('Asked Commander to defend.'); },

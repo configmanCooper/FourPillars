@@ -187,7 +187,7 @@
       teams: { BLUE: createTeam('BLUE'), RED: createTeam('RED') },
       events: [],
       nextEventAt: 30,
-      pause: { active: false, vote: null, cooldownSec: {} },
+      pause: { active: false, vote: null, cooldownSec: {}, initiator: null },
       surrender: null,
     };
     // Starting town buildings sit at each Keep (the base location).
