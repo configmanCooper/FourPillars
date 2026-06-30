@@ -320,6 +320,10 @@ function aiLord(state, team, sys, rng, persona, st) {
   if (lowFood) { s = { farmers: .55, woodcutters: .18, miners: .15, builders: .08, students: 0, trainers: .04 }; }
   else if (foodStrain) { s = { farmers: .38, woodcutters: .30, miners: .16, builders: .08, students: .02, trainers: .06 }; }   // safe to bolster farming before the stockpile crashes
   else if (lowWood) { s = { farmers: .26, woodcutters: .44, miners: .14, builders: .08, students: .02, trainers: .06 }; }
+  // woodopen (opening-tempo test — wood is the universal bottleneck: every building, outpost claim and most
+  // gear needs it, so getting wood income up FIRST compounds across the whole game): in a healthy early game
+  // bias the split toward woodcutters so the economy/build engine spins up faster.
+  else if (ab(team, 'woodopen') && state.phase === 'EARLY') { s = { farmers: .30, woodcutters: .34, miners: .14, builders: .12, students: .04, trainers: .06 }; }
   const builders = team.buildQueue.length ? Math.max(1, Math.round(wf * s.builders)) : 1;
   let trainers = hasBarracks && !lowFood ? Math.min(eco.maxTrainers(team), Math.max(1, Math.round(wf * s.trainers))) : 0;
   let students = hasSchool && !lowFood ? Math.max(0, Math.round(wf * s.students)) : 0;
