@@ -386,8 +386,8 @@
     spearman:  { atk: 2, def: 3, speed: 70, vsKeep: 0.5, upkeep: 1 },
     swordsman: { atk: 3, def: 3, speed: 70, vsKeep: 0.8, upkeep: 1 },
     archer:    { atk: 3, def: 1, speed: 75, vsKeep: 0.5, ranged: true, upkeep: 1 },
-    cavalry:   { atk: 4, def: 2, speed: 120, vsKeep: 0.6, isCav: true, upkeep: 1.5 },
-    catapult:  { atk: 10, def: 1, speed: 45, vsKeep: 8,   upkeep: 2 },
+    cavalry:   { atk: 6, def: 4, speed: 120, vsKeep: 0.6, isCav: true, upkeep: 1.5 },
+    catapult:  { atk: 12, def: 1, speed: 45, vsKeep: 8,   upkeep: 2 },
   };
   // Composition counters: per matching enemy soldier, a counter unit gains COUNTER_BONUS_PER strength,
   // capped at COUNTER_BONUS_MAX. Cavalry count enemy non-spear/non-cav units; spearmen count enemy cavalry.
