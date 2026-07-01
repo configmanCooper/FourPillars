@@ -257,7 +257,9 @@ class RoomManager {
     const room = this.rooms.get(socket._fp && socket._fp.code); if (!room) return;
     const state = room.state; if (state.status !== 'playing' || state.pause.active || state.pause.vote) return;
     const pid = socket._fp.pid;
-    if (!this.controlsHuman(room, pid)) { socket.emit(C.EV.ERROR_MSG, { msg: 'Only seated players can pause.' }); return; }
+    // Spectators may pause too — but ONLY in an all-AI game (no seated humans): a lone watcher of a pure
+    // simulation can freeze it. In any game with seated humans, only seated players control the pause.
+    if (!this.controlsHuman(room, pid) && this.humansInRoom(room).length > 0) { socket.emit(C.EV.ERROR_MSG, { msg: 'Only seated players can pause.' }); return; }
     const humans = this.humansInRoom(room);
     if (humans.length <= 1) {
       state.pause.active = true; state.pause.initiator = pid;
@@ -278,7 +280,8 @@ class RoomManager {
     const room = this.rooms.get(socket._fp && socket._fp.code); if (!room) return;
     const state = room.state; if (!state.pause.active || state.pause.vote) return;
     const pid = socket._fp.pid;
-    if (!this.controlsHuman(room, pid)) return;
+    // Spectators may resume too, but ONLY in an all-AI game (matches the pause rule above).
+    if (!this.controlsHuman(room, pid) && this.humansInRoom(room).length > 0) return;
     const humans = this.humansInRoom(room);
     // A solo human, OR the player who initiated this pause, can end it directly (no resume vote needed).
     if (humans.length <= 1 || pid === state.pause.initiator) {

@@ -233,11 +233,15 @@
     const ov = $('pauseOverlay'); const card = $('pauseCard');
     const me = State.you;
     const iVoted = pause.vote && pause.vote.votes && pause.vote.votes[me] !== undefined;
-    // Pause button state (top bar) — spectators can't pause/resume/vote, so hide their controls.
+    // All-AI game (no seated humans) → a spectator is allowed to pause/resume the pure simulation.
+    const allAIGame = (pause.humansCount || 0) === 0;
+    // Pause button state (top bar) — spectators can't pause/resume/vote in a human game, so hide their
+    // controls there; but in an all-AI game a spectator MAY freeze the sim, so show the button.
     const btn = $('pauseBtn');
     if (btn) {
-      if (State.isSpectator) { btn.style.display = 'none'; }
+      if (State.isSpectator && !allAIGame) { btn.style.display = 'none'; }
       else {
+        btn.style.display = '';
         const cd = pause.cooldownSec && pause.cooldownSec[me];
         if (pause.active) { btn.textContent = '▶ Resume'; btn.disabled = false; }
         else if (cd) { btn.textContent = '⏸ ' + cd + 's'; btn.disabled = true; }
@@ -288,7 +292,7 @@
       const cap = pause.autoEndInSec ? ('<div class="pause-sub muted">Auto-resumes in ' + pause.autoEndInSec + 's</div>') : '';
       card.innerHTML = '<div class="pause-h">⏸ Paused</div>' +
         '<div class="pause-sub">The realm holds its breath.</div>' + cap +
-        (State.isSpectator ? '' : '<div class="pause-btns"><button class="btn btn-gold" onclick="FP.UI.resume()">' + (canEnd ? '▶ Resume' : '▶ Call Resume Vote') + '</button></div>');
+        ((State.isSpectator && !allAIGame) ? '' : '<div class="pause-btns"><button class="btn btn-gold" onclick="FP.UI.resume()">' + (canEnd ? '▶ Resume' : '▶ Call Resume Vote') + '</button></div>');
     } else {
       ov.classList.add('hidden');
     }
