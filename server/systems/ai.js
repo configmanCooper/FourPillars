@@ -394,6 +394,11 @@ function aiLord(state, team, sys, rng, persona, st) {
     // can never afford the Barracks, tech buildings (Workshop/School/University) or outposts.
     if (planned('lumberCamp') < 1) wish.push('lumberCamp');
     if (planned('farm') < 1) wish.push('farm');
+    // FIRST BARRACKS, EARLY & IN THE KEEP (earlybarracks): the army is the backbone — heavily prefer raising a
+    // Barracks right after the minimal food+wood foundation (one Farm + one Lumber Camp), placed behind the
+    // Watchtower at the Keep (milkeep/safeMilArea). Delaying it until the economy is fully built leaves us with
+    // zero soldiers when the enemy pushes; with the Keep's extra build slot there's room to spare for it.
+    if (ab(team, 'earlybarracks') && planned('barracks') < 1) wish.push('barracks');
     // A 2nd Farm EARLY (while wood is still available) — one Farm caps farmers at 4 (~1.2 food/s), which
     // can't feed a growing army under the higher food demand; the team then starves because by the time the
     // 2nd Farm reaches the build list, wood has crashed and it can never afford the 60 wood. Build it now.

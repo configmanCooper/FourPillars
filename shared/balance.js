@@ -127,7 +127,7 @@
   const DEMOLISH_REFUND = 0.25;
 
   // Per-location build slots: your Keep is roomy; outposts are small, so expansion matters.
-  const BUILD_SLOTS_BASE = 7;
+  const BUILD_SLOTS_BASE = 8;
   const BUILD_SLOTS_SITE = 5;
   const MAX_SITE_LEVEL = 3;        // outposts upgrade at most to level 3 (so build slots cap at BUILD_SLOTS_SITE + 2)
   const SITE_WALL_RESIST = 7;     // seconds added to capture time per Wall at a site
