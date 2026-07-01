@@ -44,17 +44,29 @@ g.energy = 95; team.armies = [g];
 army.tickEnergy(state, team, 1); near(g.energy, 96, 'keep regen +1/s');
 g.energy = 99.8; army.tickEnergy(state, team, 1); near(g.energy, 100, 'keep regen caps at 100');
 
-// 3. Drain on own outpost: -0.4/s.
+// 3. Drain on own outpost: -0.2/s.
 g = host(outpost, { militia: 5 }); g.energy = 50; team.armies = [g];
-army.tickEnergy(state, team, 1); near(g.energy, 49.6, 'own-outpost drain -0.4/s');
+army.tickEnergy(state, team, 1); near(g.energy, 49.8, 'own-outpost drain -0.2/s');
 
-// 4. Drain on open/enemy ground: -0.5/s.
+// 4. Drain on open/enemy ground: -0.25/s.
 g = host(open, { militia: 5 }); g.energy = 50; team.armies = [g];
-army.tickEnergy(state, team, 1); near(g.energy, 49.5, 'open-ground drain -0.5/s');
+army.tickEnergy(state, team, 1); near(g.energy, 49.75, 'open-ground drain -0.25/s');
 
-// 5. Moving doubles the drain (open ground -> -1.0/s).
+// 5. Marching triples the drain (open ground -> -0.75/s).
 g = host(open, { militia: 5 }); g.energy = 50; g.moving = { route: [open, outpost], legIndex: 0 }; team.armies = [g];
-army.tickEnergy(state, team, 1); near(g.energy, 49.0, 'moving doubles drain (-1.0/s on open)');
+army.tickEnergy(state, team, 1); near(g.energy, 49.25, 'marching triples drain (-0.75/s on open)');
+
+// 5b. Field Supply Train (Steward action) halves the drain.
+g = host(open, { militia: 5 }); g.energy = 50; team.armies = [g];
+team.stewardEffects = [{ id: 'fieldSupply', until: (state.elapsed || 0) + 90 }];
+army.tickEnergy(state, team, 1); near(g.energy, 49.875, 'supply train halves open drain (-0.125/s)');
+team.stewardEffects = [];
+
+// 5c. Field Provisioning research (tier 2, -20%) reduces the drain.
+g = host(open, { militia: 5 }); g.energy = 50; team.armies = [g];
+team.research = Object.assign(team.research || {}, { provisioning: 2 });
+army.tickEnergy(state, team, 1); near(g.energy, 49.8, 'provisioning T2 cuts open drain 20% (-0.2/s)');
+team.research.provisioning = 0;
 
 // 6. Energy never goes below 0.
 g = host(open, { militia: 5 }); g.energy = 0.2; team.armies = [g];

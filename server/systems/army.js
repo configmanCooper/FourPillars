@@ -88,9 +88,12 @@ function newGroup(state, team, area, name) {
 function hostEnergy(g) { return (g && typeof g.energy === 'number') ? g.energy : 100; }
 // Deployment energy: a host regenerates only at its own Keep, and tires in the field — faster on hostile
 // ground and faster still while marching. This makes over-extending across the map costly and gives fresh
-// Keep-raised troops (energy 100) an edge over a tired, far-flung enemy.
+// Keep-raised troops (energy 100) an edge over a tired, far-flung enemy. Drain is reduced by the Lord's
+// Field Provisioning research (permanent, 10/20/30%) and the Steward's Field Supply Train action (−50%, timed).
 function tickEnergy(state, team, dt) {
   const home = S.homeBase(team.team);
+  // Both the permanent research and the timed Steward action cut the DRAIN rate (never the Keep regen).
+  const drainMult = Math.max(0, 1 - eco.researchStat(team, 'energyDrain') - eco.stewardStat(team, 'energyDrain', state.elapsed));
   for (const g of team.armies) {
     if (unitCount(g) < 0.001) continue;
     const moving = !!g.moving;
@@ -100,8 +103,9 @@ function tickEnergy(state, team, dt) {
     else {
       const area = state.areas[at];
       const onOwnOutpost = area && area.terrain !== 'base' && area.claimedBy === team.team;
-      rate = onOwnOutpost ? -0.4 : -0.5;                  // tire slower on our own outposts than on open/enemy ground
-      if (moving) rate *= 2;                              // marching tires them twice as fast
+      rate = onOwnOutpost ? -0.2 : -0.25;                 // tire slower on our own outposts than on open/enemy ground
+      if (moving) rate *= 3;                              // marching tires them three times as fast
+      rate *= drainMult;                                  // provisioning research + supply-train action ease the drain
     }
     g.energy = Math.max(0, Math.min(100, hostEnergy(g) + rate * dt));
   }

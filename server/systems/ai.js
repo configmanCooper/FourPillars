@@ -21,11 +21,11 @@ const PERSONA_NAME = {
 // Order in which the AI Lord buys research, by Lord persona. It walks the list and takes the next
 // affordable tier (each upgrade is a 3-tier line). Every line is reachable; this just sets emphasis.
 const RESEARCH_PRIORITY = {
-  builder:   ['agriculture', 'logging', 'quarrying', 'mining', 'growth', 'architecture', 'granaries', 'foundry', 'scholarship', 'weapons', 'armour', 'tower', 'siege'],
-  warmonger: ['weapons', 'armour', 'foundry', 'siege', 'mining', 'logging', 'tower', 'agriculture', 'quarrying', 'growth', 'architecture', 'granaries', 'scholarship'],
-  turtler:   ['armour', 'tower', 'architecture', 'agriculture', 'granaries', 'quarrying', 'logging', 'weapons', 'foundry', 'mining', 'growth', 'scholarship', 'siege'],
-  balanced:  ['agriculture', 'weapons', 'logging', 'mining', 'foundry', 'armour', 'growth', 'quarrying', 'architecture', 'tower', 'granaries', 'siege', 'scholarship'],
-  default:   ['agriculture', 'logging', 'mining', 'weapons', 'foundry', 'armour', 'growth', 'quarrying', 'architecture', 'granaries', 'tower', 'siege', 'scholarship'],
+  builder:   ['agriculture', 'logging', 'quarrying', 'mining', 'growth', 'architecture', 'granaries', 'foundry', 'scholarship', 'weapons', 'armour', 'provisioning', 'tower', 'siege'],
+  warmonger: ['weapons', 'armour', 'foundry', 'provisioning', 'siege', 'mining', 'logging', 'tower', 'agriculture', 'quarrying', 'growth', 'architecture', 'granaries', 'scholarship'],
+  turtler:   ['armour', 'tower', 'architecture', 'agriculture', 'granaries', 'quarrying', 'logging', 'weapons', 'foundry', 'mining', 'growth', 'provisioning', 'scholarship', 'siege'],
+  balanced:  ['agriculture', 'weapons', 'logging', 'mining', 'foundry', 'armour', 'provisioning', 'growth', 'quarrying', 'architecture', 'tower', 'granaries', 'siege', 'scholarship'],
+  default:   ['agriculture', 'logging', 'mining', 'weapons', 'foundry', 'armour', 'provisioning', 'growth', 'quarrying', 'architecture', 'granaries', 'tower', 'siege', 'scholarship'],
 };
 
 function isHard(team, role) { const s = team.slots && team.slots[role]; return !!(s && s.difficulty === 'hard'); }
@@ -847,6 +847,19 @@ function aiSteward(state, team, sys, rng, persona, st) {
     if (homeUnderThreat(state, team)) cand.push('musterLevy');
     // A host marching to strike → speed the columns so the blow lands before the foe can ready.
     if (team.armies.some((h) => h.moving && h.mission && ['attack', 'raid', 'siege'].includes(h.mission.type))) cand.push('rally');
+    // Soldiers worn down on forward deployment → run a supply train so they tire half as fast. Only worth it
+    // when a few troops are actually posted AWAY from the Keep (idle garrison regenerates for free) and only
+    // once they've begun to tire — so the 90s buff isn't wasted on a fresh or home-bound army.
+    {
+      const homeId = S.homeBase(team.team);
+      let fwdUnits = 0, fwdEnergy = 0;
+      for (const h of team.armies) {
+        if (h.isGarrison) continue;
+        const n = unitCountG(h);
+        if (n >= 0.5 && areaOf(h) !== homeId) { fwdUnits += n; fwdEnergy += (typeof h.energy === 'number' ? h.energy : 100) * n; }
+      }
+      if (fwdUnits >= 3 && (fwdEnergy / Math.max(1, fwdUnits)) < 80) cand.push('fieldSupply');
+    }
     // ---- Steady-state boosters ----
     if (!team._starving && team.pop.total < team.housing) cand.push('fertility');
     if (team.production && team.production.length) cand.push('forgeBellows');     // forge busy → speed it

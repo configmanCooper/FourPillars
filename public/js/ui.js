@@ -919,6 +919,7 @@
   function researchVal(team, key) { const def = B.RESEARCH[key]; const t = (team.research && team.research[key]) || 0; return t > 0 ? def.tiers[t - 1].val : 0; }
   function fmtResearch(def, val) {
     if (def.unit === 'pct') return '+' + Math.round(val * 100) + '%';
+    if (def.unit === 'pctreduce') return '−' + Math.round(val * 100) + '%';
     if (def.unit === 'mult') return '×' + val;
     return '+' + val;   // flat
   }

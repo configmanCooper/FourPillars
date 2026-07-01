@@ -97,6 +97,10 @@
     keephall:     { name: 'Keep Expansion', glyph: '🏯', stat: 'keepSlots', unit: 'flat', desc: 'Each tier adds a build slot to your Keep',
       // Each tier costs DOUBLE an outpost upgrade (wood 120 / stone 80) + Research Points + 1 Relic (artifact).
       tiers: [{ rp: 20, cost: { wood: 120, stone: 80, relics: 1 }, val: 1 }, { rp: 45, cost: { wood: 120, stone: 80, relics: 1 }, val: 2 }, { rp: 90, cost: { wood: 120, stone: 80, relics: 1 }, val: 3 }] },
+    provisioning: { name: 'Field Provisioning', glyph: '🎒', stat: 'energyDrain', unit: 'pctreduce', desc: 'Soldiers tire more slowly on deployment',
+      // A logistics lever (rations + supply wagons): permanently cuts deployment-energy DRAIN by 10/20/30%.
+      // Priced like the mid economy lines — food (rations) + wood (wagons/roads); standard 20/45/90 RP curve.
+      tiers: [{ rp: 20, cost: { food: 30, wood: 20 }, val: 0.10 }, { rp: 45, cost: { food: 60, wood: 40 }, val: 0.20 }, { rp: 90, cost: { food: 100, wood: 70 }, val: 0.30 }] },
   };
 
   // Building costs and effects. effect keys are read by systems.
@@ -221,6 +225,7 @@
     { id: 'corvee',          name: 'Corvée Labour',        glyph: '🏗️', cost: { stone: 35 },          workers: 2, durationSec: 150, cooldownSec: 360, effect: { buildSpeed: 1.0 },                desc: 'Construction ~50% faster (ties up 2 workers).' },
     { id: 'grainLevy',       name: 'Grain Levy',           glyph: '🔄', cost: { food: 60 },           workers: 0, durationSec: 0,   cooldownSec: 480, instant: { wood: 30, stone: 30, iron: 20 }, desc: 'Trade 60 food for 30 wood + 30 stone + 20 iron, now.' },
     { id: 'learnRelics',     name: 'Learn from the Relics',glyph: '✨', cost: { relics: 1 },          workers: 0, durationSec: 180, cooldownSec: 600, instant: { rp: 50 }, effect: { popGrowth: 0.20, gatherAll: 0.20 }, desc: 'Gain 50 Research Points now, plus +20% growth & gathering.' },
+    { id: 'fieldSupply',     name: 'Field Supply Train',   glyph: '🎒', cost: { food: 30 },           workers: 0, durationSec: 90,  cooldownSec: 300, effect: { energyDrain: 0.50 },              desc: 'Deployed soldiers tire half as fast for 90s.' },
   ];
   const STEWARD_ACTIONS_BY_ID = {};
   for (const a of STEWARD_ACTIONS) STEWARD_ACTIONS_BY_ID[a.id] = a;
