@@ -1569,7 +1569,7 @@
       const pw = g.power || { atk: 0, def: 0 };
       html += '<div class="opt"><div class="opt-info" style="cursor:pointer" onclick="FP.UI.armyExpand(\'' + g.id + '\')">' +
         '<div class="opt-name">' + (exp ? '▾ ' : '▸ ') + dominantGlyphC(g) + ' ' + esc(g.name) + (g.isGarrison ? ' <span class="muted">(Home Garrison)</span>' : '') + '</div>' +
-        '<div class="opt-desc">' + Math.round(n) + ' units · <b title="total attack">⚔️' + pw.atk + '</b> / <b title="total defence">🛡' + pw.def + '</b> · 📍' + esc(loc) + ' · ' + missionLabel(g) + ' · 💪' + (g.morale || 'normal') + '</div></div>' +
+        '<div class="opt-desc">' + Math.round(n) + ' units · <b title="total attack">⚔️' + pw.atk + '</b> / <b title="total defence">🛡' + pw.def + '</b> · 📍' + esc(loc) + ' · ' + missionLabel(g) + ' · 💪' + (g.morale || 'normal') + ' · ' + energyChip(g) + '</div></div>' +
         '<button class="btn btn-sm ' + (State.selectedGroupId === g.id ? 'btn-gold' : '') + '" onclick="FP.UI.selectHost(\'' + g.id + '\')">' + (State.selectedGroupId === g.id ? '✓ Selected' : 'Select') + '</button></div>';
       if (exp) {
         html += '<div class="host-detail">';
@@ -1938,6 +1938,12 @@
     for (const tk of ['BLUE', 'RED']) { const t = snap.teams[tk]; if (!t) continue; for (const g of (t.armies || [])) if (g.id === id) return { g: g, team: tk }; }
     return null;
   }
+  // Compact deployment-energy chip (host average) for host lists: a mini bar + number, green/yellow/red.
+  function energyChip(g) {
+    const en = (typeof g.energy === 'number') ? Math.round(g.energy) : 100;
+    const col = en <= 30 ? '#d65050' : (en <= 55 ? '#d9a441' : '#6bbf5f');
+    return '<span title="Deployment energy — low = weaker attack &amp; defence">🔋<span style="display:inline-block;width:26px;height:6px;vertical-align:middle;background:rgba(0,0,0,0.5);border:1px solid #000;border-radius:2px;overflow:hidden;margin:0 2px"><span style="display:block;height:100%;width:' + Math.max(0, Math.min(100, en)) + '%;background:' + col + '"></span></span><b style="color:' + col + '">' + en + '</b></span>';
+  }
   function hostPopupHtml(snap, g, team) {
     const meta = C.TEAM_META ? C.TEAM_META[team] : null;
     const color = team === 'BLUE' ? '#8fb8e8' : '#d46a5a';
@@ -1961,6 +1967,18 @@
     let h = '<div style="font-weight:bold;color:' + color + ';padding-right:16px">' + dominantGlyphC(g) + ' ' + esc(g.name) + (g.isGarrison ? ' <span class="muted" style="font-weight:normal">(Garrison)</span>' : '') + '</div>';
     h += '<div class="opt-desc" style="margin:2px 0">' + (meta ? meta.name : team) + (mine ? '' : ' <span class="muted">(enemy)</span>') + ' · 📍' + esc(loc) + ' · ' + missionLabel(g) + ' · 💪' + (g.morale || 'normal') + '</div>';
     h += '<div style="margin:4px 0;font-size:13px"><b>' + Math.round(n) + '</b> units · <b title="total attack">⚔️ ' + pw.atk + '</b> / <b title="total defence">🛡 ' + pw.def + '</b></div>';
+    // Deployment-energy bar (host average): drains in the field, regenerates at the Keep; low energy weakens
+    // BOTH attack and defence (<30 −10%, <20 −25%, <10 −50%). Green = fresh, yellow = tiring, red ≤30.
+    const en = (typeof g.energy === 'number') ? Math.round(g.energy) : 100;
+    const enCol = en <= 30 ? '#d65050' : (en <= 55 ? '#d9a441' : '#6bbf5f');
+    const enPen = en < 10 ? ' <span style="color:#d65050;font-size:9px">−50% atk/def</span>' : en < 20 ? ' <span style="color:#d65050;font-size:9px">−25% atk/def</span>' : en < 30 ? ' <span style="color:#d9a441;font-size:9px">−10% atk/def</span>' : '';
+    h += '<div style="margin:4px 0 2px;font-size:11px;display:flex;align-items:center;gap:6px" title="Deployment energy — drains in the field, regenerates at the Keep. Tired hosts fight worse.">' +
+      '<span>🔋 Energy</span>' +
+      '<span style="flex:1;min-width:40px;height:7px;background:rgba(0,0,0,0.5);border:1px solid #000;border-radius:3px;overflow:hidden;display:inline-block">' +
+        '<span style="display:block;height:100%;width:' + Math.max(0, Math.min(100, en)) + '%;background:' + enCol + '"></span>' +
+      '</span>' +
+      '<b style="color:' + enCol + '">' + en + '</b>' + enPen +
+    '</div>';
     h += '<div class="rp-h" style="margin:4px 0 2px">Composition</div>' + (comp || '<div class="muted">No units.</div>');
     h += '<div class="muted" style="font-size:10px;margin:3px 0">🛡️ Armour: ' + (armRecs.length ? '<b>' + armRecs.length + '/' + allRecs.length + '</b> armoured · ' + amix : 'none') + '</div>';
     h += '<div class="muted" style="font-size:10px">Each soldier (weapon · 🛡 armour):</div><div style="max-height:96px;overflow:auto;display:flex;flex-wrap:wrap;gap:2px;margin-top:2px">' + (roster || '<span class="muted">—</span>') + '</div>';
