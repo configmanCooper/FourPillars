@@ -848,6 +848,11 @@ function tickRaze(state, dt, rng, log) {
 
     const target = razeTarget;
     if (!target) {
+      // Only a genuine OUTPOST — ground its owner actually CLAIMED — can be seized. Raw ground that was
+      // already captured once (owner set, but claimedBy cleared) is NOT an outpost: you may stand on it, but
+      // there's nothing to capture until its owner rebuilds an outpost there. This stops "places with no
+      // outpost being captured" — the phantom capture bar on bare, previously-seized ground.
+      if (area.claimedBy !== owner) { if ((area.captureProgress || 0) > 0) area.captureProgress = 0; continue; }
       // Non-base: all buildings razed → seize the site after a short hold.
       area.captureProgress = (area.captureProgress || 0) + dt;
       if (area.captureProgress >= B.CAPTURE_AFTER_RAZE) {

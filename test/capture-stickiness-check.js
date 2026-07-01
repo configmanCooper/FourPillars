@@ -63,5 +63,24 @@ function host(team, area, units) {
   ok(m !== 'siege', 'weak RED host did NOT commit to sieging the FULL defended keep (mission=' + m + ')');
 }
 
+// ---- Test 3: raw seized ground (owned but NOT an outpost) is NOT capturable ----
+{
+  const st = freshGame();
+  const red = st.teams.RED, blue = st.teams.BLUE;
+  let landId = null;
+  for (const id in st.areas) { const a = st.areas[id]; if (a.terrain !== 'base' && a.connections.length >= 2) { landId = id; break; } }
+  const land = st.areas[landId];
+  // BLUE OWNS the ground but it is NOT a claimed outpost (claimedBy null) — e.g. ground it seized earlier.
+  land.owner = 'BLUE'; land.claimedBy = null; land.buildings = {}; land.captureProgress = 0;
+  // A RED host stands on it with no defender present.
+  red.armies = [host(red, landId, { spearman: 4 })];
+  blue.armies = [];
+  const rng = require('../server/rng.js').makeRng(1);
+  const army = require('../server/systems/army.js');
+  for (let i = 0; i < 20; i++) { st.tick++; army.tickRaze(st, 1, rng, () => {}); }
+  ok((st.areas[landId].captureProgress || 0) === 0, 'raw un-claimed ground accrues NO capture progress');
+  ok(st.areas[landId].owner === 'BLUE', 'raw un-claimed ground did NOT flip owner (not an outpost → not capturable)');
+}
+
 console.log(fails === 0 ? '\nCAPTURE / SIEGE-SANITY OK' : '\n' + fails + ' FAILURES');
 process.exit(fails === 0 ? 0 : 1);

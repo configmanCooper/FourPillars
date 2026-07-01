@@ -344,6 +344,10 @@
         html += '<div class="tc ' + tm.toLowerCase() + '"><span class="tc-glyph">' + meta.glyph + '</span>' +
           '<div class="tc-info"><div>' + badge + ' ' + meta.name + (isMe ? ' <b style="color:#e3c578">(you)</b>' : '') + pname + askBadge + '</div>' +
           '<div class="tc-task">' + roleTask(snap.teams[tm], role) + '</div></div></div>';
+        // Reveal cheat ("fourpillars"): show the AI Lord's inner monologue beneath his row (both kingdoms).
+        if (role === 'LORD' && State.revealThoughts && sl.controller === 'ai' && snap.teams[tm]._lordThought) {
+          html += '<div class="lord-thought" style="font-size:10px;line-height:1.35;color:#d8c79a;font-style:italic;background:rgba(0,0,0,0.28);border-left:2px solid ' + (tm === 'BLUE' ? '#5a7fb8' : '#b85a4a') + ';padding:4px 7px;margin:0 0 6px;border-radius:0 3px 3px 0">💭 ' + esc(snap.teams[tm]._lordThought) + '</div>';
+        }
       }
     }
     $('teamCards').innerHTML = html;
@@ -2153,16 +2157,18 @@
     wAdj(job, d) { Net.action('assignWorker', { job, delta: d }); },
     toggleDebug() {
       let p = document.getElementById('fpDebug');
-      if (p) { p.remove(); return; }
+      if (p) { p.remove(); State.revealThoughts = false; if (State.snapshot) updateRight(State.snapshot); return; }
+      State.revealThoughts = true; if (State.snapshot) updateRight(State.snapshot);
       p = document.createElement('div'); p.id = 'fpDebug';
       p.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:#1a1410;border:2px solid #c9a44a;border-radius:8px;padding:18px 22px;color:#e8dcc0;font:13px/1.5 monospace;box-shadow:0 8px 40px rgba(0,0,0,.7);max-width:340px';
       p.innerHTML = '<div style="font-weight:bold;color:#e3c578;margin-bottom:8px">⚙ Debug / Replay</div>' +
+        '<div style="margin-bottom:8px;opacity:.85">🧠 <b>AI Lords\' thoughts revealed</b> — see each AI Lord\'s inner monologue under his row in the council panel (both kingdoms).</div>' +
         '<div style="margin-bottom:10px;opacity:.8">Download the full game replay (every action, periodic state snapshots, all events &amp; requests for both teams). Works during or after the match.</div>' +
         '<button id="fpDlReplay" style="background:#c9a44a;border:0;border-radius:5px;padding:8px 14px;color:#1a1410;font-weight:bold;cursor:pointer;width:100%;margin-bottom:6px">⬇ Download replay JSON</button>' +
         '<button id="fpDbgClose" style="background:#3a302282;border:1px solid #6b5a30;border-radius:5px;padding:6px;color:#e8dcc0;cursor:pointer;width:100%">Close (or type fourpillars)</button>';
       document.body.appendChild(p);
       document.getElementById('fpDlReplay').onclick = () => { toast('Fetching replay…'); Net.requestReplay(); };
-      document.getElementById('fpDbgClose').onclick = () => p.remove();
+      document.getElementById('fpDbgClose').onclick = () => { p.remove(); State.revealThoughts = false; if (State.snapshot) updateRight(State.snapshot); };
     },
     onReplayData(data) {
       try {

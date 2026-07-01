@@ -14,6 +14,7 @@
     selectedArea: null,
     selectedGroupId: null,
     seenComms: 0,          // for badge counting
+    revealThoughts: false, // debug reveal (typed "fourpillars"): show AI Lords' inner monologue
 
     teamState() { return this.snapshot && this.myTeam ? this.snapshot.teams[this.myTeam] : null; },
     enemyTeam() { return this.myTeam === 'BLUE' ? 'RED' : 'BLUE'; },

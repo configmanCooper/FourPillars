@@ -576,6 +576,131 @@ function aiLord(state, team, sys, rng, persona, st) {
   // Set the kingdom's strategic reservations (goal-driven), then weigh and answer the council's asks.
   lordManageReservations(state, team, sys, st, persona);
   lordHandleRequests(state, team, sys, st);
+
+  // Reflect: capture the Lord's current read of the world (a read-only "inner monologue" surfaced to
+  // spectators / the reveal cheat). Cheap, and only for an AI-run Lord seat.
+  team._lordThought = lordThought(state, team, persona);
+}
+
+// ---- AI Lord "inner monologue" -----------------------------------------------------------------------
+// A read-only reflection of how the Lord reads the state of the world and what he thinks his kingdom
+// should do — his mood plus a strategic intent. Grounded in the SAME signals aiLord actually reacts to
+// (keep health, food/wood, army balance, threats, territory, persona, phase). Persona-flavoured, and
+// stable-but-rotating: within one situation a fresh variant surfaces every ~25s so it reads like a living
+// mind rather than a fixed label. Returns a 1–4 sentence string.
+function fnv(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+function lordThought(state, team, persona) {
+  persona = persona || (team.aiPersona && team.aiPersona.LORD) || 'balanced';
+  const enemy = state.teams[S.enemyOf(team.team)];
+  const p = team.pop || {};
+  const R = team.resources || {};
+  const keepR = team.keep.hp / Math.max(1, team.keep.maxHp);
+  const ekR = enemy.keep.hp / Math.max(1, enemy.keep.maxHp);
+  const food = R.food || 0, wood = R.wood || 0, relics = R.relics || 0;
+  const foodRate = (team.resourceStats && team.resourceStats.food) ? team.resourceStats.food.rate : 0;
+  const starving = !!team._starving || food < 18;
+  const hasBar = (team.buildings.barracks || 0) > 0;
+  const hadBar = !!team._hadBarracks;
+  const hasUni = (team.buildings.university || 0) > 0;
+  const threat = enemyOnOwned(state, team);
+  const sol = p.soldiers || 0, esol = enemy.pop.soldiers || 0;
+  const recruits = p.recruits || 0, idle = p.idle || 0;
+  const ownSites = ownedOutpostList(state, team).length;
+  const enemySites = countEnemyOutposts(state, enemy);
+  const mpol = team.militaryPolicy;
+  const atCap = p.total >= (team.housing || 0) - 1;
+  const capHit = ['wood', 'stone', 'iron'].some((k) => (R[k] || 0) >= (team.storageCap || 999) - 5);
+  const lowWood = wood < 25;
+  const phase = state.phase;
+  const behind = (sol + 4 < esol) || keepR < 0.6;
+  const ahead = (sol > esol + 3) || ekR < 0.8;
+  const dominant = sol > esol + 6 && ekR < 0.92;
+  const armyLost = hadBar && !hasBar;
+
+  // Priority-ordered situations: the FIRST whose condition holds provides the thought. Each carries a few
+  // variants; the picker rotates them by time + persona so the same crisis doesn't read identically forever.
+  const S_ = [
+    { k: 'lastwall', on: keepR < 0.3, v: [
+      'The Watchtower groans and our walls are crumbling — I can taste ash on the wind. Every hand takes up a blade now; recall the whole host. If the Keep falls, so do we.',
+      'They are at our very gates and the Keep bleeds. A cold dread sits in my chest. Nothing beyond these walls matters — bring everyone home and hold, or it is finished.' ] },
+    { k: 'siege', on: threat && behind, v: [
+      'Enemy banners stand on OUR soil and we are the weaker army — my stomach knots. Wall up, hold the Keep, and buy the Commander time to gather a real host before we commit.',
+      'They raid our holdings and we cannot yet answer blow for blow. Patience over pride: turtle behind the Watchtower, feed the smiths iron, and let them break on our stone.',
+      'Raiders on our land, and too few spears to drive them off cleanly. I will not feed men in piecemeal — pull back, mass up, and strike only when the numbers are ours.' ] },
+    { k: 'famine-army', on: starving && sol >= 3, v: [
+      'The granaries are echoing and I have soldiers to feed — a famine loses wars faster than any enemy. Everyone who can hold a hoe goes to the fields; the army must wait to grow.',
+      'Hunger gnaws the realm while my host demands its bread. Shameful. Farms first, always — a starving army melts away without a blow being struck.' ] },
+    { k: 'famine', on: starving, v: [
+      'The larder is nearly bare and my people go hungry — this shames me. Pour hands into the farms and raise another before the hunger sets in and growth stalls.',
+      'Food, food — the whole realm rests on it, and ours runs thin. Fields before everything until the granaries breathe again.' ] },
+    { k: 'nobar-threat', on: !hasBar && esol >= 3, v: [
+      'The enemy already fields spears and we have no Barracks to answer — a spike of alarm. Everything yields: raise a Barracks at the Keep NOW, before their army decides the game.',
+      'They arm for war and we have not a single trained blade. Unacceptable. A Barracks behind the Watchtower is the only build that matters this hour.' ] },
+    { k: 'rebuildmil', on: armyLost, v: [
+      'Our Barracks is rubble and the recruits stand idle with nowhere to train — a gut-punch. Rebuild it at the Keep at once, or this levy is just so many hungry mouths.',
+      'The army pipeline is broken — no Barracks, no soldiers, only waiting men. Raise it again immediately; without it we simply lose.' ] },
+    { k: 'snowballed', on: ownSites <= 1 && enemySites >= 3 && behind && phase !== 'EARLY', v: [
+      'They have sprawled across the map while we cling to the Keep — the walls feel close tonight. We cannot trade blows, so we bleed them: small raiders to harry their outposts and make them chase, then rebuild.',
+      'Cornered, out-territoried, out-numbered. Grim. Our chance is cunning, not force — pester their holdings, stretch their army thin, and seize a moment to claw back ground.' ] },
+    { k: 'killblow', on: dominant && ekR < 0.7, v: [
+      'Their Keep is buckling and our host is the stronger — my blood is up. No mercy, no delay: throw everything at the enemy Keep and END it before they can recover.',
+      'The enemy totters and victory is within reach — I can almost grasp it. Press the assault on their Keep with the full weight of the realm. Finish this.' ] },
+    { k: 'press-late', on: ahead && phase === 'LATE', v: [
+      'We hold the upper hand as the sun sets on this war — now is not the time to sit. Keep the pressure on their land and score; a lead squandered late is a lead lost.',
+      'Ahead, and the clock is our friend — but only if we keep pressing. Take their outposts, deny their caravans, and grind the advantage wider before time is called.' ] },
+    { k: 'behind-mil', on: behind && !threat, v: [
+      'Their host outnumbers ours and I feel the weight of it. Defensive footing: raise walls, fill the Barracks with trainers, and do not sally until the ledger of spears evens.',
+      'We are behind on soldiers — caution is wisdom, not cowardice. Turtle, build the army in earnest, and let them overextend onto our walls.' ] },
+    { k: 'lowwood', on: lowWood && phase !== 'LATE', v: [
+      'Wood again — the eternal bottleneck. Every building, every outpost, every axe-haft needs it, and ours runs dry. More hands to the woodcutters before the whole plan stalls.',
+      'The lumber piles are thin and it is throttling everything I want to build. Shift the workforce to the treeline; wood income first, or nothing else moves.' ] },
+    { k: 'foodstrain', on: !starving && foodRate < 0.2 && sol >= 2 && !threat, v: [
+      'The food ledger is flat and slipping — I have seen realms starve mid-triumph for ignoring this. Add farmers and raise a Farm now, while the stockpile still holds.',
+      'We are barely feeding ourselves as the army grows. Shore up the fields proactively; a famine that arrives is already too late to fix.' ] },
+    { k: 'capwaste', on: capHit && hasBar, v: [
+      'The storehouses overflow and good resources rot unused — that offends my sense of order. Raise storage, or better, spend the surplus on new ground and buildings.',
+      'We are drowning in goods we cannot bank — waste, plain and simple. Build storehouses or expand; idle wealth wins nothing.' ] },
+    { k: 'expand', on: ahead && ownSites >= 1 && phase !== 'EARLY' && !threat && (p.soldiers || 0) >= 4, v: [
+      'We are secure and strong — time to grow the realm outward. Have the Steward claim fresh ground; more outposts mean more resources and more room to build.',
+      'The Keep is humming and safe. Reach out and take new land while we can hold it — a bigger realm is a stronger one.' ] },
+    { k: 'housing', on: atCap && !starving, v: [
+      'We have brushed our housing cap and the population sits still — a realm that stops growing starts losing. Raise houses so more hands, and more soldiers, can be born.',
+      'Every home is full and growth has stalled. Build housing; people are the root of every army and every workshop.' ] },
+    { k: 'idlehands', on: idle >= 5 && !starving, v: [
+      'Too many hands stand idle while there is a war to win — that is waste I will not abide. Put them to the gather-lines, or levy them into recruits for the Commander.',
+      'Idle workers, doing nothing for the realm. Assign them — to the fields, the forests, or the muster — before the moment is lost.' ] },
+    { k: 'armyforming', on: hasBar && recruits >= 2, v: [
+      'Fresh recruits fill the yard and the trainers are busy — I feel the realm sharpening into something dangerous. Keep the Barracks running at full; soldiers win the day.',
+      'The muster grows by the hour. Good. Every trainer at work, every recruit becoming a blade — soon we will have a host worth marching.' ] },
+    { k: 'research', on: hasUni && phase !== 'EARLY', v: [
+      'Knowledge compounds like coin. With scholars at the University I invest in the future — sharper blades, richer mines, taller walls that pay dividends all game long.',
+      'The University hums with study. Patience here rewards us tenfold later; keep the researchers fed and let our advantages quietly grow.' ] },
+    { k: 'relics', on: relics >= 1 && phase !== 'EARLY', v: [
+      'Relics — old power, and score besides. I would hoard them and turn them to research; such things win the long game as surely as any spear.',
+      'The glint of a relic stirs something in me. Guard them well and learn from them; they are worth more than their weight in iron.' ] },
+    { k: 'early', on: phase === 'EARLY', v: [
+      'A new dawn and an empty map — I feel the quiet promise of it. Lay the foundation right: wood and food first, then a Barracks, and let the realm compound from there.',
+      'The opening moves matter most. Scout, chop, farm, and get the economy breathing before the first blades are drawn — a strong start echoes all game.' ] },
+    { k: 'even', on: Math.abs(sol - esol) <= 3 && phase === 'MID', v: [
+      'The scales sit near even and the mid-game tension hums. Hold balance: keep building, keep training, and wait for the enemy to make the first mistake.',
+      'Neither side has the edge yet. Steady hands — grow the economy and the army together, and pounce the instant the balance tips our way.' ] },
+  ];
+
+  let chosen = null;
+  for (const s of S_) { if (s.on) { chosen = s; break; } }
+  if (!chosen) {
+    // Persona-flavoured idle musing when nothing pressing stands out.
+    const idleV = {
+      builder: ['The realm prospers under a steady plan — granaries full, workshops busy. Growth is my weapon; out-build them and the war tends to itself.'],
+      warmonger: ['Peace bores me. I did not raise this banner to hoard grain — sharpen the blades, fill the Barracks, and let us go and TAKE something.'],
+      turtler: ['Behind good walls, a patient realm outlasts a reckless one. Fortify, stockpile, and let the enemy dash himself against our stone.'],
+      balanced: ['Measured steps win long wars. Keep economy and army in step, answer the council fairly, and let no single weakness open up.'],
+    };
+    const arr = idleV[persona] || idleV.balanced;
+    return arr[fnv('idle' + persona + Math.floor(state.elapsed / 25)) % arr.length];
+  }
+  const bucket = Math.floor(state.elapsed / 25);
+  return chosen.v[fnv(chosen.k + persona + bucket) % chosen.v.length];
 }
 
 // AI research brain: ensure there are educated workers + researchers at a University, then buy the
@@ -1389,7 +1514,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
     // retreat check just above, so holding is safe.
     if (ab(team, 'stickycapture') && !w.moving) {
       const ha = state.areas[myArea];
-      if (ha && ha.terrain !== 'base' && ha.owner === S.enemyOf(team.team) && enemyUnitsOn(state, team, myArea) < 0.5) {
+      if (ha && ha.terrain !== 'base' && ha.owner === S.enemyOf(team.team) && ha.claimedBy === S.enemyOf(team.team) && enemyUnitsOn(state, team, myArea) < 0.5) {
         w.postGuard = null; army.command(state, team, w.id, 'garrison', myArea);
         say(state, team, sys, st, C.ROLES.COMMANDER, 'Holding ' + ha.name + ' until it falls to us — take it!', 22);
         return;
@@ -1512,12 +1637,20 @@ function aiCommander(state, team, sys, rng, persona, st) {
         return;
       }
     }
-    // Nothing winnable to assault right now. A TIRED host (low energy → combat penalty) should fall back to the
-    // Keep to RECOVER rather than loiter on draining forward ground; a fresh host holds forward to project power.
-    if (ab(team, 'energyrest') && army.hostEnergy(w) < 40 && army.currentArea(w) !== home) {
-      army.command(state, team, w.id, 'defend');
-      say(state, team, sys, st, C.ROLES.COMMANDER, 'Spent — falling back to the Keep to rest and recover.', 22);
-      return;
+    // Nothing winnable to assault right now. A TIRED host (low energy → combat penalty) with nothing pressing
+    // to do falls back to the Keep and RESTS there until it's fresh again — rather than loitering on draining
+    // forward ground, OR bouncing straight back out the moment it ticks past the threshold. Hysteresis: begin
+    // resting at ≤35 energy and keep holding at the Keep until ~85. (This only runs at the ladder's fallthrough,
+    // so anything important — a threat, an undefended post, a siege — still preempts it and pulls the host out.)
+    if (ab(team, 'energyrest')) {
+      const e = army.hostEnergy(w);
+      if (e <= 35) w._resting = true;
+      else if (e >= 85) w._resting = false;
+      if (w._resting) {
+        if (army.currentArea(w) !== home || w.moving) say(state, team, sys, st, C.ROLES.COMMANDER, 'Spent — falling back to the Keep to rest and recover.', 22);
+        army.command(state, team, w.id, 'defend');
+        return;
+      }
     }
     // Nothing winnable to assault right now: hold FORWARD ground near the enemy (project power), never idle at home.
     army.command(state, team, w.id, 'garrison', forwardSite(state, team) || bestSiteToHold(state, team) || home);
@@ -1553,7 +1686,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
     const hereId = army.currentArea(w); const hereA = state.areas[hereId];
     // STICKY CAPTURE: already sitting on an enemy outpost with no defender and a winning position → STAY and
     // finish TAKING it. Don't re-target and reset the ~10s capture clock (the "leaves before capturing" bug).
-    if (!w.moving && hereA && hereA.terrain !== 'base' && hereA.owner === foe &&
+    if (!w.moving && hereA && hereA.terrain !== 'base' && hereA.owner === foe && hereA.claimedBy === foe &&
         ab(team, 'stickycapture') && enemyUnitsOn(state, team, hereId) < 0.5 && winChanceAt(state, army, team, w, hereId) >= retreatBar) {
       army.command(state, team, w.id, 'garrison', hereId);
       say(state, team, sys, st, C.ROLES.COMMANDER, 'Taking ' + hereA.name + ' — hold it until it falls!', 20);
@@ -1902,7 +2035,7 @@ function captureOpportunity(state, army, team, w, winBar, holdBar, claimed) {
   let best = null;
   for (const id in state.areas) { const a = state.areas[id];
     if (a.terrain === 'base' || id === ekId) continue;                  // the enemy Keep is a siege, handled apart
-    if (a.owner !== foe) continue;                                      // ENEMY-held posts only (neutrals are the Steward's job)
+    if (a.owner !== foe || a.claimedBy !== foe) continue;               // ENEMY-held OUTPOSTS only (claimed ground; raw seized ground / neutrals aren't capturable)
     if (claimed && claimed[id]) continue;
     const take = winChanceAt(state, army, team, w, id);
     if (take < winBar) continue;                                        // can't win the fight there → not an opportunity
@@ -1927,6 +2060,7 @@ function undefendedCaptureTarget(state, army, team, w, claimed) {
   for (const id in state.areas) { const a = state.areas[id];
     if (a.terrain === 'base' || id === ekId) continue;
     if (a.owner !== foe) continue;
+    if (a.claimedBy !== foe) continue;                                  // a real enemy OUTPOST (claimed) — raw seized ground isn't capturable
     if (claimed && claimed[id]) continue;
     if (enemyUnitsOn(state, team, id) > 1.0) continue;            // only (near-)undefended posts
     if (winChanceAt(state, army, team, w, id) < 0.7) continue;    // must be a near-certain win for us
@@ -1939,7 +2073,7 @@ function undefendedCaptureTarget(state, army, team, w, claimed) {
 function hasUndefendedEnemyPost(state, team) {
   const foe = S.enemyOf(team.team); const ekId = S.homeBase(foe);
   for (const id in state.areas) { const a = state.areas[id];
-    if (a.terrain === 'base' || id === ekId || a.owner !== foe) continue;
+    if (a.terrain === 'base' || id === ekId || a.owner !== foe || a.claimedBy !== foe) continue;
     if (enemyUnitsOn(state, team, id) <= 1.0) return true;
   }
   return false;
@@ -2005,7 +2139,7 @@ function swarmTarget(state, army, team, w, claimed) {
   const foe = S.enemyOf(team.team); const ekId = S.homeBase(foe);
   let best = null, bestScore = -1e9;
   for (const id in state.areas) { const a = state.areas[id];
-    if (a.terrain === 'base' || id === ekId || a.owner !== foe) continue;
+    if (a.terrain === 'base' || id === ekId || a.owner !== foe || a.claimedBy !== foe) continue;
     if (claimed && claimed[id]) continue;
     const def = enemyUnitsOn(state, team, id);
     const wc = winChanceAt(state, army, team, w, id);
@@ -2119,4 +2253,4 @@ function pickRaidTarget(state, team) {
   return best;
 }
 
-module.exports = { aiTick };
+module.exports = { aiTick, lordThought };
