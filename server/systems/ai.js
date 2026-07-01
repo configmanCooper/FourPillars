@@ -1337,6 +1337,11 @@ function aiCommander(state, team, sys, rng, persona, st) {
   const enemyPostCount = countEnemyOutposts(state, enemyTeam);
   const swarm = ab(team, 'swarmharass') && desperate && enemyPostCount >= 3;
   if (swarm) maxHosts = Math.max(maxHosts, clampI(enemyPostCount, 3, 5));
+  // When snowballed, sitting our WHOLE garrison at home guarantees a slow loss — the Watchtower covers the
+  // Keep, so free the reserve down to a token guard so we can actually PEEL the swarm raiders (otherwise an
+  // enemy camped on our doorstep inflates the reserve to the whole garrison and we harass with nothing). Only
+  // while the Keep isn't genuinely being stormed (keepThreat still recalls everyone in that case).
+  if (swarm && !keepThreat) reserve = Math.min(reserve, defensivePersona ? 3 : 2);
   // When we're no longer being snowballed, retire any swarm raiders back into the normal command ladder.
   if (!swarm) { for (const h of team.armies) if (h.swarm) h.swarm = false; }
 
