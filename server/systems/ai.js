@@ -1355,7 +1355,14 @@ function aiCommander(state, team, sys, rng, persona, st) {
     const ekArea = state.areas[S.homeBase(S.enemyOf(team.team))];
     const ekBuildings = S.buildingsAt(ekArea);
     const atEnemyKeep = army.currentArea(w) === ekArea.id;
-    if ((atEnemyKeep || ekBuildings <= 3) && army.unitCount(w) >= 2) {
+    const ekDefNow = enemyTeam.armies.reduce((s, h) => s + (army.currentArea(h) === ekArea.id ? army.unitCount(h) : 0), 0);
+    const ekWeak = enemyTeam.keep.hp < enemyTeam.keep.maxHp * 0.6;
+    // Only COMMIT to the Keep assault when it can actually make progress: it's nearly razed, its Watchtower is
+    // already battered, or we out-muscle its defenders. Hurling a weak host at a FULL, well-garrisoned Keep just
+    // feeds it to the defenders (the reported "very dumb — keeps attacking Blue's full Keep") — so if we're
+    // parked at a Keep we can't crack, DON'T siege; fall through to capturing undefended ground instead.
+    const siegeViable = ekBuildings <= 3 || ekWeak || army.unitCount(w) > ekDefNow * 1.1;
+    if (((atEnemyKeep && siegeViable) || ekBuildings <= 3) && army.unitCount(w) >= 2) {
       army.command(state, team, w.id, 'siege');
       say(state, team, sys, st, C.ROLES.COMMANDER, ekBuildings <= 1 ? 'Their Keep is all but ours — END THIS!' : 'Press the assault on the enemy Keep!', 16);
       return;
@@ -1369,6 +1376,19 @@ function aiCommander(state, team, sys, rng, persona, st) {
       else { army.command(state, team, w.id, 'garrison', dest); }
       say(state, team, sys, st, C.ROLES.COMMANDER, 'Outmatched — pulling back to regroup.', 16);
       return;
+    }
+    // STICKY CAPTURE: if we're already standing on an enemy outpost with NO defender, we're mid-capture — HOLD
+    // here until the ground flips to us. Seizing an outpost needs unbroken occupation (~10s); wandering off to
+    // the next post resets that clock, so the host would raze-and-run forever and never actually TAKE anything
+    // (the reported "kept leaving places before capturing them"). A real threat here already triggered the
+    // retreat check just above, so holding is safe.
+    if (ab(team, 'stickycapture') && !w.moving) {
+      const ha = state.areas[myArea];
+      if (ha && ha.terrain !== 'base' && ha.owner === S.enemyOf(team.team) && enemyUnitsOn(state, team, myArea) < 0.5) {
+        w.postGuard = null; army.command(state, team, w.id, 'garrison', myArea);
+        say(state, team, sys, st, C.ROLES.COMMANDER, 'Holding ' + ha.name + ' until it falls to us — take it!', 22);
+        return;
+      }
     }
     // Contest an owned site the enemy is physically ON (raiding it) — march in and fight them off.
     // One host per site (claimed). Mere adjacency is answered by counter-attacking below, NOT by
@@ -1524,12 +1544,26 @@ function aiCommander(state, team, sys, rng, persona, st) {
   // home to rejoin the rebuild when there's nothing safe left to harry.
   const swarmRaid = (w) => {
     if (keepThreat) { w.swarm = false; army.command(state, team, w.id, 'defend'); return; }
+    const foe = S.enemyOf(team.team);
+    const hereId = army.currentArea(w); const hereA = state.areas[hereId];
+    // STICKY CAPTURE: already sitting on an enemy outpost with no defender and a winning position → STAY and
+    // finish TAKING it. Don't re-target and reset the ~10s capture clock (the "leaves before capturing" bug).
+    if (!w.moving && hereA && hereA.terrain !== 'base' && hereA.owner === foe &&
+        ab(team, 'stickycapture') && enemyUnitsOn(state, team, hereId) < 0.5 && winChanceAt(state, army, team, w, hereId) >= retreatBar) {
+      army.command(state, team, w.id, 'garrison', hereId);
+      say(state, team, sys, st, C.ROLES.COMMANDER, 'Taking ' + hereA.name + ' — hold it until it falls!', 20);
+      return;
+    }
     const sc = (decide._swarmClaim = decide._swarmClaim || {});
     const tgt = swarmTarget(state, army, team, w, sc);
     if (tgt) {
       sc[tgt] = true;
-      army.command(state, team, w.id, 'raid', tgt);
-      say(state, team, sys, st, C.ROLES.COMMANDER, 'Harrying ' + state.areas[tgt].name + ' — keep them chasing!', 18);
+      // An UNDEFENDED post → GARRISON it (march in and HOLD to capture the ground). A defended-but-weak post →
+      // raid it hit-and-run (deny/annoy, keep them chasing). Capturing free enemy ground is the real prize.
+      const defended = enemyUnitsOn(state, team, tgt) >= 0.5;
+      const takeIt = ab(team, 'stickycapture') && !defended;
+      army.command(state, team, w.id, takeIt ? 'garrison' : 'raid', tgt);
+      say(state, team, sys, st, C.ROLES.COMMANDER, (takeIt ? 'Seizing ' : 'Harrying ') + state.areas[tgt].name + (takeIt ? ' — take it!' : ' — keep them chasing!'), 18);
       return;
     }
     // Nothing safe to harry — fall back home to rebuild with the main force.
