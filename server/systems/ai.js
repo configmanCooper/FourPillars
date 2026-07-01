@@ -1724,7 +1724,10 @@ function clampI(v, lo, hi) { return Math.max(lo, Math.min(hi, Math.round(v))); }
 // Rough relative army strength (count, with an armoured bonus) for an edge comparison.
 function forcePower(army, team) {
   let p = 0;
-  for (const g of team.armies) { const n = army.unitCount(g); if (n < 0.5) continue; p += n * (g.hasArmor ? 1.6 : 1); }
+  // Weight each host by bodies, armour AND deployment energy — a tired, far-flung army really is weaker, so the
+  // strategic posture (edge → vulnerable / behind / desperate) should judge it as such, matching the tactical
+  // win-chance maths (which already folds energyMult into strength()).
+  for (const g of team.armies) { const n = army.unitCount(g); if (n < 0.5) continue; p += n * (g.hasArmor ? 1.6 : 1) * army.energyMult(g); }
   return p;
 }
 // Enemy strength actually ON our Keep vs merely ADJACENT to it — used to tell a real assault from a

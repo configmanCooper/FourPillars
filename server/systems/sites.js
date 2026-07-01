@@ -4,6 +4,7 @@ const B = require('../../shared/balance.js');
 const S = require('../../shared/schema.js');
 const C = require('../../shared/constants.js');
 const eco = require('./economy.js');
+const army = require('./army.js');
 
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
@@ -299,7 +300,21 @@ function tickSites(state, team, dt, rng, log) {
       // Enemy troops on or beside this leg? Unguarded, unescorted caravans are DESTROYED; guards fight.
       const near = enemyTroopsNear(state, team, enteredId);
       const enemyN = near.total; const hitArea = near.area; const attacker = near.host;
-      if (enemyN >= 0.5 && !cv.escort) {
+      if (enemyN >= 0.5 && cv.escort) {
+        // A GUARDED (escorted) convoy runs into the enemy: the escort host PEELS OFF to hold them here as a
+        // rearguard while the caravan rolls on — now UNGUARDED and catchable on a later leg. The escort fights
+        // where it stands (normal army combat) and can die. This is why an escort actually STOPS a raid: the
+        // raiders are pinned fighting the rearguard instead of sailing through to the wagons.
+        const esc = team.armies.find((a) => a.id === cv.escortGroupId);
+        const here = state.areas[enteredId].name;
+        cv.escort = false; cv.escortGroupId = null;
+        if (esc && army.unitCount(esc) >= 0.5) {
+          esc.rearguardUntil = state.elapsed + B.GUARD_PIN_SECONDS;         // UI: mark it as a fighting rearguard
+          if (attacker) attacker.pinnedUntil = state.elapsed + B.GUARD_PIN_SECONDS; // raiders stop to fight the escort
+          army.command(state, team, esc.id, 'garrison', hitArea);          // stand and fight the enemy here
+          if (log) log(team.team, '🛡 ' + esc.name + ' peels off to hold the enemy at ' + here + ' — the caravan rolls on, unguarded!', 'ambush');
+        }
+      } else if (enemyN >= 0.5 && !cv.escort) {
         const here = state.areas[enteredId].name;
         // Cautious caravans may slip past the enemy entirely (50% by default).
         if ((cv.sneak || 0) > 0 && rng.chance(cv.sneak)) {

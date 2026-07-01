@@ -27,6 +27,7 @@
   const prevKeep = { BLUE: null, RED: null };
   const hostSmooth = {};       // host id -> eased screen-world position for marching interpolation
   let lastSnapTick = -1;
+  let curElapsed = 0;          // latest snapshot's sim clock (seconds) — for expiring transient host markers
 
   function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0); }
 
@@ -144,6 +145,7 @@
 
   function draw(snap, st) {
     if (!snap) return;
+    curElapsed = snap.elapsed || 0;
     if (!staticLayer) buildStatic(snap.areas);
     selHostId = st && st.selectedGroupId; myTeamR = st && st.myTeam;
     hostHits = []; allHostHits = [];
@@ -399,6 +401,12 @@
       ctx.fillRect(bx, by, bw * Math.max(0, Math.min(1, en / 100)), 3);
     }
     if (g.mission && (g.mission.type === 'siege' || g.mission.type === 'raid')) { ctx.font = '11px serif'; ctx.fillText(g.mission.type === 'siege' ? '⚔️' : '🔥', cx + 13, cy - 12); }
+    // Rearguard: an escort that peeled off its caravan to hold the enemy — flash a shield-and-swords badge so
+    // the player sees the guard staying back to fight while the (now unguarded) caravan rolls on.
+    if (g.rearguardUntil && g.rearguardUntil > curElapsed) {
+      const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 140);
+      ctx.font = '12px serif'; ctx.globalAlpha = pulse; ctx.fillText('🛡', cx - 14, cy - 12); ctx.globalAlpha = 1;
+    }
     ctx.restore();
   }
 
