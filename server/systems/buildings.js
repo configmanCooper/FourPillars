@@ -83,6 +83,10 @@ function demolishBuilding(state, team, areaId, type, log) {
   }
   area.buildings[type] -= 1;
   if (area.buildings[type] <= 0) delete area.buildings[type];
+  // Clear any stale raze damage tracked against this type so a future build of the same type starts fresh
+  // (was: a rebuilt wall resumed at the old damaged HP; a demolished type left dangling raze state).
+  if (area._razeTarget === type) { area._razeTarget = null; area._razeHp = null; }
+  if (type === 'watchtower') area._towerHp = null;
   const refund = {}; const cost = def.cost || {};
   for (const k in cost) { const v = Math.floor((cost[k] || 0) * B.DEMOLISH_REFUND); if (v > 0) refund[k] = v; }
   eco.refund(team, refund);
@@ -96,6 +100,10 @@ function applyEffect(state, team, item, log) {
   const type = item.type; const eff = B.BUILDINGS[type].effect || {};
   const area = state.areas[item.areaId] || state.areas[S.homeBase(team.team)];
   area.buildings[type] = (area.buildings[type] || 0) + 1;
+  // A freshly (re)built building starts at FULL HP — drop any stale raze damage tracked for its type so a
+  // mid-siege rebuild can't inherit the old battered HP (and the Watchtower's own HP field resets too).
+  if (area._razeTarget === type) { area._razeTarget = null; area._razeHp = null; }
+  if (type === 'watchtower') area._towerHp = null;
   // Walls fortify their location; at the Keep they harden the Keep itself.
   if (area.terrain === 'base' && (eff.keepHp || eff.keepDef)) {
     if (eff.keepHp) { team.keep.maxHp += eff.keepHp; team.keep.hp += eff.keepHp; }
