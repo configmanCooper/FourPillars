@@ -36,11 +36,12 @@ class RoomManager {
     socket.join(room.code);
     socket._fp = { code: room.code, pid, name: payload.name || 'Player' };
     room.players.set(pid, { pid, name: payload.name || 'Player', socketId: socket.id, connected: true });
-    // Reconnect: if this pid already owns a slot, mark connected again.
+    // Reconnect: if this pid already owns a slot, mark connected again and cancel any AI grace-takeover.
     for (const team of ['BLUE', 'RED']) for (const role of C.ROLE_ORDER) {
       const sl = room.state.teams[team].slots[role];
-      if (sl.playerId === pid) { sl.connected = true; sl.controller = C.CONTROLLER.HUMAN; }
+      if (sl.playerId === pid) { sl.connected = true; sl.controller = C.CONTROLLER.HUMAN; sl._aiGrace = false; }
     }
+    const rp = room.players.get(pid); if (rp) { rp.connected = true; rp.disconnectedAt = 0; rp.lastActivity = Date.now(); }
     socket.emit(C.EV.ROOM_UPDATE, { code: room.code, you: pid, isHost: room.hostId === pid });
     this.broadcastLobby(room);
     if (room.state.status === 'playing' || room.state.status === 'over') {
@@ -138,6 +139,8 @@ class RoomManager {
         this.logPause(room, 'Pause expired (5-minute maximum) — game resumed.');
       }
       this.refreshPause(room);
+      // Promote long-gone, silent human seats to AI control (grace-delayed so a blip never stomps a player).
+      this.checkAiTakeover(room);
       // Surrender: AI teams may offer to concede a hopeless match; resolve the offer on its deadline.
       this.maybeAIConcede(room);
       if (state.surrender && Date.now() >= (room._surrenderEndsMs || 0)) this.resolveSurrender(room);
@@ -527,6 +530,7 @@ class RoomManager {
     const room = this.rooms.get(socket._fp && socket._fp.code); if (!room) return;
     if (room.state.status !== 'playing') return;
     const pid = socket._fp.pid;
+    this.markActivity(room, pid);
     // Find which slot this player owns.
     let team = null, role = null;
     for (const tm of ['BLUE', 'RED']) for (const r of C.ROLE_ORDER) {
@@ -543,6 +547,7 @@ class RoomManager {
   chat(socket, payload) {
     const room = this.rooms.get(socket._fp && socket._fp.code); if (!room || room.state.status !== 'playing') return;
     const pid = socket._fp.pid;
+    this.markActivity(room, pid);
     for (const tm of ['BLUE', 'RED']) for (const r of C.ROLE_ORDER) {
       if (room.state.teams[tm].slots[r].playerId === pid) {
         sim.applyAction(room.state, tm, r, 'chat', { text: payload.text });
@@ -550,14 +555,48 @@ class RoomManager {
     }
   }
 
+  // ---- AI grace-takeover of a disconnected human's seat --------------------------------------------------
+  // A seat is handed to the AI only once its human has been gone AND silent for a grace window — so a brief
+  // network blip, or an actively-playing human whose disconnect fired spuriously, is never stomped.
+  markActivity(room, pid) {
+    const p = room && room.players.get(pid);
+    if (p) { p.lastActivity = Date.now(); if (!p.connected) { p.connected = true; p.disconnectedAt = 0; } }
+    // Any input from a player proves they're present: restore their seat from AI grace immediately.
+    if (room) for (const team of ['BLUE', 'RED']) for (const role of C.ROLE_ORDER) {
+      const sl = room.state.teams[team].slots[role];
+      if (sl.playerId === pid && (sl._aiGrace || !sl.connected)) { sl._aiGrace = false; sl.connected = true; sl.controller = C.CONTROLLER.HUMAN; }
+    }
+  }
+  checkAiTakeover(room) {
+    const GRACE = 30000, IDLE = 30000, now = Date.now();   // 30s disconnected AND 30s no input
+    for (const team of ['BLUE', 'RED']) for (const role of C.ROLE_ORDER) {
+      const sl = room.state.teams[team].slots[role];
+      if (!sl.playerId || sl.connected || sl._aiGrace) continue;   // seated humans / already-AI seats are fine
+      const p = room.players.get(sl.playerId);
+      const goneFor = now - ((p && p.disconnectedAt) || now);
+      const idleFor = now - ((p && p.lastActivity) || 0);
+      if (goneFor >= GRACE && idleFor >= IDLE) {
+        sl.controller = C.CONTROLLER.AI; sl._aiGrace = true;   // keep playerId so the human reclaims the seat on return
+        this.logPause(room, this.playerName(room, sl.playerId) + ' has been away — the AI takes their post for now.');
+      }
+    }
+  }
+
+  activity(socket) {
+    const room = this.rooms.get(socket._fp && socket._fp.code); if (!room) return;
+    this.markActivity(room, socket._fp.pid);
+  }
+
   handleDisconnect(socket) {
     const fp = socket._fp; if (!fp) return;
     const room = this.rooms.get(fp.code); if (!room) return;
-    const p = room.players.get(fp.pid); if (p) p.connected = false;
-    // AI takes over the disconnected player's seat (keeps playerId for reconnect).
+    const p = room.players.get(fp.pid); if (p) { p.connected = false; p.disconnectedAt = Date.now(); }
+    // Do NOT hand the seat to the AI immediately — a human who briefly drops (or whose socket blips while
+    // they're actively playing) must not be stomped by the AI. Mark the seat disconnected but keep it HUMAN;
+    // checkAiTakeover() promotes it to AI only after a grace delay AND a stretch of no input (see below).
     for (const team of ['BLUE', 'RED']) for (const role of C.ROLE_ORDER) {
       const sl = room.state.teams[team].slots[role];
-      if (sl.playerId === fp.pid) { sl.controller = C.CONTROLLER.AI; sl.connected = false; }
+      if (sl.playerId === fp.pid) { sl.connected = false; }
     }
     this.broadcastLobby(room);
     // If the host left, hand the host role to any still-connected player so the lobby isn't stuck

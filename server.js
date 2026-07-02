@@ -34,6 +34,7 @@ io.on('connection', (socket) => {
   socket.on(C.EV.SURRENDER_REQUEST, () => rooms.offerSurrender(socket));
   socket.on(C.EV.SURRENDER_VOTE, (p) => rooms.voteSurrender(socket, p || {}));
   socket.on(C.EV.REQUEST_REPLAY, () => rooms.sendReplay(socket));
+  socket.on(C.EV.ACTIVITY, () => rooms.activity(socket));
   socket.on(C.EV.REQUEST_SNAPSHOT, () => {
     const room = rooms.getRoom(socket._fp && socket._fp.code);
     if (room) socket.emit(C.EV.SNAPSHOT, require('./server/sim.js').snapshot(room.state));

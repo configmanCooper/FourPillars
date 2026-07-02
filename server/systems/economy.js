@@ -155,7 +155,7 @@ function recomputeDerived(team) {
   const rcap = Math.min(maxResearchers(team), p.educated);
   if (p.researchers > rcap) { p.idle += p.researchers - rcap; p.researchers = Math.max(0, rcap); }
   p.educated = Math.min(p.educated, workforce(team));
-  p.total = workforce(team) + p.recruits + p.soldiers + (p.away || 0);
+  p.total = workforce(team) + p.recruits + p.soldiers + (p.away || 0) + Math.max(0, Math.round(team.guards || 0));   // lent caravan guards are still mouths to feed
   team.storageCap = B.STORAGE_BASE + team.buildings.storehouse * B.STORAGE_PER_STOREHOUSE + researchStat(team, 'storage') + stewardStorageFlat(team);
   team.housing = B.START_HOUSING + team.buildings.house * (B.HOUSING_PER_HOUSE + researchStat(team, 'housing'));
 }

@@ -53,7 +53,7 @@ function addSoldier(g, type, rec) {
 function removeSoldier(g, type, idx) {
   ensureGear(g); const arr = g.gear[type];
   if ((g.units[type] || 0) <= 0) return null;
-  g.units[type] -= 1;
+  g.units[type] = Math.max(0, (g.units[type] || 0) - 1);   // never let a fractional count decrement below 0
   if (arr.length) { const i = (typeof idx === 'number') ? idx : (arr.length - 1); return arr.splice(Math.min(i, arr.length - 1), 1)[0] || { w: 1, a: 0 }; }
   return { w: 1, a: 0 };
 }
@@ -338,8 +338,10 @@ function command(state, team, groupId, missionType, targetArea) {
       logMil(team, g.name + ' marches to siege the enemy Keep!', 'combat'); return { ok: true, msg: g.name + ' marches to siege the enemy Keep!' };
     }
     case 'escort': {
-      const cv = team.caravans.find((c) => c.id === targetArea) || team.caravans[0];
-      if (!cv) return { ok: false, reason: 'No caravan to escort.' };
+      const cv = team.caravans.find((c) => c.id === targetArea);
+      if (!cv) return { ok: false, reason: 'No such caravan to escort.' };
+      // Clear any OTHER host that was escorting this caravan (stale escort mission → ghost bodyguard).
+      for (const other of team.armies) { if (other.id !== g.id && other.mission && other.mission.type === 'escort' && other.mission.caravanId === cv.id) other.mission = { type: 'idle' }; }
       cv.escort = true; cv.escortGroupId = g.id; g.mission = { type: 'escort', caravanId: cv.id };
       moveGroupTo(state, g, cv.route[cv.legIndex + 1] || cv.route[cv.legIndex], 'escort');
       logMil(team, g.name + ' escorts a caravan.', 'order');
@@ -894,7 +896,7 @@ function tickRaze(state, dt, rng, log) {
         // Taking raw ground does NOT scout it — scouting follows outposts & scout parties, not occupation.
         // The captor must rebuild an outpost here (or scout it) to gain vision; until then it fights blind.
         area.scouted[foe] = false; area.scoutedUntil[foe] = 0;
-        if (area.site) { area.site.cargo = 0; area.site.worked = false; area.site.level = 1; }
+        if (area.site) { area.site.cargo = 0; area.site.worked = false; area.site.level = 1; area.site.guards = 0; }   // captured post's guards do NOT defect to the new owner
         S.recomputeBuildings(state, state.teams[owner]); S.recomputeBuildings(state, state.teams[foe]);
         log(foe, C.TEAM_META[foe].name + ' razed the outpost at ' + area.name + ' and seized the ground!', 'capture');
       }
@@ -912,22 +914,31 @@ function tickRaze(state, dt, rng, log) {
     // WORK MODE also scales its raze HP (Defensive ×1.5 = longer, Maximum Production ×0.67 = faster).
     const wmRaze = (!isBase && area.site && B.WORK_MODES[area.site.workMode]) ? B.WORK_MODES[area.site.workMode].razeMult : 1;
     const targetHp = B.BUILDING_RAZE_HP * (target === 'walls' ? B.WALL_RAZE_MULT : 1) * (isBase ? B.KEEP_RAZE_MULT : 1) * wmRaze;
+    // The Watchtower (Keep core) tracks its damage on its OWN persistent field so switching raze targets
+    // (e.g. the defender rebuilds walls mid-siege, flipping the target off the tower and back) never RESETS
+    // — and thus never HEALS — the battered Keep. (Bug: a mid-siege wall rebuild snapped keep.hp to full.)
+    if (target === 'watchtower' && isBase) {
+      if (typeof area._towerHp !== 'number') area._towerHp = targetHp;
+      area._razeTarget = target; area._razeHpMax = targetHp; area._razeActiveTick = state.tick;
+      area._towerHp -= power * dt;
+      area._razeHp = area._towerHp;   // mirror onto the client bar field
+      state.teams[owner].keep.hp = Math.max(0, state.teams[owner].keep.maxHp * (area._towerHp / targetHp));
+      if (area._towerHp <= 0) {
+        area.buildings.watchtower = Math.max(0, (area.buildings.watchtower || 0) - 1);
+        area._towerHp = null; area._razeHp = null; area._razeTarget = null;
+        state.teams[owner].keep.hp = 0;
+        S.recomputeBuildings(state, state.teams[owner]);
+        log(foe, C.TEAM_META[foe].name + ' has razed the ' + C.TEAM_META[owner].name + ' Watchtower — total victory!', 'siege');
+      }
+      continue;
+    }
     if (area._razeTarget !== target) { area._razeTarget = target; area._razeHp = targetHp; }
     area._razeHpMax = targetHp;                 // expose for the client's outpost health bar
     area._razeActiveTick = state.tick;          // mark "actively being razed THIS tick" for the raid indicator
     area._razeHp -= power * dt;
-    // The Keep's health bar reflects the Watchtower being battered down (full → 0 as it's razed).
-    if (target === 'watchtower' && isBase) state.teams[owner].keep.hp = Math.max(0, state.teams[owner].keep.maxHp * (area._razeHp / targetHp));
     if (area._razeHp <= 0) {
       area.buildings[target] = Math.max(0, (area.buildings[target] || 0) - 1);
       area._razeHp = null; area._razeTarget = null;
-      if (target === 'watchtower' && isBase) {
-        // The Watchtower has fallen — the Keep core is destroyed: total victory.
-        state.teams[owner].keep.hp = 0;
-        S.recomputeBuildings(state, state.teams[owner]);
-        log(foe, C.TEAM_META[foe].name + ' has razed the ' + C.TEAM_META[owner].name + ' Watchtower — total victory!', 'siege');
-        continue;
-      }
       const pts = isBase ? B.KEEP_RAZE_POINTS : B.RAZE_POINTS;
       state.teams[foe].razeScore = (state.teams[foe].razeScore || 0) + pts;
       S.recomputeBuildings(state, state.teams[owner]);
@@ -941,5 +952,5 @@ module.exports = {
   formUnits, trainUnits, upgradeUnits, cancelTraining, tickTraining, rally, command, setFormation, setStance, tickMovement, resolveCombat, tickRaze, transferUnits,
   garrison, unitCount, currentArea, barracksAreasOf, unitsAtArea, enforceCaps, roomAt,
   moveUnits, reconcileGear, ensureGear, reequip, hostPower, removeSoldier, logMil,
-  tickEnergy, hostEnergy, energyMult,
+  tickEnergy, hostEnergy, energyMult, hostSpeed,
 };

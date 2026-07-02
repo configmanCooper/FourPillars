@@ -118,6 +118,7 @@
     SURRENDER_REQUEST: 'surrender_request',
     SURRENDER_VOTE: 'surrender_vote',
     REQUEST_REPLAY: 'request_replay',
+    ACTIVITY: 'activity',   // lightweight input heartbeat (mouse/keys) so the server knows a human is present
     // server -> client
     ROOM_UPDATE: 'room_update',
     LOBBY_UPDATE: 'lobby_update',

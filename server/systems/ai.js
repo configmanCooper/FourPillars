@@ -55,7 +55,10 @@ function aiTick(state, team, dt, sys, rng) {
     // its worker allocation (setWorkers bypasses the lock, since the AI Lord IS the allocator) and stomp a
     // human Lord's LOCKED workforce on every connection blip — the persistent "AI keeps changing my workers
     // even when locked" complaint. (An intentional lobby switch to AI clears playerId, so real AI seats run.)
-    if (slot.playerId) continue;
+    // EXCEPTION: a seat under GRACE TAKEOVER (_aiGrace) — its human has been gone AND silent past the grace
+    // window (rooms.checkAiTakeover) — IS driven by the AI so the kingdom isn't left leaderless; it reverts
+    // to the human the instant they return (any input clears _aiGrace).
+    if (slot.playerId && !slot._aiGrace) continue;
     if (!team.aiPersona[role]) {
       team.aiPersona[role] = rng.pick(PERSONAS[role]);
       // Announce identity once so humans know their AI teammates.
@@ -82,7 +85,7 @@ function aiTick(state, team, dt, sys, rng) {
   team._thoughts = team._thoughts || {};
   for (const role of C.ROLE_ORDER) {
     const sl = team.slots[role];
-    if (!sl || sl.controller !== C.CONTROLLER.AI || sl.playerId) { if (team._thoughts[role]) delete team._thoughts[role]; continue; }
+    if (!sl || sl.controller !== C.CONTROLLER.AI || (sl.playerId && !sl._aiGrace)) { if (team._thoughts[role]) delete team._thoughts[role]; continue; }
     const pr = team.aiPersona[role];
     try {
       if (role === C.ROLES.LORD) team._thoughts.LORD = lordThought(state, team, pr);
@@ -103,7 +106,7 @@ function handleRequests(state, team, sys) {
     const slot = team.slots[r.targetRole];
     // Only a genuine AI seat answers automatically — never one a HUMAN has claimed (playerId set), even
     // during a brief disconnect when the seat momentarily reverts to AI control.
-    if (slot && slot.controller === C.CONTROLLER.AI && !slot.playerId) sys.comms.resolveRequest(state, team, r.id, true, sys);
+    if (slot && slot.controller === C.CONTROLLER.AI && (!slot.playerId || slot._aiGrace)) sys.comms.resolveRequest(state, team, r.id, true, sys);
   }
 }
 

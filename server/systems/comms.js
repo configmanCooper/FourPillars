@@ -193,9 +193,12 @@ function fulfill(state, team, req, systems) {
       let cv = req.payload && req.payload.caravanId && team.caravans.find((c) => c.id === req.payload.caravanId);
       if (!cv) cv = team.caravans.find((c) => !c.escort) || team.caravans[0];
       if (!cv) return false;
-      const host = team.armies.find((g) => army.unitCount(g) >= 0.5);
+      // Never send the HOME GARRISON off escorting — that strips the Keep's defenders (a major "AI leaves the
+      // Keep undefended" bug). Pick the smallest adequate NON-garrison field host; if none is free, DECLINE
+      // rather than set a phantom cv.escort with no host (which used to give a free invisible bodyguard).
+      const host = team.armies.filter((g) => !g.isGarrison && army.unitCount(g) >= 0.5).sort((a, b) => army.unitCount(a) - army.unitCount(b))[0];
       if (host) { army.command(state, team, host.id, 'escort', cv.id); return true; }
-      cv.escort = true; return true;
+      return false;
     }
     case 'GUARDS': {
       const want = Math.max(1, Math.round((req.payload && req.payload.count) || B.GUARD_LEND_DEFAULT));

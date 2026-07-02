@@ -106,7 +106,9 @@ function upgradeSite(state, team, areaId) {
 function abandon(state, team, areaId) {
   const area = state.areas[areaId];
   if (!area || area.claimedBy !== team.team) return { ok: false, reason: 'Not your site.' };
-  area.claimedBy = null; area.owner = null; area.site.cargo = 0; area.site.worked = false;
+  area.claimedBy = null; area.owner = null; area.site.cargo = 0; area.site.worked = false; area.site.guards = 0;
+  // Hygiene: an abandoned post carries no stale capture/raze/claim state into its next owner.
+  area.captureProgress = 0; area._razeHp = null; area._razeTarget = null; area.claimFund = null;
   return { ok: true, msg: 'Abandoned ' + area.name + '.' };
 }
 

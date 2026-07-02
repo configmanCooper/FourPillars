@@ -53,6 +53,7 @@
     surrender() { socket.emit(C.EV.SURRENDER_REQUEST); },
     voteSurrender(accept) { socket.emit(C.EV.SURRENDER_VOTE, { accept }); },
     requestReplay() { socket.emit(C.EV.REQUEST_REPLAY); },
+    activity() { if (socket && socket.connected) socket.emit(C.EV.ACTIVITY); },
   };
   window.FP.Net = Net;
 })();

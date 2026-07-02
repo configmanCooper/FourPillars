@@ -130,4 +130,10 @@
     if (typed.indexOf('fourpillars') !== -1) { typed = ''; UI.toggleDebug(); }
   });
   Net.on(C.EV.REPLAY_DATA, (data) => UI.onReplayData(data));
+
+  // Presence heartbeat: any real input (mouse move/click, key, scroll, touch) proves a human is at the
+  // controls, so the server never hands this seat to the AI while you're actually here. Throttled to ~1/5s.
+  let _lastPing = 0;
+  const ping = () => { const now = Date.now(); if (now - _lastPing >= 5000) { _lastPing = now; Net.activity(); } };
+  ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => document.addEventListener(ev, ping, { passive: true }));
 })();

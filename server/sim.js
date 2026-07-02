@@ -80,7 +80,7 @@ function applyAction(state, team, role, action, payload) {
     case 'chat': comms.postChat(state, T, role, String(payload.text || '').slice(0, 160), 'chat'); return { ok: true };
     case 'request': {
       if (!C.REQUEST_TYPES[payload.type]) return { ok: false, reason: 'Unknown request.' };
-      const p = payload.payload || {};
+      const p = sanitizeReqPayload(payload.type, payload.payload || {});
       let target = payload.targetRole;
       if (!target) {
         if (payload.type === 'NEED') {
@@ -319,6 +319,26 @@ function spendKeysFor(action, payload) {
 }
 function defaultTarget(type) {
   return ({ ESCORT: 'COMMANDER', GUARDS: 'COMMANDER', WORKERS: 'LORD', IRON: 'STEWARD', EQUIPMENT: 'BLACKSMITH', RECRUITS: 'LORD', TRAINERS: 'LORD', DEFEND: 'COMMANDER', TRAIN: 'COMMANDER', MISSION: 'COMMANDER', SITE: 'STEWARD', BUILD: 'LORD', RESERVE: 'LORD', MINEFOCUS: 'STEWARD', FORGESPEED: 'STEWARD' })[type] || 'LORD';
+}
+// Harden request payloads from clients so one buggy/hostile client can't poison the sim: whitelist the
+// WORKERS job (a bogus string used to create a phantom pop pool that leaked workers forever) and clamp
+// every numeric field to a finite, sane range (a NaN count/qty/duration used to wedge unit counts and the
+// forge). String fields pass through length-bounded; enumerable ones (resource/unit) are validated.
+const VALID_JOBS = ['farmers', 'woodcutters', 'miners', 'builders', 'students', 'trainers', 'scouts'];
+function clampInt(v, lo, hi, dflt) { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt; }
+function sanitizeReqPayload(type, p) {
+  const out = {};
+  for (const k of ['resource', 'res', 'caravanId', 'areaId', 'area', 'targetArea', 'reason', 'mode', 'mission', 'item', 'unitType', 'building']) {
+    if (typeof p[k] === 'string') out[k] = p[k].slice(0, 60);
+  }
+  if (out.resource != null && !C.RESOURCES.includes(out.resource)) delete out.resource;
+  if (out.res != null && !C.RESOURCES.includes(out.res)) delete out.res;
+  if (out.unitType != null && !C.UNITS.includes(out.unitType)) delete out.unitType;
+  if (p.job != null) out.job = VALID_JOBS.includes(p.job) ? p.job : 'miners';           // never a phantom pool
+  if (p.count != null) out.count = clampInt(p.count, 1, 20, 1);                          // GUARDS
+  if (p.qty != null) out.qty = clampInt(p.qty, 1, 99, 1);                                // EQUIPMENT
+  if (p.duration != null) out.duration = clampInt(p.duration, 1, 600, 60);
+  return out;
 }
 function broadcastText(type, p) {
   if (type === 'NEED' && p && p.resource) { const m = C.RESOURCE_META[p.resource]; return 'We could use more ' + (m ? m.glyph + ' ' + p.resource : p.resource) + '.'; }
