@@ -344,9 +344,10 @@
         html += '<div class="tc ' + tm.toLowerCase() + '"><span class="tc-glyph">' + meta.glyph + '</span>' +
           '<div class="tc-info"><div>' + badge + ' ' + meta.name + (isMe ? ' <b style="color:#e3c578">(you)</b>' : '') + pname + askBadge + '</div>' +
           '<div class="tc-task">' + roleTask(snap.teams[tm], role) + '</div></div></div>';
-        // Reveal cheat ("fourpillars"): show the AI Lord's inner monologue beneath his row (both kingdoms).
-        if (role === 'LORD' && State.revealThoughts && sl.controller === 'ai' && snap.teams[tm]._lordThought) {
-          html += '<div class="lord-thought" style="font-size:10px;line-height:1.35;color:#d8c79a;font-style:italic;background:rgba(0,0,0,0.28);border-left:2px solid ' + (tm === 'BLUE' ? '#5a7fb8' : '#b85a4a') + ';padding:4px 7px;margin:0 0 6px;border-radius:0 3px 3px 0">💭 ' + esc(snap.teams[tm]._lordThought) + '</div>';
+        // Reveal cheat ("fourpillars"): show each AI seat's inner monologue beneath its row (both kingdoms).
+        const thought = snap.teams[tm]._thoughts && snap.teams[tm]._thoughts[role];
+        if (State.revealThoughts && sl.controller === 'ai' && thought) {
+          html += '<div class="lord-thought" style="font-size:10px;line-height:1.35;color:#d8c79a;font-style:italic;background:rgba(0,0,0,0.28);border-left:2px solid ' + (tm === 'BLUE' ? '#5a7fb8' : '#b85a4a') + ';padding:4px 7px;margin:0 0 6px;border-radius:0 3px 3px 0">💭 ' + esc(thought) + '</div>';
         }
       }
     }

@@ -76,6 +76,21 @@ function aiTick(state, team, dt, sys, rng) {
       else if (role === C.ROLES.COMMANDER) aiCommander(state, team, sys, rng, persona, st);
     } catch (e) { /* AI must never crash the sim */ }
   }
+  // Inner monologue for each AI-run seat — a read-only reflection of how it reads the world (mood +
+  // intent), surfaced through the reveal cheat / council panel. Cheap; refreshed every tick so it stays
+  // current regardless of the seat's think cadence. Human-held seats carry no thought.
+  team._thoughts = team._thoughts || {};
+  for (const role of C.ROLE_ORDER) {
+    const sl = team.slots[role];
+    if (!sl || sl.controller !== C.CONTROLLER.AI || sl.playerId) { if (team._thoughts[role]) delete team._thoughts[role]; continue; }
+    const pr = team.aiPersona[role];
+    try {
+      if (role === C.ROLES.LORD) team._thoughts.LORD = lordThought(state, team, pr);
+      else if (role === C.ROLES.STEWARD) team._thoughts.STEWARD = stewardThought(state, team, sys, pr);
+      else if (role === C.ROLES.BLACKSMITH) team._thoughts.BLACKSMITH = smithThought(state, team, sys, pr);
+      else if (role === C.ROLES.COMMANDER) team._thoughts.COMMANDER = commanderThought(state, team, sys, pr);
+    } catch (e) { /* thought generation must never crash the sim */ }
+  }
 }
 
 // AI answers requests aimed at it (humans included). Grants if feasible. Requests addressed to the
@@ -512,7 +527,7 @@ function aiLord(state, team, sys, rng, persona, st) {
       if (sacrifice) {
         const r = sys.buildings.demolishBuilding(state, team, keep.id, sacrifice, null);
         if (r.ok) {
-          st.acted = true; st.cd.demo = state.elapsed + 30;
+          st.acted = true; st.cd.demo = state.elapsed + 60;   // longer anti-thrash cooldown (don't demolish→rebuild→demolish in a famine)
           say(state, team, sys, st, C.ROLES.LORD, 'Razing our ' + B.BUILDINGS[sacrifice].name + ' to raise a Farm — the realm is starving!', 18);
           if (eco.canAfford(team, B.BUILDINGS.farm.cost)) sys.buildings.queueBuilding(state, team, keep.id, 'farm');
         }
@@ -537,7 +552,7 @@ function aiLord(state, team, sys, rng, persona, st) {
       const PREF = ['house', 'storehouse', 'marketplace', 'farm', 'lumberCamp', 'mine', 'school', 'stables', 'workshop', 'university'];
       let sac = null; for (const tname of PREF) { if ((keep.buildings[tname] || 0) >= 2) { sac = tname; break; } }
       if (sac && sys.buildings.demolishBuilding(state, team, keep.id, sac, null).ok) {
-        st.acted = true; st.cd.demo = state.elapsed + 30;
+        st.acted = true; st.cd.demo = state.elapsed + 60;
         say(state, team, sys, st, C.ROLES.LORD, 'Razing a spare ' + B.BUILDINGS[sac].name + ' to raise a Barracks — we need an army!', 18);
         if (eco.canAfford(team, B.BUILDINGS.barracks.cost)) sys.buildings.queueBuilding(state, team, keep.id, 'barracks');
       }
@@ -576,10 +591,6 @@ function aiLord(state, team, sys, rng, persona, st) {
   // Set the kingdom's strategic reservations (goal-driven), then weigh and answer the council's asks.
   lordManageReservations(state, team, sys, st, persona);
   lordHandleRequests(state, team, sys, st);
-
-  // Reflect: capture the Lord's current read of the world (a read-only "inner monologue" surfaced to
-  // spectators / the reveal cheat). Cheap, and only for an AI-run Lord seat.
-  team._lordThought = lordThought(state, team, persona);
 }
 
 // ---- AI Lord "inner monologue" -----------------------------------------------------------------------
@@ -703,8 +714,162 @@ function lordThought(state, team, persona) {
   return chosen.v[fnv(chosen.k + persona + bucket) % chosen.v.length];
 }
 
-// AI research brain: ensure there are educated workers + researchers at a University, then buy the
-// next affordable upgrade by a persona-weighted priority. (No-op until a University is built.)
+// Shared thought picker: the FIRST matching situation supplies the line (rotated variant); otherwise a
+// persona idle musing. Same architecture as lordThought, reused by the other three seats.
+function chooseThought(situations, persona, elapsed, idle) {
+  for (const s of situations) { if (s.on) return s.v[fnv(s.k + persona + Math.floor(elapsed / 25)) % s.v.length]; }
+  const arr = idle[persona] || idle._ || Object.values(idle)[0];
+  return arr[fnv('idle' + persona + Math.floor(elapsed / 25)) % arr.length];
+}
+
+// ---- Steward inner monologue (personas: expansionist / cautious / iron / relic) ----
+function stewardThought(state, team, sys, persona) {
+  persona = persona || (team.aiPersona && team.aiPersona.STEWARD) || 'cautious';
+  const p = team.pop || {}, R = team.resources || {};
+  const threat = enemyOnOwned(state, team);
+  let ownSites = 0; for (const id in state.areas) { const a = state.areas[id]; if (a.claimedBy === team.team && a.terrain !== 'base') ownSites++; }
+  let neutralNear = false; for (const id in state.areas) { const a = state.areas[id]; if (a.revealed[team.team] && a.site && a.terrain !== 'base' && !a.owner) { neutralNear = true; break; } }
+  const caravans = (team.caravans || []).length;
+  const routeDanger = raiderNearOurLand(state, team) && caravans > 0;
+  const lowIron = (R.iron || 0) < 20;
+  const relics = R.relics || 0;
+  const idleW = p.idle || 0;
+  const phase = state.phase;
+  const boxed = ownSites <= 1 && phase !== 'EARLY';
+  const S_ = [
+    { k: 'threat', on: !!threat, v: [
+      'Enemy boots on our ground — my caravans are the first to bleed for it. Tighten the routes, ready the guards, and pray the Commander sweeps them before a wagon is lost.',
+      'They tread our land and my supply lines feel the danger. Cautious runs only until the road is swept — a lost caravan is a week of work gone.' ] },
+    { k: 'routedanger', on: routeDanger, v: [
+      'That road worries me — raiders lurk where my wagons must pass. I want an escort before the next one rolls, or I send it cautious and pray.',
+      'The supply road is not safe. I keep the convoys quiet and low, and I would dearly love a few spears riding alongside.' ] },
+    { k: 'boxed', on: boxed, v: [
+      'Penned to a scrap of land with the enemy fat on the rest — it galls me. Every safe piece of ground I can claw back is a lifeline; give me soldiers to hold new ground.',
+      'We are hemmed in. I hunger for room to grow — but I will not raise an outpost the Commander cannot cover. Coordinate with me and we expand.' ] },
+    { k: 'expand', on: neutralNear && !threat && ownSites < 3, v: [
+      'Fresh ground sits unclaimed and unguarded — I can almost smell the ore. If the Commander can cover it, that site is ours; expansion is how we out-grow them.',
+      'Open land, ripe for the taking. I want to plant an outpost there and set the caravans running — more territory, more of everything.' ] },
+    { k: 'iron', on: persona === 'iron' && lowIron, v: [
+      'The mines run thin and the forge will starve for it — I am shifting every spare hand to the ore. Iron is the sinew of war and we need more of it.',
+      'Not enough iron by half. I lean the miners hard toward the veins; the Blacksmith will thank me, or he had better.' ] },
+    { k: 'relics', on: persona === 'relic' && phase !== 'EARLY', v: [
+      'The old ruins call to me — relics mean knowledge and glory both. When I can spare the hands, an expedition goes; guard my diggers, Commander.',
+      'There is power buried in this land and I mean to unearth it. An expedition to the ruins is worth the risk — cover me and we both profit.' ] },
+    { k: 'idle', on: idleW >= 5, v: [
+      'Idle hands stand about while there is ore to dig and roads to walk — waste I cannot abide. I will find them work, or hand them to the muster.',
+      'Too many folk with nothing to do. Put them on the gather-lines; a busy realm is a rich one.' ] },
+    { k: 'humming', on: caravans >= 2 && ownSites >= 2 && !threat, v: [
+      'The caravans roll and the outposts hum — logistics as they should be. I keep the roads open and the goods flowing; the rest of you win the war I feed.',
+      'Wagons on every road, ore in every cart. This is a realm that runs. I will keep it that way and watch for the first sign of trouble.' ] },
+    { k: 'early', on: phase === 'EARLY', v: [
+      'A map full of shadow and promise — I itch to scout it and stake the richest ground first. Explore, claim, and get the first caravans rolling.',
+      'So much unknown land. I send the scouts wide; whoever maps and claims the best sites first shapes the whole game.' ] },
+  ];
+  return chooseThought(S_, persona, state.elapsed, {
+    expansionist: ['More land, always more — a realm that stops reaching starts dying. I eye every unclaimed ridge and river for our next outpost.'],
+    cautious: ['Steady roads, guarded wagons, no reckless claims. I would rather hold three sites well than lose five in a scramble.'],
+    iron: ['Ore, ore, ore — the war runs on it. I keep the miners deep in the veins and the forge fed before anything else.'],
+    relic: ['I keep half an eye on the old ruins always; relics win games in ways spears never can. Patience, and an expedition when the moment is right.'],
+    _: ['I keep the roads open and the outposts fed, and watch the horizon for trouble.'],
+  });
+}
+
+// ---- Blacksmith inner monologue (personas: quartermaster / armorer / siege / toolsmith) ----
+function smithThought(state, team, sys, persona) {
+  persona = persona || (team.aiPersona && team.aiPersona.BLACKSMITH) || 'quartermaster';
+  const R = team.resources || {}, p = team.pop || {};
+  const iron = R.iron || 0;
+  const lowIron = iron < 15;
+  const forging = (team.production || []).length > 0;
+  const soldiers = p.soldiers || 0;
+  const armed = (team.equipment && (team.equipment.spears || 0) + (team.equipment.swords || 0) + (team.equipment.bows || 0)) || 0;
+  const underGeared = soldiers >= 3 && armed < soldiers;
+  const hasWorkshop = (team.buildings.workshop || 0) > 0;
+  const wantSiege = hasWorkshop && (state.phase === 'LATE') && (team.equipment.siegeParts || 0) < 6;
+  const goalUnit = forging ? smithWant(state, team, countArmy(team)) : null;
+  const phase = state.phase;
+  const S_ = [
+    { k: 'lowiron', on: lowIron, v: [
+      'The iron bin is nearly bare and a cold forge wins no wars — Steward, I need ore and I need it now. Give me metal and I give you an army with teeth.',
+      'No iron, no blades. My anvil sits idle for want of ore; that is the Steward\'s problem as much as mine now.' ] },
+    { k: 'undergeared', on: underGeared, v: [
+      'Soldiers standing about with bare hands — it shames my craft. Every spare bar of iron goes to arming them before we forge a single luxury.',
+      'Half the host lacks a proper weapon. Unacceptable. Weapons first, ornament never — get me the iron and watch them arm up.' ] },
+    { k: 'siege', on: persona === 'siege' && wantSiege, v: [
+      'Give me the parts and I will build engines that chew through their walls like bread. Siege is my art; a good catapult ends a war faster than a thousand spears.',
+      'The workshop hums and I dream of siege. Ram and catapult parts to the front of the queue — let us knock on their Keep and not wait to be let in.' ] },
+    { k: 'forging', on: forging && goalUnit, v: [
+      'The anvil rings — I forge for the host the Commander is building, not the one that stood yesterday. Right gear, right time; that is a smith worth his coal.',
+      'Sparks fly and the order is clear. I make what the war needs next, ' + (GEAR_FOR_UNIT[goalUnit] || 'blades') + ' by the armful. Come and collect.' ] },
+    { k: 'armorer', on: persona === 'armorer' && iron > 25, v: [
+      'A blade kills, but armour keeps YOUR man alive to kill again — I bank plate whenever the iron allows. A well-armoured host is a battle half-won.',
+      'I would see every soldier plated before the enemy lands a blow. The tier bonus on good armour is the quiet edge that wins the hard fights.' ] },
+    { k: 'idleforge', on: !forging && !lowIron, v: [
+      'The forge sits quiet and my hands itch — surely there is gear to make. Send me an order, or I will forge to my own good judgment.',
+      'A silent anvil is a wasted one. I will start banking swords and armour until someone tells me what the war truly needs.' ] },
+    { k: 'early', on: phase === 'EARLY', v: [
+      'Early days — I set the forge, stock the tools that keep the gatherers swift, and lay in the first spears. A war is won at the anvil long before the field.',
+      'First I see to tools and a starting stock of arms. Get me steady iron and by mid-game we will out-equip them handily.' ] },
+  ];
+  return chooseThought(S_, persona, state.elapsed, {
+    quartermaster: ['Two of everything on the rack, always — a realm never caught short is a realm that never loses for want of a blade. I keep the surplus deep.'],
+    armorer: ['Steel on every back before steel in every hand. I chase full armour like a miser chases coin; it is the edge nobody sees until the blades fall.'],
+    siege: ['I long for the workshop and the great engines. Spears are fine, but it is the catapult that cracks a Keep — that is the craft that ends wars.'],
+    toolsmith: ['Good tools make a rich realm: sharp axes, true picks. Keep the gatherers equipped and the whole economy runs faster — that is my quiet trade.'],
+    _: ['I keep the anvil hot and the racks stocked, and forge for the war the Commander means to fight.'],
+  });
+}
+
+// ---- Commander inner monologue (personas: wolf / ironwall / roadmarshal / hammer) ----
+function commanderThought(state, team, sys, persona) {
+  persona = persona || (team.aiPersona && team.aiPersona.COMMANDER) || 'ironwall';
+  const p = team.pop || {}, enemy = state.teams[S.enemyOf(team.team)];
+  const sol = p.soldiers || 0, esol = enemy.pop.soldiers || 0;
+  const keepR = team.keep.hp / Math.max(1, team.keep.maxHp);
+  const ekR = enemy.keep.hp / Math.max(1, enemy.keep.maxHp);
+  const threat = enemyOnOwned(state, team) || keepR < 0.6;
+  const hasBar = (team.buildings.barracks || 0) > 0;
+  const recruits = p.recruits || 0;
+  const dominant = sol > esol + 6 && ekR < 0.92;
+  const ahead = sol > esol + 3 || ekR < 0.8;
+  const behind = sol + 4 < esol || keepR < 0.6;
+  const raiders = raiderNearOurLand(state, team) && !threat;
+  const phase = state.phase;
+  const S_ = [
+    { k: 'keepthreat', on: threat, v: [
+      'The Keep is in danger and every instinct screams RECALL — bring the host home, form the wall, and make them pay in blood for every step. Nothing outranks this.',
+      'They threaten our heart. All banners home; we hold the Keep or we hold nothing. Let them break on our spears.' ] },
+    { k: 'killblow', on: dominant && ekR < 0.7, v: [
+      'Their Keep is cracking and my host is the hammer — I want to END this. Mass everything, march on their gate, and finish the war while the wound is open.',
+      'The scent of victory is in the air. No half-measures now: the full weight of the army on their Keep until it falls.' ] },
+    { k: 'nobar', on: !hasBar && esol >= 2, v: [
+      'No Barracks, no soldiers, and the enemy already arms — this is how kingdoms die. Lord, raise the Barracks before their spears arrive; I cannot fight with empty hands.',
+      'I have a war to wage and nowhere to train a single blade. Every hour without a Barracks is an hour we lose. Build it, my Lord, I beg you.' ] },
+    { k: 'behind', on: behind, v: [
+      'Their host outnumbers mine and I feel the cold arithmetic of it. Caution now — hold the walls, take no fool\'s fight, and grow the army until the numbers turn.',
+      'We are the weaker sword today. I will not spend men on losing odds; wall up, muster hard, and wait for my moment. It will come.' ] },
+    { k: 'raiders', on: raiders, v: [
+      'Enemy raiders prowl our land like wolves at the fold — I mean to run them down. Deny them their free plunder and the map stays ours.',
+      'Loose raiders near our holdings. I peel off a host to hunt them; a raid answered is a raid that never pays.' ] },
+    { k: 'building', on: hasBar && recruits >= 2, v: [
+      'Fresh recruits fill the yard and I feel the host sharpening into a blade. Keep the trainers busy, keep the smith forging — soon we march with real weight.',
+      'The muster grows by the day. Good. Every trainer working, every recruit becoming a soldier — patience, and then the storm.' ] },
+    { k: 'press', on: ahead && phase !== 'EARLY', v: [
+      'We hold the edge and I mean to use it — press their land, burn their outposts, give them no rest. An advantage unused is an advantage surrendered.',
+      'Stronger than they are today. Forward, then: take ground, deny their caravans, and widen the gap before they can close it.' ] },
+    { k: 'early', on: phase === 'EARLY', v: [
+      'Quiet, for now — I scout the passes, learn the ground, and count the days until the first real host is mustered. Wars are lost early by the unready.',
+      'The blades are few and the map is young. I mark the chokepoints and press the Lord for recruits; readiness now is victory later.' ] },
+  ];
+  return chooseThought(S_, persona, state.elapsed, {
+    wolf: ['Peace itches like a wound. I did not take up this banner to guard walls — give me a host and a target and let us go hunting.'],
+    ironwall: ['A wall unbroken is a war unlost. I would rather hold perfectly than gamble gloriously; let them shatter on our shields.'],
+    roadmarshal: ['Wars are won on the roads — I watch their supply lines like a hawk and starve them a caravan at a time. Mobility is my blade.'],
+    hammer: ['I favour the heavy blow — mass the host, pick the moment, and strike once, hard. Let the enemy scatter; we advance as one fist.'],
+    _: ['I watch the balance of spears and wait for the moment the odds are mine.'],
+  });
+}
+
 function aiManageResearch(state, team, sys, rng, persona, st) {
   if ((team.buildings.university || 0) <= 0) return;
   const p = team.pop;
@@ -1170,7 +1335,7 @@ function aiBlacksmith(state, team, sys, rng, persona, st) {
     if (state.phase === 'EARLY') item = (persona === 'toolsmith' && team.equipment.tools < 10) || team.equipment.tools < 5 ? 'tools' : 'spears';
     else {
       // Forge the gear our army needs against THIS enemy (counter-aware), with persona/diversity flavour.
-      const want = pickComposition(team, { comp: ['swordsman', 'spearman', 'archer', 'cavalry'] }, enemyComposition(state, team), army).desired;
+      const want = smithWant(state, team, army);
       item = GEAR_FOR_UNIT[want] || 'spears';
       if (want === 'archer' && (team.resources.arrows || 0) < 12) item = 'arrows';     // keep archers supplied
       else if (team.buildings.workshop > 0 && (team.equipment.siegeParts || 0) < 6 && state.phase !== 'EARLY' && rng.chance(persona === 'siege' ? 0.55 : 0.3)) item = 'siegeParts';   // keep ~2 catapults' worth (3 parts each) stocked so the Commander can field catapults for assaults
@@ -1210,7 +1375,7 @@ function forgePlan(state, team, sys, rng, persona, army) {
     bump('spears', 3);          // arm a starting force early so we're not defenceless mid-game
     bump('armor', 2);           // start banking the decisive tier bonus
   } else {
-    const want = pickComposition(team, { comp: ['swordsman', 'spearman', 'archer', 'cavalry'] }, enemyComposition(state, team), army).desired;
+    const want = smithWant(state, team, army);
     bump(GEAR_FOR_UNIT[want] || 'spears', 4);   // the gear our desired troops need most
     bump('swords', 1);                          // swords are a reliable iron-only staple
     bump('armor', 3);                           // armour's tier bonus is a big battle edge
@@ -1322,6 +1487,10 @@ function pickComposition(team, cfg, enemyComp, ownComp, siegeWanted) {
 }
 // The gear a Blacksmith must forge to enable a given unit type.
 const GEAR_FOR_UNIT = { spearman: 'spears', swordsman: 'swords', archer: 'bows', cavalry: 'swords', catapult: 'siegeParts', militia: 'spears' };
+// The unit the Blacksmith should forge gear for: a generic counter-aware pick from the current army.
+function smithWant(state, team, army) {
+  return pickComposition(team, { comp: ['swordsman', 'spearman', 'archer', 'cavalry'] }, enemyComposition(state, team), army).desired;
+}
 
 // ---------------- COMMANDER ----------------
 const CMD_CFG = {
@@ -2253,4 +2422,4 @@ function pickRaidTarget(state, team) {
   return best;
 }
 
-module.exports = { aiTick, lordThought };
+module.exports = { aiTick, lordThought, stewardThought, smithThought, commanderThought };
