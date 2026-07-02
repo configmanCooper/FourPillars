@@ -122,7 +122,17 @@ function logSpend(team, key, role, amount, purpose) {
 }
 
 function addResource(team, key, amt) {
-  team.resources[key] = clamp((team.resources[key] || 0) + amt, 0, team.storageCap);
+  const before = team.resources[key] || 0;
+  const after = clamp(before + amt, 0, team.storageCap);
+  team.resources[key] = after;
+  return Math.max(0, (before + amt) - after);   // overflow LOST to the storage cap (returned so callers can report it)
+}
+// addResource that logs any overflow lost to the cap — so players don't read a silently-clamped delivery/
+// reward/refund as theft. Use at player-facing credit sites (caravans, contract & expedition rewards).
+function addResourceLogged(team, key, amt, log, label) {
+  const lost = addResource(team, key, amt);
+  if (lost >= 0.5 && log) log(team.team, '⚠️ ' + Math.round(lost) + ' ' + key + ' ' + (label || 'turned away') + ' — storehouse full.', 'caravan');
+  return lost;
 }
 
 // workforce = people available for jobs (excludes recruits and soldiers). Includes cooling.
@@ -611,7 +621,7 @@ function buyResearch(state, team, key) {
 }
 
 module.exports = {
-  clamp, canAfford, spend, refund, addResource, workforce, recomputeDerived,
+  clamp, canAfford, spend, refund, addResource, addResourceLogged, workforce, recomputeDerived,
   tickEconomy, setWorkers, adjustWorker, levy, maxTrainers, maxWorkers, coolingCount, updatePhase, policy,
   isHeld, heldKeys, isHeldNow, heldCostForRole, heldForRole, blockedFor, roleAllowed, holdAllow, setHold, releaseHold, pruneHolds, spendFor, logSpend,
   grantHold, hasGrant, grantLeft,

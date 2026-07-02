@@ -353,7 +353,8 @@ function tickSites(state, team, dt, rng, log) {
 }
 
 function deliver(state, team, cv, log) {
-  for (const k in cv.cargo) eco.addResource(team, k, cv.cargo[k]);
+  let lost = 0;
+  for (const k in cv.cargo) lost += eco.addResourceLogged(team, k, cv.cargo[k], log, 'turned away');
   if (cv.escortGroupId) freeEscort(team, cv.escortGroupId);
   if (log) log(team.team, 'Caravan delivered ' + Math.round(Object.values(cv.cargo)[0]) + ' ' + Object.keys(cv.cargo)[0] + '.', 'caravan');
 }
