@@ -1813,7 +1813,7 @@ function aiCommander(state, team, sys, rng, persona, st) {
     if (!vulnerable && army.unitCount(w) >= 2) {
       const claimed = (decide._claimed = decide._claimed || {});
       const ct = counterTarget(state, team, claimed);
-      if (ct && winChanceAt(state, army, team, w, ct) >= winBar) {
+      if (ct && owc(state, army, team, w, ct) >= winBar) {
         claimed[ct] = true;
         if (holdChanceAt(state, army, team, w, ct) >= holdBar && army.unitCount(w) >= 3) {
           w.postGuard = ct; army.command(state, team, w.id, 'garrison', ct); say(state, team, sys, st, C.ROLES.COMMANDER, 'Retaking &amp; holding ' + state.areas[ct].name + '!', 16);
@@ -2275,6 +2275,40 @@ function winChanceAt(state, army, team, w, areaId) {
   if (theirs <= 0.01) return 1;
   return ours / (ours + theirs);
 }
+// Energy a host would have ON ARRIVAL at areaId, given the ~0.75/s drain while marching (3× the open-ground
+// rate). Lets the AI see that a far offensive arrives EXHAUSTED — now that energy is crushing, marching
+// across the map to arrive at 20 energy is death. Base-rate approximation (ignores provisioning research —
+// minor and symmetric); floors at 0.
+function projectedEnergyAt(state, army, team, w, areaId) {
+  const from = areaOf(w);
+  if (from === areaId) return army.hostEnergy(w);
+  const path = S.findPath(state.areas, from, areaId);
+  if (!path || path.length < 2) return army.hostEnergy(w);
+  let dist = 0; for (let i = 1; i < path.length; i++) { const a = state.areas[path[i - 1]], b = state.areas[path[i]]; if (a && b) dist += Math.hypot(a.x - b.x, a.y - b.y); }
+  const speed = Math.max(0.0001, army.hostSpeed(team, w));
+  const marchSec = dist / speed;
+  return Math.max(0, army.hostEnergy(w) - marchSec * 0.75);
+}
+// winChanceAt but our host's strength is discounted to its PROJECTED ARRIVAL energy (a far, drained assault
+// is genuinely weaker on arrival). Used for OFFENSIVE target selection so the AI prefers near targets, staging
+// and defence-in-place instead of marching to its death. Defensive/at-home math keeps current-energy strength.
+function winChanceAtArrival(state, army, team, w, areaId) {
+  const curE = army.hostEnergy(w);
+  const projE = projectedEnergyAt(state, army, team, w, areaId);
+  const curM = army.energyMult({ energy: curE }) || 1;
+  const projM = army.energyMult({ energy: projE });
+  const factor = curM > 0.0001 ? (projM / curM) : 1;   // scale our contribution by the energy we'll actually have
+  const mine = hostStr(army, team, w) * factor;
+  const ours = (mine + friendStrAt(state, army, team, areaId, w.id)) * scoutFactor(state, team, areaId);
+  const theirs = enemyStrAt(state, army, team, areaId);
+  if (theirs <= 0.01) return 1;
+  return ours / (ours + theirs);
+}
+// Offensive win-chance: arrival-energy-aware when the flag is on (the host must MARCH there and will arrive
+// drained), else current-strength. Only for OFFENSIVE target selection — defence keeps current-energy math.
+function owc(state, army, team, w, areaId) {
+  return ab(team, 'arrivalenergy') ? winChanceAtArrival(state, army, team, w, areaId) : winChanceAt(state, army, team, w, areaId);
+}
 // Stricter "can we HOLD this once taken?" — counts ALL enemy strength on it or one tile away at FULL
 // weight (they can converge), so we only commit to keeping posts we can actually defend.
 function holdChanceAt(state, army, team, w, areaId) {
@@ -2296,7 +2330,7 @@ function captureOpportunity(state, army, team, w, winBar, holdBar, claimed) {
     if (a.terrain === 'base' || id === ekId) continue;                  // the enemy Keep is a siege, handled apart
     if (a.owner !== foe || a.claimedBy !== foe) continue;               // ENEMY-held OUTPOSTS only (claimed ground; raw seized ground / neutrals aren't capturable)
     if (claimed && claimed[id]) continue;
-    const take = winChanceAt(state, army, team, w, id);
+    const take = owc(state, army, team, w, id);
     if (take < winBar) continue;                                        // can't win the fight there → not an opportunity
     const hold = holdChanceAt(state, army, team, w, id) >= holdBar;
     const value = S.buildingsAt(a) * 3 + 4 + (a.site ? a.site.level + 1 : 0);
@@ -2322,7 +2356,7 @@ function undefendedCaptureTarget(state, army, team, w, claimed) {
     if (a.claimedBy !== foe) continue;                                  // a real enemy OUTPOST (claimed) — raw seized ground isn't capturable
     if (claimed && claimed[id]) continue;
     if (enemyUnitsOn(state, team, id) > 1.0) continue;            // only (near-)undefended posts
-    if (winChanceAt(state, army, team, w, id) < 0.7) continue;    // must be a near-certain win for us
+    if (owc(state, army, team, w, id) < 0.7) continue;    // must be a near-certain win for us (arrival-energy-aware)
     const value = S.buildingsAt(a) * 3 + 4 + (a.site ? a.site.level + 1 : 0);
     if (value > bestScore) { bestScore = value; best = id; }
   }
