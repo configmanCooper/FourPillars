@@ -333,6 +333,12 @@
     for (const tm of teams) {
       const slots = snap.teams[tm].slots;
       html += '<div class="muted" style="padding:2px 2px 4px">' + C.TEAM_META[tm].name + '</div>';
+      // Shared team plan (posture) banner — visible for your own team always; enemy only under the reveal.
+      const plan = snap.teams[tm].plan;
+      const POSTURE_UI = { BUILD: '🏗️ Build', TURTLE: '🛡️ Turtle', PRESS: '⚔️ Press', SIEGE: '🏰 Siege', RECOVER: '🌾 Recover' };
+      if (plan && plan.posture && POSTURE_UI[plan.posture] && (tm === State.myTeam || State.isSpectator || State.revealThoughts)) {
+        html += '<div title="The team\'s current shared strategy, set by the Lord" style="font-size:10px;color:#cbb98c;background:rgba(70,58,30,0.35);border-radius:3px;padding:2px 6px;margin:0 2px 5px">🧭 Plan: <b>' + POSTURE_UI[plan.posture] + '</b></div>';
+      }
       for (const role of C.ROLE_ORDER) {
         const sl = slots[role]; const meta = C.ROLE_META[role];
         const persona = sl.controller === 'ai' && snap.teams[tm].aiPersona && snap.teams[tm].aiPersona[role];

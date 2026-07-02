@@ -311,6 +311,23 @@ function aiLord(state, team, sys, rng, persona, st) {
     else if (persona === 'turtler') want = 'balanced';   // even footing — don't smother the Commander
     if (want !== team.militaryPolicy) { team.militaryPolicy = want; team.militaryPolicyCooldownUntil = state.elapsed + 180; }
   }
+  // Author the SHARED TEAM PLAN (posture) — what the kingdom should be doing, read by all four seats and
+  // spoken so cohesion is visible. Change only on hysteresis (candidate must hold ~18s), and announce ONE
+  // council line on change (posted directly so it isn't dropped by the per-seat chat cooldown; changes are
+  // rare so there's no spam). Cues ONE other seat (the Commander) to acknowledge in character.
+  team.plan = team.plan || { posture: 'BUILD', setT: 0, setBy: 'LORD' };
+  {
+    const want = derivePosture(state, team);
+    if (want !== team.plan.posture) {
+      if (team._postureCand !== want) { team._postureCand = want; team._postureCandT = state.elapsed; }
+      else if (state.elapsed - (team._postureCandT || 0) >= 18) {
+        team.plan = { posture: want, setT: state.elapsed, setBy: 'LORD' };
+        team._postureCand = null;
+        sys.comms.postChat(state, team, C.ROLES.LORD, postureLine(want, persona), 'chat');
+        team._postureAck = want;   // one seat acknowledges next think
+      }
+    } else { team._postureCand = null; }
+  }
   const threat = enemyOnOwned(state, team);
   const wf = eco.workforce(team);
   const hasBarracks = team.buildings.barracks > 0;
@@ -868,6 +885,71 @@ function commanderThought(state, team, sys, persona) {
     hammer: ['I favour the heavy blow — mass the host, pick the moment, and strike once, hard. Let the enemy scatter; we advance as one fist.'],
     _: ['I watch the balance of spears and wait for the moment the odds are mine.'],
   });
+}
+
+// ---- Shared team plan (posture): the Lord's read of what the KINGDOM should be doing, so all four seats
+// pull the same way and can talk about it. Derived from the same lattice as the thoughts; changed only on
+// hysteresis (a candidate posture must hold ~18s) so it doesn't flap. Postures: BUILD/TURTLE/PRESS/SIEGE/RECOVER.
+function derivePosture(state, team) {
+  const enemy = state.teams[S.enemyOf(team.team)];
+  const p = team.pop || {};
+  const keepR = team.keep.hp / Math.max(1, team.keep.maxHp);
+  const ekR = enemy.keep.hp / Math.max(1, enemy.keep.maxHp);
+  const starving = !!team._starving || (team.resources.food || 0) < 18;
+  const armyLost = !!team._hadBarracks && (team.buildings.barracks || 0) === 0;
+  const sol = p.soldiers || 0, esol = enemy.pop.soldiers || 0;
+  const threat = enemyOnOwned(state, team);
+  const behind = sol + 4 < esol || keepR < 0.6;
+  const ahead = sol > esol + 3 || ekR < 0.8;
+  const dominant = sol > esol + 6 && ekR < 0.9;
+  const hasWorkshop = (team.buildings.workshop || 0) > 0;
+  if (keepR < 0.4 || (threat && behind)) return 'TURTLE';
+  if (starving || armyLost) return 'RECOVER';
+  if (dominant && hasWorkshop && ekR < 0.85) return 'SIEGE';
+  if (ahead && !threat) return 'PRESS';
+  if (behind) return 'TURTLE';
+  return 'BUILD';
+}
+const POSTURE_META = {
+  BUILD:   { glyph: '🏗️', name: 'Build' },
+  TURTLE:  { glyph: '🛡️', name: 'Turtle' },
+  PRESS:   { glyph: '⚔️', name: 'Press' },
+  SIEGE:   { glyph: '🏰', name: 'Siege' },
+  RECOVER: { glyph: '🌾', name: 'Recover' },
+};
+function postureLine(posture, persona) {
+  const L = {
+    BUILD: [
+      'Council: we grow. Economy and army in step — no reckless fights until we have real weight behind us.',
+      'Council: the plan is patience and prosperity. Build, muster, and wait for them to blunder first.' ],
+    TURTLE: [
+      'Council: we are outmatched in the field. Walls, full granaries, and a held Keep until our host can answer theirs — THEN we talk about taking ground.',
+      'Council: kennel the wolf for now. Fortify, hold every gate, and let them break themselves on our stone.' ],
+    PRESS: [
+      'Council: we hold the edge — so press it. Take their ground, deny their roads, give them no hour of rest.',
+      'Council: forward. We are the stronger sword today and a lead unpressed is a lead surrendered.' ],
+    SIEGE: [
+      'Council: it is time. Mass the host and march on their Keep — we end this war at their very gates.',
+      'Council: all of it, now, at their Keep. Smith — siege parts to the front. We finish them.' ],
+    RECOVER: [
+      'Council: steady the realm first. Feed the people, rebuild what we have lost, and only THEN make war.',
+      'Council: we bind our wounds before we swing again. Farms and order first; the fighting can wait a breath.' ],
+  };
+  const arr = L[posture] || L.BUILD;
+  return arr[fnv('posture' + posture + (persona || '')) % arr.length];
+}
+// The Commander's in-character one-line acknowledgment of a new posture (persona-flavoured; personas may
+// grumble but still comply). Returns null for no-op.
+function commanderPostureAck(posture, persona) {
+  const wolfish = persona === 'wolf' || persona === 'hammer';
+  const ack = {
+    TURTLE: wolfish ? 'Kenneling the wolf, then. For now.' : 'Aye — shields up, gates shut. They\'ll not enjoy the visit.',
+    RECOVER: 'Understood. I\'ll hold what we have and not spend men I can\'t replace.',
+    BUILD: wolfish ? 'Building, is it. Wake me when there\'s a war.' : 'Good. I\'ll grow the host while you grow the realm.',
+    PRESS: wolfish ? 'FINALLY. The wolf runs. Point me at them.' : 'With pleasure — I\'ll take their ground piece by piece.',
+    SIEGE: wolfish ? 'To their gates! I\'ve waited all game for this.' : 'The host masses. Smith, ready the engines — we march on their Keep.',
+  };
+  return ack[posture] || null;
 }
 
 function aiManageResearch(state, team, sys, rng, persona, st) {
@@ -1503,6 +1585,14 @@ function aiCommander(state, team, sys, rng, persona, st) {
   const army = sys.army, cfg = CMD_CFG[persona] || CMD_CFG.ironwall;
   if (!team.doctrine) team.doctrine = cfg.doctrine;
   const p = team.pop;
+
+  // Acknowledge a fresh team posture IN CHARACTER (one line, only on change — this is where personas get to
+  // agree-agreeably or grumble). Cleared immediately so exactly one seat responds.
+  if (team._postureAck && sys.comms) {
+    const ack = commanderPostureAck(team._postureAck, persona);
+    team._postureAck = null;
+    if (ack) sys.comms.postChat(state, team, C.ROLES.COMMANDER, ack, 'chat');
+  }
 
   // Need recruits? Ask the Lord. Smart Hard won't grow the army while food is tight (now that food
   // demand is higher and famine kills people) — over-levying just starves the realm.
