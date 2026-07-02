@@ -72,12 +72,16 @@ team.research.provisioning = 0;
 g = host(open, { militia: 5 }); g.energy = 0.2; team.armies = [g];
 army.tickEnergy(state, team, 1); near(g.energy, 0, 'energy floored at 0');
 
-// 7. Combat-penalty tiers (attack & defence multiplier).
+// 7. Combat-penalty curve (attack & defence multiplier): smooth FLOOR + (1-FLOOR)*(e/100)^EXP.
 function mult(e) { const h = host(home, { militia: 1 }); h.energy = e; return army.energyMult(h); }
-near(mult(45), 1.0, 'energy 45 -> no penalty (x1.0)');
-near(mult(29), 0.9, 'energy 29 -> x0.9');
-near(mult(19), 0.75, 'energy 19 -> x0.75');
-near(mult(9), 0.5, 'energy 9 -> x0.5');
+const B2 = require('../shared/balance.js');
+const F = B2.ENERGY_MULT_FLOOR, EX = B2.ENERGY_MULT_EXP;
+const curve = (e) => F + (1 - F) * Math.pow(Math.max(0, Math.min(100, e)) / 100, EX);
+near(mult(100), 1.0, 'energy 100 -> full strength (x1.0)');
+near(mult(0), F, 'energy 0 -> floor (x' + F + ')');
+near(mult(50), curve(50), 'energy 50 -> on the curve');
+near(mult(20), curve(20), 'energy 20 -> on the curve');
+ok(mult(30) < mult(70) && mult(70) < mult(100), 'penalty is monotonic: tireder = weaker');
 
 console.log(fails === 0 ? '\nENERGY MECHANIC OK' : '\n' + fails + ' FAILURES');
 process.exit(fails === 0 ? 0 : 1);

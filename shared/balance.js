@@ -441,6 +441,12 @@
   const KEEP_RAZE_POINTS = 6;
   const CAPTURE_AFTER_RAZE = 10;        // seconds to seize a non-Keep site once empty (no buildings) — doubled
                                         // from 5 so a bare/empty outpost is twice as durable (time to defend it)
+  // Deployment-energy combat penalty: a smooth curve energyMult(e) = FLOOR + (1-FLOOR)*(e/100)^EXP applied to
+  // BOTH attack and defence. FLOOR 0.30 at 0 energy makes exhaustion CRUSHING (the design goal: ~6 tired
+  // soldiers ≈ 3 fresh), tuned via Monte Carlo (fp-analysis/energy-montecarlo.js). Probes at these constants:
+  // 6@0 vs 3@100 → 52% (spec ~50), 6@20 vs 3@100 → 70%, 6@100 vs 3@100 → 95%. mult: 0.30@0, 0.44@20, 0.58@40, 1.0@100.
+  const ENERGY_MULT_FLOOR = 0.30;
+  const ENERGY_MULT_EXP = 1.0;
   const ARCHER_ARROW_USE = 0.5;         // arrows consumed per archer per battle round
   const COMBAT_ROUND_LOSS = 0.12;       // (legacy) fraction of losing-side power converted to casualties per round
   // Per-second discrete combat: each engaged side rolls 0/1/2/3 kills/sec based on the strength share.
@@ -524,7 +530,7 @@
     HOST_SPEED_MULT, CAVALRY_SPEED_MULT, PURSUIT_CATCH_RADIUS, PURSUIT_TIMEOUT,
     RECIPES, BLACKSMITH_SPECS, SPEC_TIME_REDUCTION, SPEC_QUALITY_BONUS, SPEC_QUALITY_THRESHOLD, CONTRACTS, CONTRACT_OFFER_COUNT, CONTRACT_ROTATE_SEC, WEAPON_DEGRADE_CHANCE, QUALITY_LADDER,
     UNIT_STATS, EQUIP_TIER_MULT, ARMOR_DEF_BONUS, COUNTER_BONUS_PER, COUNTER_BONUS_MAX, ARCHER_OUTPOST_BONUS, FORMATIONS, STANCES, DOCTRINES, MILITARY_POLICIES, MILITARY_POLICY_DEFAULT, WALL_TROOP_BONUS, WALL_ARCHER_BONUS,
-    BUILDING_RAZE_HP, RAZE_STAT, WALL_RAZE_MULT, CATAPULT_WALL_RAZE_BONUS, KEEP_RAZE_MULT, KEEP_DEFENDER_BONUS, MAX_UNITS_PER_AREA, RAZE_POINTS, KEEP_RAZE_POINTS, CAPTURE_AFTER_RAZE,
+    BUILDING_RAZE_HP, RAZE_STAT, WALL_RAZE_MULT, CATAPULT_WALL_RAZE_BONUS, KEEP_RAZE_MULT, KEEP_DEFENDER_BONUS, MAX_UNITS_PER_AREA, RAZE_POINTS, KEEP_RAZE_POINTS, CAPTURE_AFTER_RAZE, ENERGY_MULT_FLOOR, ENERGY_MULT_EXP,
     QUALITY_TIERS, FORGE_ZONES, AI_QUALITY_DIST, UNIT_WEAPON, qualityTier, qualityById, rollQuality,
     ARCHER_ARROW_USE, COMBAT_ROUND_LOSS, COMBAT_INTENSITY, SPEED_COMBAT_REF, SPEED_COMBAT_MIN, SPEED_COMBAT_MAX, ARMOR_SAVE_BASE, ARMOR_SAVE_MAX, MORALE,
     KEEP_HP, KEEP_DEF, SCORE_WEIGHTS, RECRUITS_PER_UNIT, START_RECRUITS,

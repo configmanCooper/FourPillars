@@ -110,8 +110,14 @@ function tickEnergy(state, team, dt) {
     g.energy = Math.max(0, Math.min(100, hostEnergy(g) + rate * dt));
   }
 }
-// Tiered combat penalty from low energy (applies to BOTH attack and defence): <30 → −10%, <20 → −25%, <10 → −50%.
-function energyMult(g) { const e = hostEnergy(g); if (e < 10) return 0.5; if (e < 20) return 0.75; if (e < 30) return 0.9; return 1; }
+// Deployment-energy combat penalty (applies to BOTH attack & defence): a smooth curve so exhaustion is
+// crushing — energyMult(e) = FLOOR + (1-FLOOR)*(e/100)^EXP. FLOOR 0.25 @0 (≈6 tired ≈ 3 fresh), 1.0 @100.
+function energyMult(g) {
+  const e = Math.max(0, Math.min(100, hostEnergy(g)));
+  const f = (typeof B.ENERGY_MULT_FLOOR === 'number') ? B.ENERGY_MULT_FLOOR : 0.25;
+  const ex = (typeof B.ENERGY_MULT_EXP === 'number') ? B.ENERGY_MULT_EXP : 1.3;
+  return f + (1 - f) * Math.pow(e / 100, ex);
+}
 
 // Find/create a stationary host at an area to receive newly trained units.
 function hostAt(state, team, area) {

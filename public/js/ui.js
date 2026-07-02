@@ -1979,10 +1979,15 @@
     h += '<div class="opt-desc" style="margin:2px 0">' + (meta ? meta.name : team) + (mine ? '' : ' <span class="muted">(enemy)</span>') + ' · 📍' + esc(loc) + ' · ' + missionLabel(g) + ' · 💪' + (g.morale || 'normal') + '</div>';
     h += '<div style="margin:4px 0;font-size:13px"><b>' + Math.round(n) + '</b> units · <b title="total attack">⚔️ ' + pw.atk + '</b> / <b title="total defence">🛡 ' + pw.def + '</b></div>';
     // Deployment-energy bar (host average): drains in the field, regenerates at the Keep; low energy weakens
-    // BOTH attack and defence (<30 −10%, <20 −25%, <10 −50%). Green = fresh, yellow = tiring, red ≤30.
+    // BOTH attack and defence on a smooth curve (crushing when exhausted). Green = fresh, yellow = tiring, red ≤30.
     const en = (typeof g.energy === 'number') ? Math.round(g.energy) : 100;
     const enCol = en <= 30 ? '#d65050' : (en <= 55 ? '#d9a441' : '#6bbf5f');
-    const enPen = en < 10 ? ' <span style="color:#d65050;font-size:9px">−50% atk/def</span>' : en < 20 ? ' <span style="color:#d65050;font-size:9px">−25% atk/def</span>' : en < 30 ? ' <span style="color:#d9a441;font-size:9px">−10% atk/def</span>' : '';
+    const _eb = (window.FP && window.FP.Balance) || {};
+    const _ef = (typeof _eb.ENERGY_MULT_FLOOR === 'number') ? _eb.ENERGY_MULT_FLOOR : 0.30;
+    const _ex = (typeof _eb.ENERGY_MULT_EXP === 'number') ? _eb.ENERGY_MULT_EXP : 1.0;
+    const _emult = _ef + (1 - _ef) * Math.pow(Math.max(0, Math.min(100, en)) / 100, _ex);
+    const _epct = Math.round((1 - _emult) * 100);
+    const enPen = _epct >= 5 ? ' <span style="color:' + (_epct >= 40 ? '#d65050' : '#d9a441') + ';font-size:9px">−' + _epct + '% atk/def</span>' : '';
     h += '<div style="margin:4px 0 2px;font-size:11px;display:flex;align-items:center;gap:6px" title="Deployment energy — drains in the field, regenerates at the Keep. Tired hosts fight worse.">' +
       '<span>🔋 Energy</span>' +
       '<span style="flex:1;min-width:40px;height:7px;background:rgba(0,0,0,0.5);border:1px solid #000;border-radius:3px;overflow:hidden;display:inline-block">' +
