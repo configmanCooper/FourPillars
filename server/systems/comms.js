@@ -8,12 +8,23 @@ function slotName(team, role) { const s = team.slots[role]; return s ? s.name : 
 function isAI(team, role) { const s = team.slots[role]; return !s || s.controller === C.CONTROLLER.AI; }
 
 function postChat(state, team, role, text, kind) {
+  kind = kind || 'chat';
+  // Anti-spam safety floor: an AI seat's FLAVOUR lines ('chat') are capped at one per 4s per seat, so the
+  // added cohesion/thought/reaction chatter can never machine-gun the log. Human chat and request/response/
+  // system lines are NEVER throttled (they carry gameplay-critical information). say() already spaces most
+  // AI chat by ~30s; this catches the direct postChat() cohesion lines too.
+  if (kind === 'chat' && isAI(team, role)) {
+    team._chatGap = team._chatGap || {};
+    if (state.elapsed - (team._chatGap[role] != null ? team._chatGap[role] : -999) < 4) return false;
+    team._chatGap[role] = state.elapsed;
+  }
   team.comms.push({
     id: S.uid('msg'), t: Math.round(state.elapsed), fromRole: role,
     fromName: slotName(team, role), isAI: isAI(team, role),
-    text, kind: kind || 'chat',
+    text, kind,
   });
   if (team.comms.length > 60) team.comms.shift();
+  return true;
 }
 
 const REQ_TEXT = {
@@ -94,6 +105,18 @@ function resolveRequest(state, team, id, accept, systems, actorRole) {
     req.resolution = accept ? 'accepted' : 'declined';
     req.resolvedBy = responder; req.resolvedByName = slotName(team, responder);
     postChat(state, team, responder, accept ? ('👍 Accepted — I will ' + lowerType(req.type, req) + '.') : '👎 Sorry — declining that for now.', 'response');
+    // Human-deed reaction (G8): the AI that ASKED notices a human agreeing to help, and thanks them in
+    // character. Capped to one thanks per asking-seat per 60s so gratitude never becomes spam.
+    if (accept) {
+      const asker = req.fromRole;
+      if (asker && asker !== responder && isAI(team, asker)) {
+        team._thankGap = team._thankGap || {};
+        if (state.elapsed - (team._thankGap[asker] != null ? team._thankGap[asker] : -999) >= 60) {
+          team._thankGap[asker] = state.elapsed;
+          postChat(state, team, asker, thankLine(team, asker), 'chat');
+        }
+      }
+    }
     return { ok: true };
   }
   // AI responder: actually fulfil the request automatically.
@@ -113,6 +136,19 @@ function resolveRequest(state, team, id, accept, systems, actorRole) {
   req.status = 'declined'; req.resolution = 'declined'; req.resolvedBy = responder; req.resolvedByName = slotName(team, responder);
   postChat(state, team, responder, 'Cannot help with that right now.', 'response');
   return { ok: true };
+}
+
+// A persona-flavoured thanks from an AI seat to a human who just agreed to help.
+function thankLine(team, role) {
+  const persona = (team.aiPersona && team.aiPersona[role]) || '';
+  const blunt = ['wolf', 'hammer', 'warmonger'].includes(persona);
+  const wry = ['iron', 'relic', 'quartermaster', 'toolsmith'].includes(persona);
+  const pool = blunt
+    ? ['Good. I won\'t forget it.', 'That\'s the spirit — my thanks.', 'Aye. That helps more than you know.']
+    : wry
+      ? ['Much obliged — I\'ll remember who came through.', 'Now THAT is teamwork. My thanks.', 'You have my gratitude, and that\'s worth more than coin.']
+      : ['Thank you — truly, that helps.', 'Bless you for that. The realm is stronger for it.', 'My thanks — I knew I could count on you.'];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 function lowerType(t, req) {

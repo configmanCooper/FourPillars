@@ -994,7 +994,7 @@ function aiManageResearch(state, team, sys, rng, persona, st) {
     const tier = def.tiers[cur];
     if ((team.researchPoints || 0) < tier.rp) continue;
     if (!eco.canAfford(team, tier.cost)) continue;
-    if (sys.economy.buyResearch(state, team, key).ok) { st.acted = true; say(state, team, sys, st, C.ROLES.LORD, '📚 Researched ' + def.name + ' (T' + (cur + 1) + ').', 25); break; }
+    if (sys.economy.buyResearch(state, team, key).ok) { st.acted = true; say(state, team, sys, st, C.ROLES.LORD, '📚 Researched ' + def.name + ' (T' + (cur + 1) + ') — ' + (def.desc || 'the realm advances') + '.', 25); break; }
   }
 }
 function freeSlots(state, team, areaId) { const a = state.areas[areaId]; let n = S.buildingsAt(a); for (const q of team.buildQueue) if (q.areaId === areaId) n++; return a.maxBuildings - n; }
