@@ -3,6 +3,7 @@
 const C = require('../../shared/constants.js');
 const B = require('../../shared/balance.js');
 const S = require('../../shared/schema.js');
+const { makeRng } = require('../rng.js');
 
 function slotName(team, role) { const s = team.slots[role]; return s ? s.name : role; }
 function isAI(team, role) { const s = team.slots[role]; return !s || s.controller === C.CONTROLLER.AI; }
@@ -148,7 +149,8 @@ function thankLine(team, role) {
     : wry
       ? ['Much obliged — I\'ll remember who came through.', 'Now THAT is teamwork. My thanks.', 'You have my gratitude, and that\'s worth more than coin.']
       : ['Thank you — truly, that helps.', 'Bless you for that. The realm is stronger for it.', 'My thanks — I knew I could count on you.'];
-  return pool[Math.floor(Math.random() * pool.length)];
+  team._thankSeq = (team._thankSeq || 0) + 1;
+  return pool[((team._thankSeq * 2654435761) >>> 0) % pool.length];   // deterministic (was Math.random)
 }
 
 function lowerType(t, req) {
@@ -159,13 +161,17 @@ function lowerType(t, req) {
   if (t === 'FORGESPEED') return (req && req.targetRole === 'LORD') ? 'research Foundry Mastery to speed the forge' : 'crank the Forge Bellows to speed the forge';
   return ({ ESCORT: 'escorting the caravan', GUARDS: 'lending caravan guards', WORKERS: 'sending workers', IRON: 'pushing iron through',
     EQUIPMENT: 'forging gear', RECRUITS: 'training recruits', DEFEND: 'sending defenders',
-    TRAIN: 'training troops', MISSION: 'taking the offensive', SITE: 'expanding our territory', BUILD: 'raising the building', RECRUITS: 'training recruits', TRAINERS: 'assigning trainers' })[t] || t.toLowerCase();
+    TRAIN: 'training troops', MISSION: 'taking the offensive', SITE: 'expanding our territory', BUILD: 'raising the building', TRAINERS: 'assigning trainers' })[t] || t.toLowerCase();
 }
 
 // Quality of gear an AI Blacksmith produces when fulfilling a request (rolled by its difficulty).
-function forgeQuality(team) {
+// DETERMINISTIC: seeded from the sim tick + a per-team forge counter so seeded replays reproduce exactly
+// (was Math.random() — nondeterministic AND gameplay-affecting).
+function forgeQuality(state, team) {
   const diff = (team.slots && team.slots.BLACKSMITH && team.slots.BLACKSMITH.difficulty) || 'medium';
-  return B.rollQuality(diff, Math.random());
+  team._forgeSeq = (team._forgeSeq || 0) + 1;
+  const rng = makeRng((((state && state.tick) | 0) * 2654435761 + team._forgeSeq * 40503 + (team.team === 'RED' ? 7 : 3)) >>> 0);
+  return B.rollQuality(diff, rng.range(0, 1));
 }
 
 // Best enemy LAND target to raid (an enemy-held outpost, or a neutral/contested site) — used when the Lord
@@ -239,7 +245,7 @@ function fulfill(state, team, req, systems) {
     case 'EQUIPMENT': {
       const item = (req.payload && req.payload.item && B.RECIPES[req.payload.item]) ? req.payload.item : 'spears';
       const qty = (req.payload && req.payload.qty) || B.RECIPES[item].batch || 8;
-      const q = forgeQuality(team);
+      const q = forgeQuality(state, team);
       return !!production.queueProduction(team, item, qty, q.mult, q.id).ok;
     }
     case 'IRON': {
@@ -336,7 +342,7 @@ function fulfill(state, team, req, systems) {
         if (move <= 0) return false;
         team.pop.idle -= move; team.pop[jobFor[res]] = (team.pop[jobFor[res]] || 0) + move; economy.recomputeDerived(team); return true;
       }
-      if (res === 'arrows') { const q = forgeQuality(team); production.queueProduction(team, 'arrows', 24, q.mult, q.id); return true; }
+      if (res === 'arrows') { const q = forgeQuality(state, team); production.queueProduction(team, 'arrows', 24, q.mult, q.id); return true; }
       return true; // horses/relics: acknowledged (Steward prioritises sites)
     }
     case 'USE': {

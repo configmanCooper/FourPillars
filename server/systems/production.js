@@ -73,6 +73,9 @@ function setSpec(team, spec) {
 function produceOne(team, item, log, qMult, qId) {
   const recipe = B.RECIPES[item];
   if (eco.heldCostForRole(team, 'BLACKSMITH', recipe.cost)) return false;   // a reserved input pauses the forge
+  // Don't burn inputs forging a RESOURCE item (arrows) that won't fit — at storage cap the item is never
+  // created but the iron/wood were spent. Pause the job instead of eating resources for nothing.
+  if (recipe.isResource && (team.resources[item] || 0) >= team.storageCap - 0.001) return false;
   if (!eco.canAfford(team, recipe.cost)) return false;
   eco.spendFor(team, recipe.cost, 'BLACKSMITH', 'forging ' + item);
   const oldN = recipe.isResource ? (team.resources[item] || 0) : (team.equipment[item] || 0);
