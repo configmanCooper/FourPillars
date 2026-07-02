@@ -559,10 +559,35 @@ function reequip(state, team, groupId) {
 // Baseline host attack/defence (no enemy/wall situational bonuses) — for the UI's strength readout.
 function hostPower(team, g) { const s = strength(team, g, null, null); return { atk: Math.round(s.atk), def: Math.round(s.def) }; }
 
-// Treat all co-located friendly hosts as one combined force for the round.
+// Treat all co-located friendly hosts as one combined force for the round. The merged object must be
+// FAITHFUL to the real hosts so battle resolution matches the AI's win-chance predictions (which use real
+// hosts): it carries a unit-weighted AVERAGE energy and the CONCATENATED real per-soldier gear records, so
+// energyMult and weapon/armour quality actually bite in combat (previously the merged object had neither, so
+// energy penalties and gear quality silently never applied to a real battle). Formation/stance follow the
+// dominant host by unit count; morale takes the WORST (a shaken contingent unsettles the line).
+const MORALE_RANK = { low: 0, normal: 1, high: 2 };
 function mergeGroups(list) {
-  const m = { units: emptyUnits(), hasArmor: false, formation: list[0].formation, stance: list[0].stance, morale: list[0].morale };
-  for (const g of list) { for (const u of C.UNITS) m.units[u] += g.units[u] || 0; if (g.hasArmor) m.hasArmor = true; }
+  const m = { units: emptyUnits(), hasArmor: false, gear: {},
+    formation: list[0].formation, stance: list[0].stance, morale: list[0].morale, energy: 100 };
+  let enSum = 0, enW = 0, worst = 'high';
+  const formW = {}, stanceW = {};
+  for (const g of list) {
+    const gc = unitCount(g);
+    for (const u of C.UNITS) {
+      m.units[u] += g.units[u] || 0;
+      if (g.gear && g.gear[u] && g.gear[u].length) m.gear[u] = (m.gear[u] || []).concat(g.gear[u]);   // real per-soldier records
+    }
+    if (g.hasArmor) m.hasArmor = true;
+    const w = Math.max(gc, 0.0001);
+    enSum += hostEnergy(g) * w; enW += w;                 // unit-weighted average energy
+    formW[g.formation] = (formW[g.formation] || 0) + gc;
+    stanceW[g.stance] = (stanceW[g.stance] || 0) + gc;
+    if ((MORALE_RANK[g.morale] != null ? MORALE_RANK[g.morale] : 1) < (MORALE_RANK[worst] != null ? MORALE_RANK[worst] : 1)) worst = g.morale;
+  }
+  m.energy = enW > 0 ? enSum / enW : 100;
+  m.morale = worst;
+  const domForm = Object.keys(formW).sort((a, b) => formW[b] - formW[a])[0]; if (domForm) m.formation = domForm;
+  const domStance = Object.keys(stanceW).sort((a, b) => stanceW[b] - stanceW[a])[0]; if (domStance) m.stance = domStance;
   return m;
 }
 
